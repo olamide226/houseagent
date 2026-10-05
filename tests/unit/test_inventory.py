@@ -179,3 +179,25 @@ async def test_a_failed_tool_call_keeps_earlier_writes_in_the_turn():
         result, is_error = await run_tool("update_shopping_list", {"bought_all": True}, ctx)   # empty list
         assert is_error and "empty" in result
         assert await stock_of(conn, home) == {("rice", "store"): (None, "in_stock")}
+
+
+async def test_logging_a_purchase_then_ticking_it_off_in_the_same_turn_is_one_restock():
+    async with tx() as conn:
+        home = await seed_home(conn)
+        await add_item(conn, home, "milk", location="fridge", staple=True, qty=0, status="out")
+        message = await fetch_one(
+            conn,
+            """insert into messages (household_id, member_id, direction, text)
+               values (:h, :m, 'in', 'I bought 2 pints of milk') returning id""", h=home.id, m=home.ola)
+        ctx = ctx_for(conn, home, message_id=message["id"])
+        await log(ctx, change("milk", "restocked", quantity=2, unit="pints"))
+        result, is_error = await run_tool("update_shopping_list", {"bought": ["milk"]}, ctx)
+
+        assert not is_error and "already recorded" in result
+        assert await events_of(conn, home) == [("milk", "restocked", D(2), "message")]
+        assert await stock_of(conn, home) == {("milk", "fridge"): (D(2), "in_stock")}
+
+        # A later turn that ticks milk off is a new purchase.
+        later = ctx_for(conn, home)
+        await run_tool("update_shopping_list", {"bought": ["milk"]}, later)
+        assert len(await events_of(conn, home)) == 2

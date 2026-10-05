@@ -58,6 +58,18 @@ async def add(rec: Recorder, item_id: str, name: str, *, quantity: Decimal | Non
 
 async def bought(rec: Recorder, item_id: str) -> None:
     """Ticking an item off is a restock; the restock rule resolves the list entry."""
+    ctx = rec.ctx
+    # Models often log the purchase and then tick the list too. One purchase is one restock.
+    already = ctx.message_id and await fetch_val(
+        ctx.conn,
+        """select i.canonical_name from inventory_events e join items i on i.id = e.item_id
+           where e.item_id = :item and e.source_message_id = :message
+             and e.event_type in ('added', 'restocked') limit 1""",
+        item=item_id, message=ctx.message_id,
+    )
+    if already:
+        rec.lines.append(f"OK: {already} was already recorded as bought in this turn")
+        return
     await inventory.apply_change(rec, inventory.Change(item_id, "restocked"), "shopping")
 
 
