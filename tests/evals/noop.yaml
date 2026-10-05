@@ -1,0 +1,12 @@
+- name: chit-chat is ignored
+  turns: [{from: Ada, scope: group, text: "love you, see you at 6"}]
+  expect: {writes: 0, reply: NOOP}
+
+- name: group greeting is ignored
+  turns: [{from: Ola, scope: group, text: "good morning everyone!"}]
+  expect: {writes: 0, reply: NOOP}
+
+- name: family banter is ignored
+  seed: {items: [{name: rice, stock: {store: 2}}]}
+  turns: [{from: Ada, scope: group, text: "haha did you see what Tobi drew at nursery today"}]
+  expect: {writes: 0, reply: NOOP}

@@ -1,0 +1,32 @@
+- name: add two things to the list
+  turns: [{from: Ola, text: "add bleach and kitchen roll to the shopping list"}]
+  expect:
+    shopping_list_active: [bleach, kitchen roll]
+    events: []
+
+- name: bought one thing off the list
+  seed: {items: [{name: egg, stock: {fridge: 0}}, {name: bread}], list: [egg, bread]}
+  turns: [{from: Ada, text: "I got the eggs"}]
+  expect:
+    events: [{item: egg, type: restocked}]
+    shopping_list_active: [bread]
+    stock: {egg: {status: in_stock}}
+
+- name: got everything on the list
+  seed: {items: [{name: egg}, {name: bread}, {name: milk}], list: [egg, bread, milk]}
+  turns: [{from: Ola, text: "got everything on the list"}]
+  expect:
+    events: [{item: egg, type: restocked}, {item: bread, type: restocked}, {item: milk, type: restocked}]
+    shopping_list_active: []
+
+- name: take something off the list
+  seed: {items: [{name: egg}, {name: bleach}], list: [egg, bleach]}
+  turns: [{from: Ola, text: "we don't need bleach any more, take it off the list"}]
+  expect:
+    events: []
+    shopping_list_active: [egg]
+
+- name: reading the list writes nothing
+  seed: {items: [{name: egg}, {name: bread}], list: [egg, bread]}
+  turns: [{from: Ola, text: "what's on the shopping list?"}]
+  expect: {writes: 0, reply: text}

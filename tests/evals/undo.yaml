@@ -1,0 +1,18 @@
+- name: undo
+  seed: {items: [{name: rice, staple: true, stock: {store: 3}}]}
+  turns: [{from: Ola, text: "finished the rice"}, {from: Ola, text: "undo"}]
+  expect: {stock: {rice: {status: in_stock, qty: 3}}, shopping_list_active: []}
+
+- name: undo a list change
+  seed: {items: [{name: egg}], list: [egg]}
+  turns: [{from: Ola, text: "add bleach to the list"}, {from: Ola, text: "undo that"}]
+  expect: {shopping_list_active: [egg]}
+
+- name: correction undoes then records what was meant
+  seed: {items: [{name: milk, staple: true, stock: {fridge: 2}}]}
+  turns:
+    - {from: Ola, text: "we're out of milk"}
+    - {from: Ola, text: "no wait, I meant we're running low on milk"}
+  expect:
+    stock: {milk: {status: low, qty: 2}}
+    shopping_list_active: [milk]

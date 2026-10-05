@@ -1,0 +1,51 @@
+- name: batch finish with staple
+  seed: {items: [{name: egg, staple: true, stock: {fridge: 6}}, {name: bread, stock: {store: 1}}]}
+  turns: [{from: Ola, text: "we're out of eggs and bread"}]
+  expect:
+    events: [{item: egg, type: finished}, {item: bread, type: finished}]
+    shopping_list_active: [egg]
+    reply: ACK
+
+- name: running low goes on the list
+  seed: {items: [{name: rice, stock: {store: 2}}]}
+  turns: [{from: Ola, text: "we're running low on rice"}]
+  expect:
+    events: [{item: rice, type: low}]
+    stock: {rice: {status: low, qty: 2}}
+    shopping_list_active: [rice]
+
+- name: bought with a stated quantity
+  seed: {items: [{name: milk, staple: true, stock: {fridge: 0}}]}
+  turns: [{from: Ada, text: "I bought 2 pints of milk"}]
+  expect:
+    events: [{item: milk, type: [restocked, added], quantity: 2}]
+    stock: {milk: {status: in_stock, qty: 2}}
+
+- name: new item into a named location
+  turns: [{from: Ola, text: "I just put some chicken thighs in the freezer"}]
+  expect:
+    events: [{item: chicken thigh, type: [added, restocked], location: freezer}]
+    stock: {chicken thigh: {status: in_stock, location: freezer}}
+
+- name: used some
+  seed: {items: [{name: egg, stock: {fridge: 6}}]}
+  turns: [{from: Ola, text: "used 2 eggs for breakfast"}]
+  expect:
+    events: [{item: egg, type: used, quantity: 2}]
+    stock: {egg: {status: in_stock, qty: 4}}
+
+- name: no quantity is invented
+  seed: {items: [{name: bread, stock: {store: 0}}]}
+  turns: [{from: Ola, text: "got bread"}]
+  expect:
+    events: [{item: bread, type: [restocked, added], quantity: null}]
+
+- name: stock question writes nothing
+  seed: {items: [{name: rice, stock: {store: 2}}]}
+  turns: [{from: Ola, text: "do we have any rice?"}]
+  expect: {writes: 0, reply: text}
+
+- name: ambiguous name asks instead of guessing
+  seed: {items: [{name: Bell pepper, stock: {fridge: 2}}, {name: Black pepper, stock: {store: 1}}]}
+  turns: [{from: Ola, text: "we're out of pepper"}]
+  expect: {events: [], shopping_list_active: [], reply: text}
