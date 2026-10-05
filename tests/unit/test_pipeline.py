@@ -86,12 +86,12 @@ async def test_invite_code_connects_the_sender_and_queues_a_welcome(client):
     identity, = await rows("select member_id, channel, handle from channel_identities")
     assert (identity["member_id"], identity["channel"], identity["handle"]) == (home.ola, "telegram", "1001")
     (welcome,) = await rows("select o.text, t.external_thread_id from outbox o join threads t on t.id = o.thread_id")
-    assert welcome == {"text": "Hi Ola, you're connected.", "external_thread_id": "1001"}
+    assert welcome == {"text": f"Hi Ola, you're connected. {inbound.WELCOME}", "external_thread_id": "1001"}
     assert await rows("select 1 from messages") == []          # the code itself is never a turn
 
     adapter = FakeAdapter()
     await router.dispatch_due({Channel.telegram: adapter})
-    assert adapter.sent == [("1001", "Hi Ola, you're connected.", None)]
+    assert adapter.sent == [("1001", f"Hi Ola, you're connected. {inbound.WELCOME}", None)]
 
 
 async def test_invite_attempts_are_rate_limited_per_handle(client):

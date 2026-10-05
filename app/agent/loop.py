@@ -7,6 +7,7 @@ from app.agent.tools import run_tool, tool_definitions
 from app.core.envelope import Envelope
 from app.db import fetch_all
 from app.llm.types import ChatMessage, LLMClient, LLMError, TextPart, Usage
+from app.services import households
 
 HISTORY_MESSAGES = 20
 HISTORY_HOURS = 48
@@ -46,7 +47,8 @@ class LoopRuntime:
         self._max_iterations = max_iterations
 
     async def handle(self, env: Envelope, ctx: Ctx) -> AgentResult:
-        system = system_prompt(self._agent_name, await build_brief(ctx.conn, env, env.received_at))
+        onboarding = await households.onboarding(ctx.conn, env.household_id)
+        system = system_prompt(self._agent_name, await build_brief(ctx.conn, env, env.received_at), onboarding)
         messages = await self._history(env, ctx)
         turn = env.text
         if env.reply_to_text:
@@ -55,7 +57,7 @@ class LoopRuntime:
             # Photos reach the model once MediaStore lands; until then the agent says so briefly.
             turn += f"\n{NO_PHOTOS}"
         messages.append(_text("user", turn))
-        tools = tool_definitions(onboarding_active=False)
+        tools = tool_definitions(onboarding_active=onboarding["step"] is not None)
 
         records: list[ToolCallRecord] = []
         usage = Usage()

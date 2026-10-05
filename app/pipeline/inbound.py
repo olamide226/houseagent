@@ -18,12 +18,16 @@ from app.db import advisory_lock, execute, fetch_all, fetch_one, fetch_val, json
 from app.llm.stt import SpeechToText
 from app.pipeline import media as media_pipeline
 from app.pipeline.router import enqueue, record_outbound
-from app.services import members
+from app.services import households, members
 
 log = structlog.get_logger()
 
 SORRY = "Sorry, that didn't go through, try again?"
 PLAYGROUND = "playground"   # threads.channel for dashboard Playground and eval turns
+# Said once, by code, when an adult connects: the first setup question, or a one-line welcome.
+FIRST_QUESTION = ("Let's get you set up, one question at a time; say skip to pass on any. "
+                  "Who lives here, including the kids?")
+WELCOME = "Just tell me what's run out, what to buy or what's coming up, and I'll keep track."
 INVITE_ATTEMPTS_PER_HOUR = 5
 _invite_attempts: dict[str, deque[float]] = defaultdict(deque)
 
@@ -92,11 +96,15 @@ async def _unknown_sender(conn: AsyncConnection, adapter: ChannelAdapter, event:
     if member is None:
         log.info("invite_rejected", channel=event.channel.value)
         return
+    await members.record_connection(conn, member, event.channel.value)
     thread_id = await _upsert_thread(conn, member["household_id"], event.channel.value,
                                      adapter.dm_thread_id(event.sender_handle), "dm")
+    # Setup starts with whoever connects while the first step is open; anyone later is just welcomed.
+    setting_up = (await households.onboarding(conn, member["household_id"]))["step"] == "family"
     await enqueue(conn, OutboundMessage(
         household_id=member["household_id"], target="thread", thread_id=thread_id,
-        text=f"Hi {member['name']}, you're connected.", respect_quiet_hours=False,
+        text=f"Hi {member['name']}, you're connected. {FIRST_QUESTION if setting_up else WELCOME}",
+        respect_quiet_hours=False,
     ))
     log.info("invite_redeemed", household_id=member["household_id"], channel=event.channel.value)
 

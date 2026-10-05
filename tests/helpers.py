@@ -18,8 +18,12 @@ class Home:
     members: dict[str, str] = field(default_factory=dict)
 
 
-async def seed_home(conn: AsyncConnection, *, telegram_id: str | None = "1001") -> Home:
+async def seed_home(conn: AsyncConnection, *, telegram_id: str | None = "1001", onboarding: bool = False) -> Home:
+    """A household with its admin, Ola. Setup is already complete unless `onboarding` is set."""
     household_id, admin_id = await households.create_household(conn, "Adebayo", "Europe/London", "Ola")
+    if not onboarding:
+        await execute(conn, """update households set onboarding_state = '{"step": null, "done": []}' """
+                            "where id = :h", h=household_id)
     home = Home(household_id, admin_id, {"Ola": admin_id})
     if telegram_id:
         await link(conn, admin_id, telegram_id)
@@ -119,10 +123,10 @@ def say(text: str) -> LLMResponse:
     return LLMResponse(text=text, stop="end", usage=Usage(input_tokens=100, output_tokens=5))
 
 
-def call(name: str, **arguments: Any) -> LLMResponse:
+def call(tool: str, /, **arguments: Any) -> LLMResponse:
     return LLMResponse(
         text=None, stop="tool_calls", usage=Usage(input_tokens=100, output_tokens=20),
-        tool_calls=[ToolCall(id=f"call_{name}", name=name, arguments=arguments)],
+        tool_calls=[ToolCall(id=f"call_{tool}", name=tool, arguments=arguments)],
     )
 
 
@@ -155,6 +159,7 @@ class FakeAdapter:
         self.fail = fail
         self.sent: list[tuple[str, str, str | None]] = []       # (chat, text, reply_to)
         self.reactions: list[tuple[str, str, str]] = []         # (chat, message, emoji)
+        self.fetched: list[str] = []                            # external ids downloaded
 
     async def send_text(self, external_thread_id: str, text: str, reply_to_external_id: str | None = None) -> Any:
         from app.core.envelope import SendResult
@@ -174,6 +179,11 @@ class FakeAdapter:
         self.reactions.append((external_thread_id, external_message_id, emoji))
 
     async def fetch_media(self, ref: Any) -> tuple[bytes, str]:
+        if self.fail:
+            raise self.fail
+        self.fetched.append(ref.external_id)
+        if ref.kind == "image":
+            return f"image:{ref.external_id}".encode(), ref.mime or "image/jpeg"
         return b"audio-bytes", ref.mime or "audio/ogg"
 
     def dm_thread_id(self, handle: str) -> str:
@@ -181,6 +191,35 @@ class FakeAdapter:
 
     def format(self, text: str) -> str:
         return text
+
+
+class MemoryStore:
+    """A MediaStore that keeps objects in a dict, named like the S3 backend names them."""
+    backend = "s3"
+
+    def __init__(self, *, fail: Exception | None = None) -> None:
+        self.objects: dict[str, bytes] = {}
+        self.deleted: list[str] = []
+        self.fail = fail
+
+    async def put(self, household_id: str, message_id: str, n: int, data: bytes, mime: str) -> Any:
+        from app.core.envelope import MediaRef
+        from app.media.store import EXTENSIONS, kind_of
+
+        if self.fail:
+            raise self.fail
+        key = f"{household_id}/{message_id}/{n}.{EXTENSIONS.get(mime, 'bin')}"
+        self.objects[key] = data
+        return MediaRef(kind=kind_of(mime), mime=mime, storage_backend="s3", storage_key=key)
+
+    async def get(self, ref: Any) -> bytes:
+        return self.objects[ref.storage_key]
+
+    async def delete(self, ref: Any) -> None:
+        if self.fail:
+            raise self.fail
+        self.deleted.append(ref.storage_key)
+        self.objects.pop(ref.storage_key, None)
 
 
 def tg_update(update_id: int, text: str | None = None, *, user_id: int = 1001, name: str = "Ola",

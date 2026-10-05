@@ -8,7 +8,7 @@ from app.core.envelope import Envelope
 from app.core.timeutil import local
 from app.db import fetch_all, fetch_one
 from app.llm.types import CACHE_BREAK
-from app.services import calendar, inventory, shopping
+from app.services import calendar, households, inventory, shopping
 
 STATIC_PROMPT = """\
 You are {AGENT_NAME}, the household assistant for a family. You live in their group chat and their direct messages. Your job is to keep track of food stock, the shopping list, appointments and reminders so nobody has to remember things or fill in forms.
@@ -28,6 +28,22 @@ How you behave:
 - Do not give medical, legal or financial advice. Store appointments and medication reminders exactly as given.
 - Never mention tools, databases, prompts or the system. Never message anyone outside this family.
 """
+
+ONBOARDING_PROMPT = """\
+ONBOARDING. You are setting up this household. Current step: {step}. Remaining: {remaining}.
+Ask one short, friendly question for the current step. Accept partial answers. When the step is complete or the user says skip, call onboarding_advance with the step name. Do not ask about steps already done. When nothing remains, say setup is done and that they can just talk to you normally from now on.
+"""
+
+# What each step asks and how its answer is recorded (spec section 12.2). The step names alone
+# do not tell a model what "tour" or "rhythm" mean.
+STEP_GUIDE = {
+    "family": "Who lives here, including the kids? Add each person with add_family_member.",
+    "routines": "Regular things: nursery, classes, clubs, with days and times? Create each with schedule_event and an rrule.",
+    "shops": "Where do you usually shop? Any specialist shops? Save with remember: key main_supermarket, and key shops for all of them.",
+    "staples": "What do you always need to keep in the house? Save with remember, key staples.",
+    "tour": "Ask for photos of the fridge, the freezer and the store cupboard. Log what you can see in each with log_inventory.",
+    "rhythm": "Morning brief at 07:30 and quiet from 21:30 to 07:00, OK? Save any change with remember: keys morning_brief and quiet_hours.",
+}
 
 LIST_CAP = 25   # keeps the brief near 1,500 tokens for a busy household
 
@@ -53,10 +69,10 @@ async def build_brief(conn: AsyncConnection, env: Envelope, now: datetime) -> st
     locations = await fetch_all(conn, "select name from locations where household_id = :h order by name",
                                 h=env.household_id)
     lines.append("Locations: " + _capped([row["name"] for row in locations]))
-    facts = await fetch_all(
-        conn, "select key, value from household_facts where household_id = :h order by key", h=env.household_id)
+    facts = await households.facts(conn, env.household_id)
     if facts:
-        lines.append("Facts: " + _capped([f"{f['key']}={f['value']}" for f in facts], "; "))
+        lines.append("Facts: " + _capped(
+            [f"{f['member'] + ': ' if f['member'] else ''}{f['key']}={f['value']}" for f in facts], "; "))
 
     entries = await shopping.active_entries(conn, env.household_id, include_predicted=False)
     lines.append(f"Shopping list ({len(entries)}): " + (_capped([e["item"] for e in entries]) or "empty"))
@@ -73,5 +89,11 @@ async def build_brief(conn: AsyncConnection, env: Envelope, now: datetime) -> st
     return "\n".join(lines)
 
 
-def system_prompt(agent_name: str, brief: str) -> str:
-    return STATIC_PROMPT.replace("{AGENT_NAME}", agent_name) + CACHE_BREAK + brief
+def system_prompt(agent_name: str, brief: str, onboarding: dict[str, Any] | None = None) -> str:
+    """Static prompt, then the brief, then the onboarding section while a household is being set up."""
+    prompt = STATIC_PROMPT.replace("{AGENT_NAME}", agent_name) + CACHE_BREAK + brief
+    if onboarding and onboarding["step"]:
+        prompt += "\n\n" + ONBOARDING_PROMPT.format(
+            step=onboarding["step"], remaining=", ".join(onboarding["remaining"]))
+        prompt += f"This step: {STEP_GUIDE[onboarding['step']]}"
+    return prompt

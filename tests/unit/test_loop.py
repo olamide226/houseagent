@@ -33,7 +33,7 @@ async def test_tool_call_then_ack_records_and_reports_ack_only():
     assert messages[2].tool_call_id == "call_log_inventory" and "OK: egg finished" in messages[2].content[0].text
     assert {t.name for t in tools} == {
         "log_inventory", "query_inventory", "update_shopping_list", "get_shopping_list", "undo_last",
-        "schedule_event", "modify_event", "list_upcoming", "set_reminder"}
+        "schedule_event", "modify_event", "list_upcoming", "set_reminder", "remember", "add_family_member"}
 
 
 @pytest.mark.parametrize("answer,expected", [
