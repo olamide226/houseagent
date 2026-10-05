@@ -165,6 +165,17 @@ async def test_two_workers_running_the_job_at_once_queue_each_reminder_once():
     assert sorted(r["text"] for r in await rows("select text from outbox")) == [f"thing {n}" for n in range(6)]
 
 
+async def test_a_reminder_another_worker_has_claimed_is_skipped_not_waited_for():
+    fire_at = london("2026-10-07 09:30")
+    async with tx() as conn:
+        home = await family(conn)
+        await tool(conn, home, "set_reminder", text="call the landlord", fire_at="2026-10-07T09:30")
+    async with tx() as other_worker:                     # mid-transaction on the same row
+        await fetch_all(other_worker, "select id from reminders for update")
+        assert await asyncio.wait_for(jobs.fire_reminders(fire_at), timeout=3) == 0
+    assert await jobs.fire_reminders(fire_at) == 1
+
+
 async def test_reminders_hold_during_quiet_hours_unless_urgent():
     night, morning = london("2026-10-06 22:00"), london("2026-10-07 07:00")
     async with tx() as conn:
