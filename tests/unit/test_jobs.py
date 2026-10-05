@@ -396,6 +396,7 @@ async def test_no_weekly_digest_when_there_is_nothing_to_say():
 # ---------------------------------------------------------------- the worker loop
 async def test_the_inbound_job_wakes_on_notify_and_closes_its_listener_when_cancelled(client):
     listeners = "select 1 from pg_stat_activity where datname = current_database() and query ilike 'listen%'"
+    sessions = "select count(*) as n from pg_stat_activity where datname = current_database()"
     async with tx() as conn:
         await seed_home(conn)
     job = asyncio.create_task(jobs.inbound_job(get_settings(), LoopRuntime(FakeLLM(say("NOOP"))), {}, None,
@@ -410,11 +411,14 @@ async def test_the_inbound_job_wakes_on_notify_and_closes_its_listener_when_canc
         assert time.monotonic() - posted < 1.0, "the job waited for its poll instead of waking on NOTIFY"
         await asyncio.sleep(0.02)
 
+    # Cancelled, the job closes its subscribed connection instead of handing it back to the pool.
+    (before,) = await rows(sessions)
     job.cancel()
     with pytest.raises(asyncio.CancelledError):
         await job
     for _ in range(50):
-        if not await rows(listeners):
+        (after,) = await rows(sessions)
+        if after["n"] < before["n"]:
             break
         await asyncio.sleep(0.02)
-    assert await rows(listeners) == []
+    assert after["n"] == before["n"] - 1
