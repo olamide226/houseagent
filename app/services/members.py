@@ -6,7 +6,8 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.core.identity import INVITE_TTL, hash_token, new_invite_code
-from app.db import execute, fetch_one, fetch_val
+from app.core.timeutil import quiet_end
+from app.db import execute, fetch_all, fetch_one, fetch_val
 
 LOGIN_TTL = timedelta(minutes=10)
 LOGINS_PER_HOUR = 5
@@ -66,3 +67,19 @@ async def session_member(conn: AsyncConnection, member_id: str, session_version:
 
 async def log_out_everywhere(conn: AsyncConnection, member_id: str) -> None:
     await execute(conn, "update members set session_version = session_version + 1 where id = :id", id=member_id)
+
+
+async def quiet_until(conn: AsyncConnection, household_id: str, member_id: str | None,
+                      moment: datetime) -> datetime | None:
+    """When the quiet hours holding a send at `moment` end, or None if it can go now.
+
+    A send to one member is held by that member's quiet hours; a send to the household is
+    held while any adult is in theirs, until the last of them is out."""
+    rows = await fetch_all(
+        conn,
+        """select m.quiet_start, m.quiet_end, h.timezone from members m join households h on h.id = m.household_id
+           where m.household_id = :h and m.role = 'adult' and (cast(:member as uuid) is null or m.id = :member)""",
+        h=household_id, member=member_id,
+    )
+    ends = [quiet_end(moment, row["timezone"], row["quiet_start"], row["quiet_end"]) for row in rows]
+    return max((end for end in ends if end is not None), default=None)

@@ -14,6 +14,7 @@ from app.channels.base import ChannelAdapter, NotSupported
 from app.core.envelope import Channel, OutboundMessage
 from app.core.timeutil import utcnow
 from app.db import execute, fetch_all, fetch_one, fetch_val, jsonb, tx
+from app.services import members
 
 log = structlog.get_logger()
 
@@ -21,7 +22,8 @@ BACKOFF_SECONDS = [10, 30, 120, 600, 1800]
 CHANNEL_ORDER = [Channel.telegram, Channel.whatsapp, Channel.imessage]
 
 
-async def enqueue(conn: AsyncConnection, message: OutboundMessage, *, status: str = "pending") -> str | None:
+async def enqueue(conn: AsyncConnection, message: OutboundMessage, *, status: str = "pending",
+                  send_after: datetime | None = None) -> str | None:
     """Queue a send inside the caller's transaction. None when `dedupe_key` was already queued."""
     row_id = await fetch_val(
         conn,
@@ -30,9 +32,9 @@ async def enqueue(conn: AsyncConnection, message: OutboundMessage, *, status: st
                                created_at, send_after)
            values (:household_id, :target, :thread_id, :member_id, :text, :react_emoji,
                    :reply_to_message_id, :urgency, :respect_quiet_hours, :dedupe_key, :status,
-                   clock_timestamp(), clock_timestamp())
+                   clock_timestamp(), coalesce(cast(:send_after as timestamptz), clock_timestamp()))
            on conflict (household_id, dedupe_key) do nothing returning id""",
-        **message.model_dump(), status=status,
+        **message.model_dump(), status=status, send_after=send_after,
     )
     return None if row_id is None else str(row_id)
 
@@ -63,6 +65,7 @@ class Destination:
     channel: Channel
     external_thread_id: str
     thread_id: str
+    member_id: str | None   # whose DM it is; None for a group
 
 
 class Undeliverable(Exception):
@@ -88,9 +91,17 @@ async def dispatch_due(adapters: dict[Channel, ChannelAdapter], *, now: datetime
 async def _dispatch(conn: AsyncConnection, adapters: dict[Channel, ChannelAdapter],
                     row: dict[str, Any], now: datetime) -> None:
     try:
-        if row["target"] == "household" and await _fan_out(conn, row):
+        if row["target"] == "household" and await _fan_out(conn, row, now):
             return
         destination = await _destination(conn, adapters, row)
+        if row["respect_quiet_hours"] and row["urgency"] != "high":
+            # Held while the recipient, or for a group any adult, is in quiet hours.
+            held_until = await members.quiet_until(conn, row["household_id"], destination.member_id, now)
+            if held_until is not None:
+                await execute(conn, "update outbox set send_after = :until where id = :id",
+                              until=held_until, id=row["id"])
+                log.info("outbox_held_for_quiet_hours", household_id=row["household_id"], outbox_id=row["id"])
+                return
         adapter = adapters[destination.channel]
         external_id, sent_text, meta = await _send(conn, adapter, destination, row)
     except Undeliverable as exc:
@@ -125,16 +136,16 @@ async def _dispatch(conn: AsyncConnection, adapters: dict[Channel, ChannelAdapte
 
 
 async def record_outbound(conn: AsyncConnection, household_id: str, thread_id: str, text: str | None,
-                          meta: dict[str, Any], external_id: str | None) -> None:
+                          meta: dict[str, Any], external_id: str | None, *, at: datetime | None = None) -> None:
     """The agent's side of the conversation, kept in `messages` for thread history."""
     await execute(
         conn,
         """insert into messages (household_id, thread_id, direction, text, meta, external_id, status,
                                  created_at, processed_at)
            values (:h, :thread, 'out', :text, cast(:meta as jsonb), :external_id, 'sent',
-                   clock_timestamp(), clock_timestamp())
+                   coalesce(cast(:at as timestamptz), clock_timestamp()), clock_timestamp())
            on conflict (thread_id, external_id) do nothing""",
-        h=household_id, thread=thread_id, text=text, meta=jsonb(meta), external_id=external_id,
+        h=household_id, thread=thread_id, text=text, meta=jsonb(meta), external_id=external_id, at=at,
     )
 
 
@@ -164,7 +175,7 @@ async def _send(conn: AsyncConnection, adapter: ChannelAdapter, destination: Des
     return external_id, row["text"], {}
 
 
-async def _fan_out(conn: AsyncConnection, row: dict[str, Any]) -> bool:
+async def _fan_out(conn: AsyncConnection, row: dict[str, Any], now: datetime) -> bool:
     """A household send goes to the primary thread, else becomes one send per adult."""
     primary = await fetch_val(conn, "select primary_thread_id from households where id = :h",
                               h=row["household_id"])
@@ -179,7 +190,7 @@ async def _fan_out(conn: AsyncConnection, row: dict[str, Any]) -> bool:
             react_emoji=row["react_emoji"], urgency=row["urgency"],
             respect_quiet_hours=row["respect_quiet_hours"],
             dedupe_key=f"{row['dedupe_key']}:{adult['id']}" if row["dedupe_key"] else None,
-        ))
+        ), send_after=now)
     await execute(conn, "update outbox set status = 'cancelled', last_error = 'sent per adult' where id = :id",
                   id=row["id"])
     return True
@@ -212,7 +223,7 @@ async def _destination(conn: AsyncConnection, adapters: dict[Channel, ChannelAda
                returning id""",
             h=household_id, channel=channel.value, external=external,
         )
-        return Destination(channel, external, str(thread_id))
+        return Destination(channel, external, str(thread_id), row["member_id"])
 
     thread = await fetch_one(
         conn, "select id, channel, external_thread_id, scope from threads where id = :id and household_id = :h",
@@ -221,9 +232,10 @@ async def _destination(conn: AsyncConnection, adapters: dict[Channel, ChannelAda
     if thread is None or thread["channel"] not in {c.value for c in adapters}:
         raise Undeliverable("thread is not one of this household's connected threads")
     channel = Channel(thread["channel"])
-    if thread["scope"] == "dm" and not any(
-        i["channel"] == channel.value and adapters[channel].dm_thread_id(i["handle"]) == thread["external_thread_id"]
-        for i in identities
-    ):
+    if thread["scope"] == "group":
+        return Destination(channel, thread["external_thread_id"], thread["id"], None)
+    owner = next((i["member_id"] for i in identities if i["channel"] == channel.value
+                  and adapters[channel].dm_thread_id(i["handle"]) == thread["external_thread_id"]), None)
+    if owner is None:
         raise Undeliverable("thread does not belong to a verified member")
-    return Destination(channel, thread["external_thread_id"], thread["id"])
+    return Destination(channel, thread["external_thread_id"], thread["id"], owner)

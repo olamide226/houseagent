@@ -1,6 +1,6 @@
-"""Outbound router: destinations, the allowlist property, degradation, splitting and retries."""
+"""Outbound router: destinations, the allowlist property, quiet hours, degradation, splitting and retries."""
 import random
-from datetime import timedelta
+from datetime import time, timedelta
 
 from app.channels.base import ChannelError
 from app.core.envelope import Channel, OutboundMessage
@@ -8,7 +8,7 @@ from app.core.timeutil import utcnow
 from app.db import execute, fetch_all, fetch_one, fetch_val, tx
 from app.pipeline import router
 from app.pipeline.router import BACKOFF_SECONDS, enqueue, split_text
-from tests.helpers import FakeAdapter, add_member, seed_home
+from tests.helpers import FakeAdapter, add_member, london, seed_home
 
 
 async def thread(conn, home, external, scope="dm", channel="telegram"):
@@ -77,7 +77,8 @@ async def test_nothing_is_ever_sent_to_a_handle_outside_channel_identities():
 async def test_member_target_goes_to_the_preferred_channel_dm():
     async with tx() as conn:
         home = await seed_home(conn)
-        await enqueue(conn, OutboundMessage(household_id=home.id, target="member", member_id=home.ola, text="hello"))
+        await enqueue(conn, OutboundMessage(household_id=home.id, target="member", member_id=home.ola, text="hello",
+                                            respect_quiet_hours=False))
     adapter = FakeAdapter()
     assert await router.dispatch_due({Channel.telegram: adapter}) == 1
     assert adapter.sent == [("1001", "hello", None)]
@@ -93,7 +94,8 @@ async def test_household_target_uses_the_primary_thread_or_each_adult():
         home = await seed_home(conn)
         await add_member(conn, home, "Ada", telegram_id="1002")
         await add_member(conn, home, "Tobi", role="child")
-        await enqueue(conn, OutboundMessage(household_id=home.id, target="household", text="digest", dedupe_key="d1"))
+        await enqueue(conn, OutboundMessage(household_id=home.id, target="household", text="digest", dedupe_key="d1",
+                                            respect_quiet_hours=False))
     adapter = FakeAdapter()
     while await router.dispatch_due({Channel.telegram: adapter}):
         pass
@@ -102,7 +104,8 @@ async def test_household_target_uses_the_primary_thread_or_each_adult():
     async with tx() as conn:
         group = await thread(conn, home, "-100555", scope="group")
         await execute(conn, "update households set primary_thread_id = :t where id = :h", t=group, h=home.id)
-        await enqueue(conn, OutboundMessage(household_id=home.id, target="household", text="digest", dedupe_key="d2"))
+        await enqueue(conn, OutboundMessage(household_id=home.id, target="household", text="digest", dedupe_key="d2",
+                                            respect_quiet_hours=False))
     adapter = FakeAdapter()
     while await router.dispatch_due({Channel.telegram: adapter}):
         pass
@@ -124,7 +127,7 @@ async def ack(conn, home, external="501"):
         conn, "insert into messages (household_id, thread_id, member_id, direction, text, external_id) "
               "values (:h, :t, :m, 'in', 'out of eggs', :e) returning id", h=home.id, t=dm, m=home.ola, e=external)
     await enqueue(conn, OutboundMessage(household_id=home.id, target="thread", thread_id=dm, react_emoji="ack",
-                                        reply_to_message_id=message))
+                                        reply_to_message_id=message, respect_quiet_hours=False))
 
 
 async def test_ack_becomes_the_adapters_reaction_on_the_message():
@@ -165,7 +168,7 @@ async def test_long_replies_are_sent_in_parts_and_only_the_first_is_threaded():
                   "values (:h, :t, :m, 'in', 'list?', '77') returning id", h=home.id, t=dm, m=home.ola)
         text = "\n\n".join("item " * 500 for _ in range(3))
         await enqueue(conn, OutboundMessage(household_id=home.id, target="thread", thread_id=dm, text=text,
-                                            reply_to_message_id=message))
+                                            reply_to_message_id=message, respect_quiet_hours=False))
     adapter = FakeAdapter()
     await router.dispatch_due({Channel.telegram: adapter})
     assert len(adapter.sent) == 3
@@ -175,7 +178,8 @@ async def test_long_replies_are_sent_in_parts_and_only_the_first_is_threaded():
 async def test_failed_sends_back_off_then_fail_and_can_be_retried():
     async with tx() as conn:
         home = await seed_home(conn)
-        await enqueue(conn, OutboundMessage(household_id=home.id, target="member", member_id=home.ola, text="hi"))
+        await enqueue(conn, OutboundMessage(household_id=home.id, target="member", member_id=home.ola, text="hi",
+                                            respect_quiet_hours=False))
     broken = {Channel.telegram: FakeAdapter(fail=ChannelError("telegram is down"))}
     now = utcnow()
     for attempt, delay in enumerate(BACKOFF_SECONDS, start=1):
@@ -195,3 +199,74 @@ async def test_failed_sends_back_off_then_fail_and_can_be_retried():
     await router.dispatch_due({Channel.telegram: working})
     assert working.sent == [("1001", "hi", None)]
     assert (await outbox())[0]["status"] == "sent"
+
+
+# ---------------------------------------------------------------- quiet hours
+async def quiet(conn, member_id, start, end):
+    await execute(conn, "update members set quiet_start = :s, quiet_end = :e where id = :id",
+                  s=start and time.fromisoformat(start), e=end and time.fromisoformat(end), id=member_id)
+
+
+async def send_at(now, adapter=None):
+    adapter = adapter or FakeAdapter()
+    while await router.dispatch_due({Channel.telegram: adapter}, now=now):
+        pass
+    return adapter
+
+
+async def test_a_send_inside_quiet_hours_waits_for_the_morning_unless_it_is_urgent_or_a_reply():
+    night, morning = london("2026-10-06 23:00"), london("2026-10-07 07:00")
+    async with tx() as conn:
+        home = await seed_home(conn)                                   # default quiet hours: 21:30 to 07:00
+        dm = await thread(conn, home, "1001")
+        for text, extra in [("held", {}), ("urgent", {"urgency": "high"}), ("a reply", {"respect_quiet_hours": False})]:
+            await enqueue(conn, OutboundMessage(household_id=home.id, target="member", member_id=home.ola,
+                                                text=text, **extra), send_after=night)
+        await enqueue(conn, OutboundMessage(household_id=home.id, target="thread", thread_id=dm, text="held dm"),
+                      send_after=night)
+
+    adapter = await send_at(night)
+    assert sorted(text for _, text, _ in adapter.sent) == ["a reply", "urgent"]
+    held = [row for row in await outbox() if row["text"].startswith("held")]
+    assert [(row["status"], row["send_after"], row["attempts"]) for row in held] == [("pending", morning, 0)] * 2
+
+    await send_at(morning - timedelta(minutes=1), adapter)
+    assert len(adapter.sent) == 2
+    await send_at(morning, adapter)
+    assert sorted(text for _, text, _ in adapter.sent[2:]) == ["held", "held dm"]
+
+
+async def test_each_member_is_held_by_their_own_quiet_hours():
+    evening = london("2026-10-06 21:00")
+    async with tx() as conn:
+        home = await seed_home(conn)
+        ada = await add_member(conn, home, "Ada", telegram_id="1002")
+        await add_member(conn, home, "Tobi", role="child")            # a child's hours never hold anything
+        await quiet(conn, home.ola, None, None)                        # Ola: no quiet hours at all
+        await quiet(conn, ada, "20:00", "06:00")
+        await enqueue(conn, OutboundMessage(household_id=home.id, target="household", text="brief"),
+                      send_after=evening)
+    adapter = await send_at(evening)                                   # no group: one send per adult
+    assert adapter.sent == [("1001", "brief", None)]
+    await send_at(london("2026-10-07 06:00"), adapter)
+    assert adapter.sent[1:] == [("1002", "brief", None)]
+
+
+async def test_a_group_send_waits_until_no_adult_is_in_quiet_hours():
+    async with tx() as conn:
+        home = await seed_home(conn)                                   # Ola: 21:30 to 07:00
+        ada = await add_member(conn, home, "Ada", telegram_id="1002")
+        await quiet(conn, ada, "20:00", "06:00")
+        group = await thread(conn, home, "-100555", scope="group")
+        await execute(conn, "update households set primary_thread_id = :t where id = :h", t=group, h=home.id)
+        await enqueue(conn, OutboundMessage(household_id=home.id, target="household", text="digest"),
+                      send_after=london("2026-10-06 21:00"))
+
+    adapter = await send_at(london("2026-10-06 21:00"))               # Ada is already in quiet hours
+    (row,) = await outbox()
+    assert adapter.sent == [] and row["send_after"] == london("2026-10-07 06:00")
+    await send_at(london("2026-10-07 06:00"), adapter)                 # Ada is out, Ola is not
+    (row,) = await outbox()
+    assert adapter.sent == [] and row["send_after"] == london("2026-10-07 07:00")
+    await send_at(london("2026-10-07 07:00"), adapter)
+    assert adapter.sent == [("-100555", "digest", None)]
