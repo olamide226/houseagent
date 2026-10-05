@@ -18,6 +18,8 @@ PK: dict[str, tuple[str, ...]] = {
     "stock": ("item_id", "location_id"),
     "shopping_list_items": ("id",),
     "items": ("id",),
+    "events": ("id",),
+    "reminders": ("id",),
 }
 _IDENT = re.compile(r"^[a-z_]+$")
 UNDO_WINDOW_HOURS = 24

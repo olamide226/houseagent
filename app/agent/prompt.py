@@ -1,5 +1,5 @@
 """System prompt and household brief (spec sections 8.2 and 8.3). This file is the source of truth."""
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -8,7 +8,7 @@ from app.core.envelope import Envelope
 from app.core.timeutil import local
 from app.db import fetch_all, fetch_one
 from app.llm.types import CACHE_BREAK
-from app.services import inventory, shopping
+from app.services import calendar, inventory, shopping
 
 STATIC_PROMPT = """\
 You are {AGENT_NAME}, the household assistant for a family. You live in their group chat and their direct messages. Your job is to keep track of food stock, the shopping list, appointments and reminders so nobody has to remember things or fill in forms.
@@ -32,9 +32,9 @@ How you behave:
 LIST_CAP = 25   # keeps the brief near 1,500 tokens for a busy household
 
 
-def _capped(values: list[str]) -> str:
+def _capped(values: list[str], separator: str = ", ") -> str:
     extra = len(values) - LIST_CAP
-    return ", ".join(values[:LIST_CAP]) + (f", +{extra} more" if extra > 0 else "")
+    return separator.join(values[:LIST_CAP]) + (f"{separator}+{extra} more" if extra > 0 else "")
 
 
 async def build_brief(conn: AsyncConnection, env: Envelope, now: datetime) -> str:
@@ -56,7 +56,7 @@ async def build_brief(conn: AsyncConnection, env: Envelope, now: datetime) -> st
     facts = await fetch_all(
         conn, "select key, value from household_facts where household_id = :h order by key", h=env.household_id)
     if facts:
-        lines.append("Facts: " + _capped([f"{f['key']}={f['value']}" for f in facts]).replace(", ", "; "))
+        lines.append("Facts: " + _capped([f"{f['key']}={f['value']}" for f in facts], "; "))
 
     entries = await shopping.active_entries(conn, env.household_id, include_predicted=False)
     lines.append(f"Shopping list ({len(entries)}): " + (_capped([e["item"] for e in entries]) or "empty"))
@@ -67,6 +67,9 @@ async def build_brief(conn: AsyncConnection, env: Envelope, now: datetime) -> st
     if expiring:
         lines.append("Expiring within 3 days: " + _capped(
             [f"{r['item']} ({r['location']}, {r['expires_on']:%-d %b})" for r in expiring]))
+    coming = await calendar.occurrences_between(conn, env.household_id, now, now + timedelta(days=7))
+    if coming:
+        lines.append("Next 7 days: " + _capped([o.line(household["timezone"]) for o in coming], "; "))
     return "\n".join(lines)
 
 

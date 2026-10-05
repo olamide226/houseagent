@@ -2,6 +2,7 @@
 import time
 import uuid
 from collections import defaultdict, deque
+from datetime import datetime, timedelta
 from typing import Any, Literal
 
 import structlog
@@ -216,7 +217,7 @@ async def run_turn(conn: AsyncConnection, envelope: Envelope, runtime: AgentRunt
     """Agent turn plus the response policy (spec 7.2 steps 5 to 7). Shared with simulate_turn."""
     last = envelope.message_ids[-1]
     ctx = Ctx(conn=conn, household_id=envelope.household_id, member_id=envelope.member_id,
-              thread_id=envelope.thread_id, message_id=last)
+              thread_id=envelope.thread_id, message_id=last, now=envelope.received_at)
     started = time.monotonic()
     result = await runtime.handle(envelope, ctx)
     latency_ms = round((time.monotonic() - started) * 1000)
@@ -235,7 +236,8 @@ async def run_turn(conn: AsyncConnection, envelope: Envelope, runtime: AgentRunt
         outbox_id = await enqueue(conn, reply, status="simulated" if simulated else "pending")
         if simulated and envelope.thread_id:
             await record_outbound(conn, envelope.household_id, envelope.thread_id, reply.text,
-                                  {"reaction": "ack"} if result.ack_only else {}, None)
+                                  {"reaction": "ack"} if result.ack_only else {}, None,
+                                  at=envelope.received_at + timedelta(milliseconds=1))
 
     await execute(
         conn,
@@ -255,17 +257,20 @@ async def run_turn(conn: AsyncConnection, envelope: Envelope, runtime: AgentRunt
 
 
 async def simulate_turn(conn: AsyncConnection, runtime: AgentRuntime, household_id: str, member_id: str,
-                        text: str, *, scope: Literal["dm", "group"] = "dm") -> AgentResult:
+                        text: str, *, scope: Literal["dm", "group"] = "dm",
+                        now: datetime | None = None) -> AgentResult:
     """Run one turn as `member` without a channel: the Playground and the eval suite use this.
 
-    Everything happens on `conn`; the caller commits to apply it or rolls back for a dry run."""
+    Everything happens on `conn`; the caller commits to apply it or rolls back for a dry run.
+    `now` pins when the message arrived, so evals do not depend on the day they are run."""
     external = f"{PLAYGROUND}:{household_id if scope == 'group' else member_id}"
     thread_id = await _upsert_thread(conn, household_id, PLAYGROUND, external, scope)
     await execute(
         conn,
         """insert into messages (household_id, thread_id, member_id, direction, text, external_id, created_at)
-           values (:h, :thread, :member, 'in', :text, :external, clock_timestamp())""",
-        h=household_id, thread=thread_id, member=member_id, text=text, external=str(uuid.uuid4()),
+           values (:h, :thread, :member, 'in', :text, :external,
+                   coalesce(cast(:now as timestamptz), clock_timestamp()))""",
+        h=household_id, thread=thread_id, member=member_id, text=text, external=str(uuid.uuid4()), now=now,
     )
     assert thread_id is not None
     batch = await _waiting_messages(conn, "thread_id", thread_id)
