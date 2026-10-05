@@ -59,3 +59,19 @@ def _schema() -> None:
 async def _clean_tables(_schema: None) -> None:
     async with db.tx() as conn:
         await conn.execute(text("truncate households cascade"))
+
+
+@pytest.fixture
+async def client():
+    """The api process, in memory. Sets up what the lifespan would."""
+    import httpx
+
+    from app.channels.base import build_adapters
+    from app.config import get_settings
+    from app.main import app
+    from app.pipeline import inbound
+
+    build_adapters(get_settings())
+    inbound._invite_attempts.clear()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as http:
+        yield http

@@ -43,3 +43,25 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()  # type: ignore[call-arg]
+
+
+def configure_logging(level: str) -> None:
+    """JSON logs via structlog. Lines carry ids, never message text."""
+    import logging
+
+    import structlog
+
+    logging.basicConfig(level=level.upper(), format="%(message)s")
+    # httpx logs full request URLs at INFO, and the Telegram URL contains the bot token.
+    for noisy in ("httpx", "httpx2", "httpcore", "httpcore2"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.format_exc_info,
+            structlog.processors.JSONRenderer(),
+        ],
+        wrapper_class=structlog.make_filtering_bound_logger(logging.getLevelName(level.upper())),
+    )

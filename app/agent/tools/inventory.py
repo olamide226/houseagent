@@ -17,7 +17,8 @@ class InventoryChange(BaseModel):
         description="low = running low; finished = none left; adjusted = absolute count seen (photos)")
     quantity: float | None = Field(None, description="Only if stated or clearly visible. Never guess.")
     unit: str | None = Field(None, description="e.g. 'pints', 'kg', 'packs'")
-    location: str | None = Field(None, description="fridge, freezer, store, or a custom location. Omit for usual place.")
+    location: str | None = Field(
+        None, description="fridge, freezer, store, or a custom location. Omit for usual place.")
     expires_on: date | None = None
 
 

@@ -33,7 +33,7 @@ def normalise(raw: str) -> str:
     last = words[-1]
     lower = last.lower()
     if len(lower) > 3 and lower not in _KEEP_PLURAL and not lower.endswith(("ss", "us", "is", "as")):
-        singular = _inflect.singular_noun(lower)  # type: ignore[arg-type]
+        singular = _inflect.singular_noun(lower)
         if singular and singular != lower:
             words[-1] = singular if last.islower() else singular.capitalize()
     return " ".join(words)

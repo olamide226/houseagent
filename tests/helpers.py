@@ -140,3 +140,58 @@ class FakeLLM:
         if not self.script:
             raise AssertionError("FakeLLM ran out of scripted responses")
         return self.script.pop(0)
+
+
+class FakeAdapter:
+    """A channel that records sends instead of making them."""
+
+    def __init__(self, channel: Any = None, *, reactions: bool = True, fail: Exception | None = None) -> None:
+        from app.core.envelope import Capabilities, Channel
+
+        self.channel = channel or Channel.telegram
+        self.capabilities = Capabilities(
+            groups=True, reactions=reactions, ack_emoji="\U0001F44D", voice_in=True, images_in=True,
+            threaded_replies=True, proactive_window_hours=None, max_text_len=4096, formatting="plain")
+        self.fail = fail
+        self.sent: list[tuple[str, str, str | None]] = []       # (chat, text, reply_to)
+        self.reactions: list[tuple[str, str, str]] = []         # (chat, message, emoji)
+
+    async def send_text(self, external_thread_id: str, text: str, reply_to_external_id: str | None = None) -> Any:
+        from app.core.envelope import SendResult
+
+        if self.fail:
+            raise self.fail
+        self.sent.append((external_thread_id, text, reply_to_external_id))
+        return SendResult(external_id=f"out-{len(self.sent)}")
+
+    async def react(self, external_thread_id: str, external_message_id: str, emoji: str) -> None:
+        from app.channels.base import NotSupported
+
+        if not self.capabilities.reactions:
+            raise NotSupported
+        if self.fail:
+            raise self.fail
+        self.reactions.append((external_thread_id, external_message_id, emoji))
+
+    async def fetch_media(self, ref: Any) -> tuple[bytes, str]:
+        return b"audio-bytes", ref.mime or "audio/ogg"
+
+    def dm_thread_id(self, handle: str) -> str:
+        return handle
+
+    def format(self, text: str) -> str:
+        return text
+
+
+def tg_update(update_id: int, text: str | None = None, *, user_id: int = 1001, name: str = "Ola",
+              chat_id: int | None = None, chat_type: str = "private", **message: Any) -> dict[str, Any]:
+    """A Telegram webhook update for a text (or other) message."""
+    body: dict[str, Any] = {
+        "message_id": update_id, "date": 1791230400,
+        "from": {"id": user_id, "is_bot": False, "first_name": name},
+        "chat": {"id": chat_id if chat_id is not None else user_id, "type": chat_type},
+        **message,
+    }
+    if text is not None:
+        body["text"] = text
+    return {"update_id": update_id, "message": body}

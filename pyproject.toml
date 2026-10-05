@@ -46,12 +46,16 @@ asyncio_default_test_loop_scope = "session"
 markers = ["eval: live-model agent evals (need RUN_EVALS=1 and provider credentials)"]
 
 [tool.ruff]
-line-length = 110
+line-length = 120
 target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
 ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+"app/agent/prompt.py" = ["E501"]  # the prompt is verbatim from the spec
 
 [tool.mypy]
 python_version = "3.12"
