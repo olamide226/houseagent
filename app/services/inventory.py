@@ -161,7 +161,9 @@ async def apply_change(rec: Recorder, change: Change, source: str) -> None:
         conn, "select qty_estimate, status, expires_on from stock where item_id = :i and location_id = :l",
         i=change.item_id, l=location_id,
     )
-    previous = current and stock.StockRow(current["qty_estimate"], current["status"], current["expires_on"])
+    previous = None
+    if current:
+        previous = stock.StockRow(current["qty_estimate"], current["status"], current["expires_on"])
     after = stock.apply(previous, stock.StockEvent(change.action, change.quantity, change.expires_on),
                         stock.Item(item["low_threshold"]))
 
