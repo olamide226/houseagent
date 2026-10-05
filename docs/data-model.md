@@ -2,7 +2,7 @@
 
 The full DDL is [`schema.sql`](../schema.sql), applied verbatim by Alembic migration `0001`.
 Table-by-table purpose is in [spec.md section 4](spec.md#4-data-model). This page covers what
-milestone 1 uses and the rules the code enforces.
+milestones 1 and 2 use and the rules the code enforces.
 
 ## Tables in use
 
@@ -15,11 +15,13 @@ milestone 1 uses and the rules the code enforces.
 | `items` | resolution (new items, learned aliases), dashboard item edits |
 | `inventory_events`, `stock` | `services/inventory.py` only |
 | `shopping_list_items` | `services/shopping.py`, and the inventory side-effect rules |
+| `events`, `reminders` | `services/calendar.py` only; the recurrence job adds reminder rows, the reminders job updates their status |
+| `households.calendar_token_hash` | the Calendar page's "New subscribe link" |
 | `agent_actions` | every tool call or dashboard action that wrote something |
-| `outbox` | turns, invite welcomes, login links |
+| `outbox` | turns, invite welcomes, login links, reminders, digests |
+| `job_runs` | the daily brief and weekly digest, one row per household and run |
 
-Not written yet: `household_facts`, `consumption_profiles`, `events`, `reminders`, `places`,
-`presence_events`, `nudge_log`, `job_runs`.
+Not written yet: `household_facts`, `consumption_profiles`, `places`, `presence_events`, `nudge_log`.
 
 `threads.channel` is free text. Besides real channels it holds `playground`: the threads the
 dashboard Playground and the eval suite talk on. Their outbox rows have status `simulated` and
@@ -75,3 +77,20 @@ default location, else `store`.
 
 Editing an item's `low_threshold` changes how a replay classifies old `used` events, so a rebuild
 after such an edit can differ from live stock for that item.
+
+## Calendar rows
+
+- `events.starts_at` and `ends_at` are UTC. A recurring event keeps its RRULE as text and is
+  expanded from a start in household time, so "Tuesdays at 09:00" stays at 09:00 when the clocks
+  change. The stored start of a series is its first real occurrence.
+- `events.exdates` holds skipped occurrences as household-local dates. Changing one occurrence of
+  a series adds its date here and, if it moved or changed, creates a separate one-off event.
+- A one-off event has its reminder rows from the moment it is created. A recurring event has rows
+  only for occurrences in the next 48 hours; the hourly recurrence job adds the rest.
+- `reminders.event_id` is null for a standalone reminder. Only standalone reminders use
+  `reminders.rrule`; after each send `fire_at` moves to the next occurrence.
+- `reminders.status`: `scheduled`, then `sent`. `cancelled` means the event or that occurrence was
+  cancelled, or the reminder was dropped as stale after an outage. `acked` is not used yet.
+- `reminders.target` is `household` when a child or more than one adult takes part, otherwise
+  `member` with that adult (or whoever booked it when nobody is named).
+- Cancelling an event sets `events.status = 'cancelled'`; nothing is deleted except by undo.

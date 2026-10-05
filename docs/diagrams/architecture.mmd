@@ -1,6 +1,7 @@
 flowchart LR
     TG[Telegram] -- webhook --> API
     Browser -- dashboard --> API
+    Cal[Phone calendar] -- "ICS feed" --> API
     subgraph image[one image, two processes]
         API[api: uvicorn app.main:app]
         W[worker: python -m app.worker.main]
@@ -9,4 +10,4 @@ flowchart LR
     PG -- "received messages, pending outbox" --> W
     W -- "tool writes, outbox rows" --> PG
     W -- tool-calling loop --> LLM[LLM provider]
-    W -- "sendMessage, setMessageReaction" --> TG
+    W -- "replies, reminders, digests" --> TG

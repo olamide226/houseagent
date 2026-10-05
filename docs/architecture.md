@@ -6,6 +6,7 @@ One container image runs as two processes that talk only through Postgres.
 flowchart LR
     TG[Telegram] -- webhook --> API
     Browser -- dashboard --> API
+    Cal[Phone calendar] -- "ICS feed" --> API
     subgraph image[one image, two processes]
         API[api: uvicorn app.main:app]
         W[worker: python -m app.worker.main]
@@ -14,13 +15,14 @@ flowchart LR
     PG -- "received messages, pending outbox" --> W
     W -- "tool writes, outbox rows" --> PG
     W -- tool-calling loop --> LLM[LLM provider]
-    W -- "sendMessage, setMessageReaction" --> TG
+    W -- "replies, reminders, digests" --> TG
 ```
 
 (The same diagram lives in [diagrams/architecture.mmd](diagrams/architecture.mmd).)
 
-- **api** is stateless. It verifies and stores webhooks, serves the dashboard, and returns fast.
-- **worker** does everything slow: model calls, transcription, sends.
+- **api** is stateless. It verifies and stores webhooks, serves the dashboard and the calendar
+  feed, and returns fast.
+- **worker** does everything slow or timed: model calls, transcription, sends, reminders, digests.
 - **Postgres is the source of truth.** The agent reads and writes only through tools, and tools
   only through `app/services/`.
 
@@ -85,27 +87,55 @@ Destinations come only from the database:
 
 A row with no allowed destination is marked `failed` and never sent.
 
+**Quiet hours.** Each member has a quiet window, 21:30 to 07:00 by default; a window whose start
+is later than its end crosses midnight. Before a send, the dispatcher asks whether the recipient
+is inside theirs. If so the row is not sent: its `send_after` moves to the end of the window and
+it is picked up again then. A send to a group waits while any adult is in quiet hours. Two kinds
+of row are never held: `urgency = 'high'`, and rows with `respect_quiet_hours = false`, which is
+what direct replies, invite welcomes and login links use. See
+[ADR 0012](adr/0012-quiet-hours-and-reminder-delivery.md).
+
+## Scheduled jobs
+
+The worker runs each job as its own supervised task (`app/worker/jobs.py`). Every job takes the
+current time as an argument, so tests drive them on a controlled clock.
+
+| Job | Every | What it does | Why a second run is harmless |
+| --- | --- | --- | --- |
+| `inbound` | NOTIFY, or 2 s | Turns, as above | Messages are claimed with `SKIP LOCKED` under the household lock |
+| `outbox` | 2 s, or when woken | Sends due rows | `SKIP LOCKED`; a sent row is no longer pending |
+| `fire_reminders` | 15 s | Due reminders become outbox rows. A one-off becomes `sent`; a repeating one moves to its next time | `SKIP LOCKED`, and the outbox dedupe key is `reminder:{id}:{fire_at}` |
+| `expand_recurrence` | 1 h | Reminder rows for each recurring event's occurrences in the next 48 hours, skipping exception dates | Unique `(event_id, fire_at)` |
+| `daily_brief` | 1 min check | At the household's `digest_time`: today's events and reminders, items to use within 2 days. Nothing on an empty day | A `job_runs` row per household and date |
+| `weekly_digest` | 1 min check | Sunday 18:00: the week ahead, the list count, low and expiring items | A `job_runs` row per household and ISO week |
+
+A reminder is sent within about 17 seconds of its `fire_at` (15 s tick, then the outbox, which the
+job wakes). A digest missed by more than four hours is skipped instead of being sent late. After
+an outage, a reminder is dropped rather than sent if a later reminder for the same event is also
+due, or if the event began more than ten minutes ago.
+
 ## Repo layout
 
 ```text
 app/
-  main.py        create_app(): webhook route, health, dashboard routers
+  main.py        create_app(): webhook route, health, dashboard and feed routers
   config.py      Settings, logging
   db.py          engine, tx(), advisory lock, query helpers
-  core/          envelope types, identity and invite codes, time
+  core/          envelope types, identity and invite codes, time, quiet hours, recurrence
   llm/           neutral types, OpenAI-compatible and Anthropic adapters, speech-to-text
   channels/      ChannelAdapter protocol, registry, Telegram
   pipeline/      inbound (persist, debounce, turn, simulate_turn), media, router
   agent/         runtime interface, loop, prompt, resolve, actions (undo), stock, tools/
   services/      the one write path, shared by tools and dashboard
   dashboard/     auth, routes, templates, static
+  ics/           the read-only calendar feed
   worker/        supervisor and jobs
 tests/           unit/ contract/ evals/
 ```
 
 ## Not built yet
 
-Quiet-hours deferral, the WhatsApp 24-hour window, falling back to a member's next channel after a
-failed send, and `MediaStore` arrive with the milestones that need them (reminders, WhatsApp,
-iMessage, photos). The router sends every due row immediately today; replies set
-`respect_quiet_hours = false` so that stays correct once deferral exists.
+The WhatsApp 24-hour window, falling back to a member's next channel after a failed send, and
+`MediaStore` arrive with the milestones that need them (WhatsApp, iMessage, photos). The jobs
+`consumption_model`, `low_stock_prompt`, `imessage_health` and `media_cleanup` are later
+milestones too, so the weekly digest lists low and out items but not predicted ones.

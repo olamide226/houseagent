@@ -2,7 +2,8 @@
 
 The agent is called Home (configurable). You tell it "we're out of eggs and bread" in a DM or the
 family group; it records the stock change, puts staples on the shopping list, and reacts with a
-thumbs-up instead of replying. "Undo" reverts the last thing it did.
+thumbs-up instead of replying. "Ada has GP on Wednesday at 10:30" goes on the calendar, and she
+is reminded the day before and an hour before. "Undo" reverts the last thing it did.
 
 ## Five-minute local start
 
@@ -22,19 +23,20 @@ Without Docker: [operations.md](operations.md#running-without-docker).
 
 ## What is built
 
-Milestone 1 of the six in [spec.md](spec.md#17-deployment-and-build-milestones): Telegram,
-inventory and the shopping list, undo, `/setup`, magic-link login and five dashboard pages.
-Each page below says what exists now and what is deferred.
+Milestones 1 and 2 of the six in [spec.md](spec.md#17-deployment-and-build-milestones):
+Telegram, inventory and the shopping list, undo, `/setup`, magic-link login; then the calendar
+tools, reminders that respect quiet hours, the daily brief and weekly digest, a read-only ICS
+feed, and the Calendar dashboard page. Each page below says what exists now and what is deferred.
 
 | Doc | Contents |
 | --- | --- |
-| [architecture.md](architecture.md) | Processes, message flow, transactions, repo layout |
-| [data-model.md](data-model.md) | Tables, stock transitions, invariants |
+| [architecture.md](architecture.md) | Processes, message flow, quiet hours, scheduled jobs, repo layout |
+| [data-model.md](data-model.md) | Tables, stock transitions, calendar rows, invariants |
 | [channels.md](channels.md) | Telegram setup and payload notes; the adapter contract |
 | [llm.md](llm.md) | Provider layer, adding an adapter, tested models |
-| [agent-and-tools.md](agent-and-tools.md) | Runtime loop, tools, resolution rules, undo |
-| [dashboard.md](dashboard.md) | Pages and the login flow |
-| [operations.md](operations.md) | Environment variables, running, logs |
+| [agent-and-tools.md](agent-and-tools.md) | Runtime loop, tools, calendar rules, resolution rules, undo |
+| [dashboard.md](dashboard.md) | Pages, the login flow, the calendar feed |
+| [operations.md](operations.md) | Environment variables, running, worker jobs, logs |
 | [evals.md](evals.md) | Running the agent evals, adding a case, latest results |
 | [adr/](adr/) | One decision per file |
 | [spec.md](spec.md) | The v1 implementation spec: the baseline for behaviour, names and layout |

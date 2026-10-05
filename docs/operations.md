@@ -47,6 +47,27 @@ uv run python -m app.worker.main             # worker, in a second terminal
 - `GET /readyz`: 200 when the database is reachable and at migration `0001`, else 503.
 - The worker logs `worker_heartbeat` every minute and restarts a crashed job after 5 seconds.
 
+## Worker jobs
+
+`python -m app.worker.main` runs six jobs: `inbound`, `outbox`, `fire_reminders` (every 15 s),
+`expand_recurrence` (hourly), `daily_brief` and `weekly_digest` (checked every minute). What each
+does and why running it twice is harmless is in
+[architecture.md](architecture.md#scheduled-jobs). Log events worth watching:
+`reminder_queued`, `digest_queued`, `outbox_sent`, `outbox_held_for_quiet_hours`,
+`outbox_send_failed`, `job_crashed`.
+
+```sql
+-- reminders that should have gone and have not
+select id, text, fire_at from reminders where status = 'scheduled' and fire_at < now() - interval '2 minutes';
+-- what the digests have run
+select job, run_key, ran_at from job_runs order by ran_at desc limit 20;
+-- sends waiting for quiet hours to end
+select id, target, send_after from outbox where status = 'pending' and send_after > now();
+```
+
+The brief time is `households.digest_time` and quiet hours are `members.quiet_start` and
+`quiet_end`, all in household time. Until the Settings page exists they are changed in SQL.
+
 ## Logs
 
 JSON lines via structlog, carrying `household_id` and `message_id` where known and never message
@@ -83,5 +104,5 @@ Nothing in the test suite, fixtures or eval results contains a credential.
 
 ## Not covered yet
 
-Helm chart, backups, token rotation, and outage runbooks for WhatsApp and BlueBubbles belong to
-later milestones.
+Helm chart, backups, rotating presence tokens, and outage runbooks for WhatsApp and BlueBubbles
+belong to later milestones. The calendar feed token is rotated from the Calendar page.
