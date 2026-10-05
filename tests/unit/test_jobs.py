@@ -395,14 +395,13 @@ async def test_no_weekly_digest_when_there_is_nothing_to_say():
 
 # ---------------------------------------------------------------- the worker loop
 async def test_the_inbound_job_wakes_on_notify_and_closes_its_listener_when_cancelled(client):
-    listeners = "select 1 from pg_stat_activity where datname = current_database() and query ilike 'listen%'"
-    sessions = "select count(*) as n from pg_stat_activity where datname = current_database()"
+    listeners = "select pid from pg_stat_activity where datname = current_database() and query ilike 'listen%'"
     async with tx() as conn:
         await seed_home(conn)
     job = asyncio.create_task(jobs.inbound_job(get_settings(), LoopRuntime(FakeLLM(say("NOOP"))), {}, None,
                                                asyncio.Event()))
     await asyncio.sleep(0.3)                       # it has found nothing and is waiting out its 2 s poll
-    assert len(await rows(listeners)) == 1
+    (listener,) = await rows(listeners)
 
     posted = time.monotonic()
     await client.post("/webhooks/telegram", json=tg_update(1, "morning all"),
@@ -412,13 +411,12 @@ async def test_the_inbound_job_wakes_on_notify_and_closes_its_listener_when_canc
         await asyncio.sleep(0.02)
 
     # Cancelled, the job closes its subscribed connection instead of handing it back to the pool.
-    (before,) = await rows(sessions)
     job.cancel()
     with pytest.raises(asyncio.CancelledError):
         await job
-    for _ in range(50):
-        (after,) = await rows(sessions)
-        if after["n"] < before["n"]:
+    still_open = "select 1 from pg_stat_activity where pid = :pid"
+    for _ in range(100):
+        if not await rows(still_open, pid=listener["pid"]):
             break
         await asyncio.sleep(0.02)
-    assert after["n"] == before["n"] - 1
+    assert await rows(still_open, pid=listener["pid"]) == []
