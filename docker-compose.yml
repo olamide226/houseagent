@@ -1,0 +1,48 @@
+# Local stack: Postgres, a one-shot migration, the api and the worker.
+# Copy .env.example to .env first; DATABASE_URL is overridden here to point at the db service.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ha
+      POSTGRES_PASSWORD: ha
+      POSTGRES_DB: houseagent
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ha -d houseagent"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    build: .
+    command: ["alembic", "upgrade", "head"]
+    env_file: .env
+    environment: &database
+      DATABASE_URL: postgresql+asyncpg://ha:ha@db/houseagent
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build: .
+    env_file: .env
+    environment: *database
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build: .
+    command: ["python", "-m", "app.worker.main"]
+    env_file: .env
+    environment: *database
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
