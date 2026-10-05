@@ -19,6 +19,7 @@ from app.dashboard import auth, routes
 from app.db import engine, fetch_val, tx
 from app.ics import routes as ics
 from app.llm.base import make_llm
+from app.media.store import make_media_store
 from app.pipeline import inbound
 
 log = structlog.get_logger()
@@ -31,8 +32,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging(settings.log_level)
     build_adapters(settings)
     # The Playground runs turns in the api process; chat turns run in the worker.
-    app.state.runtime = LoopRuntime(make_llm(settings), agent_name=settings.agent_name,
-                                    max_iterations=settings.llm_max_tool_iterations)
+    app.state.runtime = LoopRuntime(make_llm(settings), media=make_media_store(settings),
+                                    agent_name=settings.agent_name, max_iterations=settings.llm_max_tool_iterations)
     yield
     await engine().dispose()
 

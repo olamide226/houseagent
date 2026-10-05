@@ -1,5 +1,5 @@
-"""Worker jobs (spec section 10): inbound processing, outbox dispatch, reminders, recurrence
-and the two digests.
+"""Worker jobs (spec section 10): inbound processing, outbox dispatch, reminders, recurrence,
+the two digests and media retention.
 
 Every job may run twice, or on two replicas at once: rows are claimed with SKIP LOCKED,
 outbox dedupe keys and unique indexes make the inserts idempotent, and the once-a-day jobs
@@ -17,11 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from app.agent.base import AgentRuntime, ToolError
 from app.channels.base import ChannelAdapter
 from app.config import Settings
-from app.core.envelope import Channel, OutboundMessage
+from app.core.envelope import Channel, MediaRef, OutboundMessage
 from app.core.timeutil import day_bounds, local, next_occurrence, occurrences, utcnow
-from app.db import advisory_lock, engine, execute, fetch_all, tx
+from app.db import advisory_lock, engine, execute, fetch_all, jsonb, tx
 from app.llm.stt import SpeechToText
+from app.media.store import MediaStore
 from app.pipeline import inbound, router
+from app.pipeline import media as media_pipeline
 from app.services import calendar, inventory, shopping
 
 log = structlog.get_logger()
@@ -31,11 +33,12 @@ RECURRENCE_SECONDS = 3600.0
 DIGEST_POLL_SECONDS = 60.0
 DIGEST_GRACE = timedelta(hours=4)       # a digest missed by more than this is skipped, not sent late
 WEEKLY_DIGEST_AT = time(18, 0)          # on Sundays, household time
+MEDIA_CLEANUP_SECONDS = 3600.0
 LATE_MINUTES = 10                       # a reminder this long after its event began is dropped
 
 
 async def inbound_job(settings: Settings, runtime: AgentRuntime, adapters: dict[Channel, ChannelAdapter],
-                      stt: SpeechToText | None, outbox_wake: asyncio.Event) -> None:
+                      stt: SpeechToText | None, media: MediaStore | None, outbox_wake: asyncio.Event) -> None:
     """Process settled batches. Wakes on NOTIFY inbound, when a batch's debounce ends, or every 2 s."""
     wake = asyncio.Event()
     async with engine().connect() as listening:
@@ -48,7 +51,7 @@ async def inbound_job(settings: Settings, runtime: AgentRuntime, adapters: dict[
                 async with tx() as conn:
                     ready = await inbound.ready_households(conn, settings.debounce_seconds)
                 for household_id in ready:
-                    await inbound.process_household(household_id, runtime, adapters, stt=stt,
+                    await inbound.process_household(household_id, runtime, adapters, stt=stt, media=media,
                                                     public_base_url=settings.public_base_url)
                     outbox_wake.set()
                 async with tx() as conn:
@@ -244,3 +247,38 @@ async def weekly_digest(now: datetime | None = None) -> int:
         return f"{year}-W{week:02d}" if here.weekday() == 6 and _due(here, WEEKLY_DIGEST_AT) else None
 
     return await _once_per_household("weekly_digest", now or utcnow(), run_key, _weekly_digest)
+
+
+# ---------------------------------------------------------------- media retention
+async def media_cleanup(store: MediaStore, retention_days: int, now: datetime | None = None, *,
+                        limit: int = 200) -> int:
+    """Delete stored media older than MEDIA_RETENTION_DAYS and forget where it was; captions
+    and transcripts remain. Returns how many messages were cleaned. Safe to run twice: a
+    cleaned message no longer matches."""
+    now = now or utcnow()
+    cleaned = 0
+    async with tx() as conn:
+        rows = await fetch_all(
+            conn,
+            """select id, household_id, media from messages
+               where created_at < :cutoff
+                 and jsonb_path_exists(media, '$[*] ? (@.storage_backend == $backend)',
+                                       jsonb_build_object('backend', cast(:backend as text)))
+               order by created_at for update skip locked limit :limit""",
+            cutoff=now - timedelta(days=retention_days), backend=store.backend, limit=limit,
+        )
+        for row in rows:
+            try:
+                for ref in row["media"]:
+                    if ref.get("storage_backend") == store.backend:
+                        await store.delete(MediaRef.model_validate(ref))
+            except Exception as exc:   # the store is unreachable: keep the refs and try again next run
+                log.warning("media_cleanup_failed", household_id=row["household_id"], message_id=row["id"],
+                            error=type(exc).__name__)
+                continue
+            await execute(conn, "update messages set media = cast(:media as jsonb) where id = :id",
+                          media=jsonb(media_pipeline.without_storage(row["media"])), id=row["id"])
+            cleaned += 1
+    if cleaned:
+        log.info("media_cleaned", messages=cleaned)
+    return cleaned

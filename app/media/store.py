@@ -19,6 +19,9 @@ def kind_of(mime: str) -> Literal["image", "audio", "video", "document"]:
 
 
 class MediaStore(Protocol):
+    @property
+    def backend(self) -> Literal["s3", "imgbb"]: ...
+
     async def put(self, household_id: str, message_id: str, n: int, data: bytes, mime: str) -> MediaRef:
         """Store one attachment. The returned ref has no storage fields if the backend does not keep this kind."""
         ...

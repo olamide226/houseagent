@@ -16,6 +16,7 @@ from app.core.identity import member_for_handle, parse_invite_code, redeem_invit
 from app.core.timeutil import utcnow
 from app.db import advisory_lock, execute, fetch_all, fetch_one, fetch_val, jsonb, tx
 from app.llm.stt import SpeechToText
+from app.media.store import MediaStore
 from app.pipeline import media as media_pipeline
 from app.pipeline.router import enqueue, record_outbound
 from app.services import households, members
@@ -193,7 +194,8 @@ async def _waiting_messages(conn: AsyncConnection, column: str, value: str) -> l
 
 
 async def process_household(household_id: str, runtime: AgentRuntime, adapters: dict[Channel, ChannelAdapter],
-                            *, stt: SpeechToText | None = None, public_base_url: str = "") -> int:
+                            *, stt: SpeechToText | None = None, media: MediaStore | None = None,
+                            public_base_url: str = "") -> int:
     """Run one turn per thread for the household's waiting messages. Returns the number of turns.
 
     The whole household is serialised by an advisory lock held for the transaction, so two
@@ -207,9 +209,11 @@ async def process_household(household_id: str, runtime: AgentRuntime, adapters: 
         messages = [m for m in messages if not await _login_request(conn, m, public_base_url)]
         for batch in group_by_thread(messages):
             ids = [m["id"] for m in batch]
+            # Outside the turn's savepoint: what was stored stays recorded even if the turn fails,
+            # so retention can still find and delete it.
+            await _prepare_media(conn, batch, adapters, stt, media)
             try:
                 async with conn.begin_nested():
-                    await _prepare_media(conn, batch, adapters, stt)
                     envelope = build_envelope(batch, await _reaction_targets(conn, batch),
                                               await _reply_to_text(conn, batch[-1]))
                     await run_turn(conn, envelope, runtime)
@@ -265,20 +269,23 @@ async def run_turn(conn: AsyncConnection, envelope: Envelope, runtime: AgentRunt
 
 
 async def simulate_turn(conn: AsyncConnection, runtime: AgentRuntime, household_id: str, member_id: str,
-                        text: str, *, scope: Literal["dm", "group"] = "dm",
-                        now: datetime | None = None) -> AgentResult:
+                        text: str | None, *, scope: Literal["dm", "group"] = "dm", now: datetime | None = None,
+                        photos: list[MediaRef] | None = None) -> AgentResult:
     """Run one turn as `member` without a channel: the Playground and the eval suite use this.
 
     Everything happens on `conn`; the caller commits to apply it or rolls back for a dry run.
-    `now` pins when the message arrived, so evals do not depend on the day they are run."""
+    `now` pins when the message arrived, so evals do not depend on the day they are run.
+    `photos` are refs already in the runtime's MediaStore."""
     external = f"{PLAYGROUND}:{household_id if scope == 'group' else member_id}"
     thread_id = await _upsert_thread(conn, household_id, PLAYGROUND, external, scope)
     await execute(
         conn,
-        """insert into messages (household_id, thread_id, member_id, direction, text, external_id, created_at)
-           values (:h, :thread, :member, 'in', :text, :external,
+        """insert into messages (household_id, thread_id, member_id, direction, text, media, external_id,
+                                 created_at)
+           values (:h, :thread, :member, 'in', :text, cast(:media as jsonb), :external,
                    coalesce(cast(:now as timestamptz), clock_timestamp()))""",
         h=household_id, thread=thread_id, member=member_id, text=text, external=str(uuid.uuid4()), now=now,
+        media=jsonb([photo.model_dump(exclude_none=True) for photo in photos or []]),
     )
     assert thread_id is not None
     batch = await _waiting_messages(conn, "thread_id", thread_id)
@@ -299,11 +306,12 @@ async def _login_request(conn: AsyncConnection, message: dict[str, Any], public_
     return True
 
 
-async def _prepare_media(conn: AsyncConnection, batch: list[dict[str, Any]],
-                         adapters: dict[Channel, ChannelAdapter], stt: SpeechToText | None) -> None:
+async def _prepare_media(conn: AsyncConnection, batch: list[dict[str, Any]], adapters: dict[Channel, ChannelAdapter],
+                         stt: SpeechToText | None, store: MediaStore | None) -> None:
     for message in batch:
         adapter = adapters.get(Channel(message["channel"])) if message["channel"] != PLAYGROUND else None
-        if await media_pipeline.transcribe_audio(message["media"], adapter, stt):
+        if await media_pipeline.prepare(message["media"], message["household_id"], message["id"],
+                                        adapter, stt, store):
             await execute(conn, "update messages set media = cast(:media as jsonb) where id = :id",
                           media=jsonb(message["media"]), id=message["id"])
 

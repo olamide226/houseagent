@@ -3,8 +3,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.agent.loop import LOST, NO_PHOTOS, LoopRuntime
-from app.core.envelope import Channel, Envelope, MediaRef
+from app.agent.loop import LOST, LoopRuntime
+from app.core.envelope import Channel, Envelope
 from app.db import execute, fetch_val, tx
 from app.llm.types import LLMError, LLMResponse, ToolCall, Usage
 from tests.helpers import FakeLLM, active_list, add_item, call, ctx_for, say, seed_home, stock_of
@@ -151,13 +151,3 @@ async def test_history_is_capped_at_twenty_messages():
         await LoopRuntime(llm).handle(envelope(home, "now", thread_id=thread), ctx_for(conn, home))
     history = llm.requests[0][1][:-1]
     assert len(history) == 20 and history[0].content[0].text == "Ola: message 10"
-
-
-async def test_photos_are_acknowledged_as_unreadable_until_media_storage_exists():
-    llm = FakeLLM(say("I can't read photos yet."))
-    async with tx() as conn:
-        home = await seed_home(conn)
-        await LoopRuntime(llm).handle(
-            envelope(home, "[photo] receipt", images=[MediaRef(kind="image", external_id="F1")]), ctx_for(conn, home))
-    turn = llm.requests[0][1][-1]
-    assert turn.content[0].text.endswith(NO_PHOTOS) and len(turn.content) == 1

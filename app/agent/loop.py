@@ -1,19 +1,26 @@
 """LoopRuntime: the plain tool-calling loop (spec section 8.2)."""
+import base64
 from typing import Any
+
+import structlog
 
 from app.agent.base import AgentResult, Ctx, ToolCallRecord
 from app.agent.prompt import build_brief, system_prompt
 from app.agent.tools import run_tool, tool_definitions
 from app.core.envelope import Envelope
 from app.db import fetch_all
-from app.llm.types import ChatMessage, LLMClient, LLMError, TextPart, Usage
+from app.llm.types import ChatMessage, ImagePart, LLMClient, LLMError, TextPart, Usage
+from app.media.store import MediaStore
 from app.services import households
 
+log = structlog.get_logger()
 HISTORY_MESSAGES = 20
 HISTORY_HOURS = 48
 MAX_TOKENS = 4096   # room for reasoning models; replies themselves are a line or two
 LOST = "I got a bit lost there, can you say that again?"
 NO_PHOTOS = "[photo received; this model can't read photos]"
+UNREADABLE = "[photo received; it could not be loaded]"
+MAX_IMAGES = 4
 
 
 def message_lines(row: dict[str, Any], reaction_target: str | None = None) -> list[str]:
@@ -41,8 +48,10 @@ def _text(role: Any, text: str) -> ChatMessage:
 
 
 class LoopRuntime:
-    def __init__(self, llm: LLMClient, *, agent_name: str = "Home", max_iterations: int = 8) -> None:
+    def __init__(self, llm: LLMClient, *, media: MediaStore | None = None, agent_name: str = "Home",
+                 max_iterations: int = 8) -> None:
         self._llm = llm
+        self._media = media
         self._agent_name = agent_name
         self._max_iterations = max_iterations
 
@@ -53,10 +62,8 @@ class LoopRuntime:
         turn = env.text
         if env.reply_to_text:
             turn = f'[replying to: "{env.reply_to_text[:120]}"]\n{turn}'
-        if env.images:
-            # Photos reach the model once MediaStore lands; until then the agent says so briefly.
-            turn += f"\n{NO_PHOTOS}"
-        messages.append(_text("user", turn))
+        photos, notes = await self._photos(env)
+        messages.append(ChatMessage(role="user", content=[TextPart(text="\n".join([turn, *notes])), *photos]))
         tools = tool_definitions(onboarding_active=onboarding["step"] is not None)
 
         records: list[ToolCallRecord] = []
@@ -81,6 +88,29 @@ class LoopRuntime:
                 messages.append(ChatMessage(role="tool", content=[TextPart(text=result)],
                                             tool_call_id=call.id, is_error=is_error))
         return AgentResult(reply=LOST, tool_calls=records, usage=usage)
+
+    async def _photos(self, env: Envelope) -> tuple[list[ImagePart], list[str]]:
+        """Up to four of the turn's photos, loaded through MediaStore, and a note for each one
+        the model will not see."""
+        if not env.images:
+            return [], []
+        if not self._llm.supports_images:
+            return [], [NO_PHOTOS]
+        photos: list[ImagePart] = []
+        notes: list[str] = []
+        for ref in env.images[:MAX_IMAGES]:
+            try:
+                if self._media is None or not (ref.storage_key or ref.storage_url):
+                    raise LookupError("not stored")
+                data = await self._media.get(ref)
+                photos.append(ImagePart(mime=ref.mime or "image/jpeg", data_b64=base64.b64encode(data).decode()))
+            except Exception as exc:
+                log.warning("photo_unreadable", household_id=env.household_id, error=type(exc).__name__)
+                notes.append(UNREADABLE)
+        extra = len(env.images) - MAX_IMAGES
+        if extra > 0:
+            notes.append(f"[{extra} more photo{'' if extra == 1 else 's'} not read: at most {MAX_IMAGES} per message]")
+        return photos, notes
 
     @staticmethod
     def _final(text: str | None, records: list[ToolCallRecord], usage: Usage) -> AgentResult:

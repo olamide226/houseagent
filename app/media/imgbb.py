@@ -1,5 +1,6 @@
 """ImgBB media storage: images only, and anyone holding the URL can view it (spec section 7.4)."""
 import base64
+from typing import Literal
 
 import httpx
 
@@ -15,6 +16,8 @@ class MediaError(Exception):
 
 
 class ImgbbStore:
+    backend: Literal["imgbb"] = "imgbb"
+
     def __init__(self, api_key: str, retention_days: int) -> None:
         self._key = api_key
         self._expiration = max(min(retention_days, MAX_DAYS) * 86400, 60)

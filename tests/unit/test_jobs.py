@@ -398,7 +398,7 @@ async def test_the_inbound_job_wakes_on_notify_and_closes_its_listener_when_canc
     listeners = "select pid from pg_stat_activity where datname = current_database() and query ilike 'listen%'"
     async with tx() as conn:
         await seed_home(conn)
-    job = asyncio.create_task(jobs.inbound_job(get_settings(), LoopRuntime(FakeLLM(say("NOOP"))), {}, None,
+    job = asyncio.create_task(jobs.inbound_job(get_settings(), LoopRuntime(FakeLLM(say("NOOP"))), {}, None, None,
                                                asyncio.Event()))
     await asyncio.sleep(0.3)                       # it has found nothing and is waiting out its 2 s poll
     (listener,) = await rows(listeners)

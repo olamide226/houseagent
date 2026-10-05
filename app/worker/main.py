@@ -15,17 +15,18 @@ from app.config import configure_logging, get_settings
 from app.db import engine
 from app.llm.base import make_llm
 from app.llm.stt import make_stt
+from app.media.store import make_media_store
 from app.worker import jobs
 
 log = structlog.get_logger()
 RESTART_SECONDS = 5
 HEARTBEAT_SECONDS = 60
-SCHEDULED: list[tuple[Callable[[], Awaitable[int]], float]] = [
-    (jobs.fire_reminders, jobs.REMINDERS_SECONDS),
-    (jobs.expand_recurrence, jobs.RECURRENCE_SECONDS),
-    (jobs.daily_brief, jobs.DIGEST_POLL_SECONDS),
-    (jobs.weekly_digest, jobs.DIGEST_POLL_SECONDS),
-]
+SCHEDULED: dict[str, tuple[Callable[[], Awaitable[int]], float]] = {
+    "reminders": (jobs.fire_reminders, jobs.REMINDERS_SECONDS),
+    "recurrence": (jobs.expand_recurrence, jobs.RECURRENCE_SECONDS),
+    "daily_brief": (jobs.daily_brief, jobs.DIGEST_POLL_SECONDS),
+    "weekly_digest": (jobs.weekly_digest, jobs.DIGEST_POLL_SECONDS),
+}
 
 
 async def supervise(name: str, job: Callable[[], Awaitable[None]]) -> None:
@@ -50,16 +51,21 @@ async def main() -> None:
     settings = get_settings()
     configure_logging(settings.log_level)
     adapters = build_adapters(settings)
-    runtime = LoopRuntime(make_llm(settings), agent_name=settings.agent_name,
+    media = make_media_store(settings)
+    runtime = LoopRuntime(make_llm(settings), media=media, agent_name=settings.agent_name,
                           max_iterations=settings.llm_max_tool_iterations)
     stt = make_stt(settings)
     outbox_wake = asyncio.Event()
+    scheduled = dict(SCHEDULED)
+    if media is not None:
+        scheduled["media_cleanup"] = (partial(jobs.media_cleanup, media, settings.media_retention_days),
+                                      jobs.MEDIA_CLEANUP_SECONDS)
     tasks = [
         asyncio.create_task(supervise(
-            "inbound", lambda: jobs.inbound_job(settings, runtime, adapters, stt, outbox_wake))),
+            "inbound", lambda: jobs.inbound_job(settings, runtime, adapters, stt, media, outbox_wake))),
         asyncio.create_task(supervise("outbox", lambda: jobs.outbox_job(adapters, outbox_wake))),
-        *(asyncio.create_task(supervise(job.__name__, partial(jobs.every, seconds, job, outbox_wake)))
-          for job, seconds in SCHEDULED),
+        *(asyncio.create_task(supervise(name, partial(jobs.every, seconds, job, outbox_wake)))
+          for name, (job, seconds) in scheduled.items()),
         asyncio.create_task(heartbeat()),
     ]
     log.info("worker_started", channels=[c.value for c in adapters], llm_provider=settings.llm_provider)

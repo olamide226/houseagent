@@ -1,5 +1,5 @@
 """S3-compatible media storage (AWS S3, MinIO, R2). A private bucket; nothing is public."""
-from typing import Any
+from typing import Any, Literal
 
 import aioboto3
 from aiobotocore.config import AioConfig
@@ -14,6 +14,8 @@ _CONFIG = AioConfig(request_checksum_calculation="when_required", response_check
 
 
 class S3Store:
+    backend: Literal["s3"] = "s3"
+
     def __init__(self, *, endpoint: str | None, bucket: str, access_key: str, secret_key: str,
                  region: str = "us-east-1") -> None:
         self._bucket = bucket
