@@ -20,6 +20,7 @@ dependencies = [
     "inflect",
     "structlog",
     "python-dateutil>=2.9.0.post0",
+    "aioboto3>=15.5.0",
 ]
 
 [project.optional-dependencies]
@@ -65,7 +66,7 @@ strict = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["inflect.*", "qrcode.*", "dateutil.*"]
+module = ["inflect.*", "qrcode.*", "dateutil.*", "aioboto3.*", "aiobotocore.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

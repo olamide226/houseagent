@@ -31,6 +31,15 @@ class Settings(BaseSettings):
     stt_api_key: str = ""
     stt_model: str | None = None
 
+    media_backend: Literal["s3", "imgbb"] = "s3"
+    s3_endpoint: str | None = None
+    s3_bucket: str | None = None
+    s3_access_key: str | None = None
+    s3_secret_key: str | None = None
+    s3_region: str = "us-east-1"
+    imgbb_api_key: str | None = None
+    media_retention_days: int = 90
+
     tg_bot_token: str | None = None
     tg_bot_username: str | None = None
     tg_webhook_secret: str | None = None
