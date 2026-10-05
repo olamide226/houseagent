@@ -1,0 +1,13 @@
+[
+  {
+    "channel": "telegram",
+    "external_message_id": "reaction:880005",
+    "external_thread_id": "-1001234567890",
+    "scope": "group",
+    "sender_handle": "1002",
+    "sender_name": "Ada",
+    "reaction_emoji": "👍",
+    "reaction_target_external_id": "777",
+    "sent_at": "2026-10-05T20:04:00Z"
+  }
+]

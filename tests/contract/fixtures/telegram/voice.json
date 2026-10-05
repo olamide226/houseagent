@@ -1,0 +1,29 @@
+{
+  "update_id": 880002,
+  "message": {
+    "message_id": 502,
+    "from": {
+      "id": 1001,
+      "is_bot": false,
+      "first_name": "Ola",
+      "last_name": "Adebayo",
+      "username": "ola_a",
+      "language_code": "en"
+    },
+    "chat": {
+      "id": 1001,
+      "first_name": "Ola",
+      "last_name": "Adebayo",
+      "username": "ola_a",
+      "type": "private"
+    },
+    "date": 1791230460,
+    "voice": {
+      "duration": 4,
+      "mime_type": "audio/ogg",
+      "file_id": "AwACAgQAAxkBAAIB9mVoiceFileId",
+      "file_unique_id": "AgADvoice01",
+      "file_size": 18423
+    }
+  }
+}

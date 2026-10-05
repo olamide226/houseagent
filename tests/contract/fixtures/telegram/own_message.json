@@ -1,0 +1,19 @@
+{
+  "update_id": 880007,
+  "message": {
+    "message_id": 779,
+    "from": {
+      "id": 424242,
+      "is_bot": true,
+      "first_name": "Home",
+      "username": "home_test_bot"
+    },
+    "chat": {
+      "id": -1001234567890,
+      "title": "Adebayo family",
+      "type": "supergroup"
+    },
+    "date": 1791230760,
+    "text": "Added milk and bread to the list."
+  }
+}

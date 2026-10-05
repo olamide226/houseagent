@@ -1,0 +1,18 @@
+[
+  {
+    "channel": "telegram",
+    "external_message_id": "502",
+    "external_thread_id": "1001",
+    "scope": "dm",
+    "sender_handle": "1001",
+    "sender_name": "Ola",
+    "media": [
+      {
+        "kind": "audio",
+        "mime": "audio/ogg",
+        "external_id": "AwACAgQAAxkBAAIB9mVoiceFileId"
+      }
+    ],
+    "sent_at": "2026-10-05T20:01:00Z"
+  }
+]

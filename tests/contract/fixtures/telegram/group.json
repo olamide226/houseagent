@@ -1,0 +1,35 @@
+{
+  "update_id": 880006,
+  "message": {
+    "message_id": 778,
+    "from": {
+      "id": 1002,
+      "is_bot": false,
+      "first_name": "Ada",
+      "language_code": "en"
+    },
+    "chat": {
+      "id": -1001234567890,
+      "title": "Adebayo family",
+      "type": "supergroup"
+    },
+    "date": 1791230700,
+    "reply_to_message": {
+      "message_id": 777,
+      "from": {
+        "id": 424242,
+        "is_bot": true,
+        "first_name": "Home",
+        "username": "home_test_bot"
+      },
+      "chat": {
+        "id": -1001234567890,
+        "title": "Adebayo family",
+        "type": "supergroup"
+      },
+      "date": 1791230000,
+      "text": "Probably running low: milk, bread. Add to the list?"
+    },
+    "text": "yes please, and we finished the rice"
+  }
+}

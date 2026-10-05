@@ -1,0 +1,26 @@
+{
+  "update_id": 880004,
+  "message": {
+    "message_id": 504,
+    "from": {
+      "id": 1001,
+      "is_bot": false,
+      "first_name": "Ola",
+      "last_name": "Adebayo",
+      "username": "ola_a",
+      "language_code": "en"
+    },
+    "chat": {
+      "id": 1001,
+      "first_name": "Ola",
+      "last_name": "Adebayo",
+      "username": "ola_a",
+      "type": "private"
+    },
+    "date": 1791230580,
+    "location": {
+      "latitude": 51.5074,
+      "longitude": -0.1278
+    }
+  }
+}

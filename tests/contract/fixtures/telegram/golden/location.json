@@ -1,0 +1,18 @@
+[
+  {
+    "channel": "telegram",
+    "external_message_id": "504",
+    "external_thread_id": "1001",
+    "scope": "dm",
+    "sender_handle": "1001",
+    "sender_name": "Ola",
+    "media": [
+      {
+        "kind": "location",
+        "lat": 51.5074,
+        "lng": -0.1278
+      }
+    ],
+    "sent_at": "2026-10-05T20:03:00Z"
+  }
+]

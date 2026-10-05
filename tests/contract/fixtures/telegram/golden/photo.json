@@ -1,0 +1,19 @@
+[
+  {
+    "channel": "telegram",
+    "external_message_id": "503",
+    "external_thread_id": "1001",
+    "scope": "dm",
+    "sender_handle": "1001",
+    "sender_name": "Ola",
+    "text": "Tesco receipt",
+    "media": [
+      {
+        "kind": "image",
+        "mime": "image/jpeg",
+        "external_id": "AgACAgQAAxkBAAIB-large"
+      }
+    ],
+    "sent_at": "2026-10-05T20:02:00Z"
+  }
+]
