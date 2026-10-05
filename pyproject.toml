@@ -1,0 +1,68 @@
+[project]
+name = "household-agent"
+version = "0.1.0"
+description = "A household assistant for food stock, a shared shopping list, appointments and reminders, over chat."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic>=2",
+    "pydantic-settings",
+    "sqlalchemy[asyncio]>=2",
+    "asyncpg",
+    "alembic",
+    "httpx",
+    "jinja2",
+    "itsdangerous",
+    "python-multipart",
+    "qrcode",
+    "inflect",
+    "structlog",
+]
+
+[project.optional-dependencies]
+llm-openai = ["openai"]
+llm-anthropic = ["anthropic"]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "respx",
+    "ruff",
+    "mypy",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+markers = ["eval: live-model agent evals (need RUN_EVALS=1 and provider credentials)"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
+ignore = ["B008"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+strict = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["inflect.*", "qrcode.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["app.services.*", "app.db", "app.config"]
+follow_imports = "silent"
