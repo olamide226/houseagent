@@ -398,9 +398,7 @@ async def cancel_reminder(rec: Recorder, reminder_id: str) -> None:
 class Occurrence:
     event_id: str
     title: str
-    kind: str
     start: datetime
-    end: datetime | None
     location: str | None
     participants: list[str]
     rrule: str | None
@@ -433,10 +431,8 @@ async def occurrences_between(conn: AsyncConnection, household_id: str, start: d
             starts = occurrences(event["rrule"], event["starts_at"], event["timezone"], start, end, event["exdates"])
         else:
             starts = [event["starts_at"]] if start <= event["starts_at"] < end else []
-        duration = event["ends_at"] - event["starts_at"] if event["ends_at"] else None
         found += [
-            Occurrence(event["id"], event["title"], event["kind"], at, at + duration if duration else None,
-                       event["location"], event["participants"], event["rrule"])
+            Occurrence(event["id"], event["title"], at, event["location"], event["participants"], event["rrule"])
             for at in starts
         ]
     return sorted(found, key=lambda occurrence: occurrence.start)
