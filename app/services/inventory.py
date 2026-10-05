@@ -276,8 +276,9 @@ async def rebuild_stock(conn: AsyncConnection, household_id: str) -> None:
 # ---------------------------------------------------------------- reads
 async def stock_rows(
     conn: AsyncConnection, household_id: str, *, item_id: str | None = None, location_id: str | None = None,
-    statuses: list[str] | None = None, expiring_within_days: int | None = None,
+    statuses: list[str] | None = None, expiring_within_days: int | None = None, today: date | None = None,
 ) -> list[dict[str, Any]]:
+    """Stock rows, filtered. `today` is the household-local date that "expiring within" counts from."""
     return await fetch_all(
         conn,
         """select i.id as item_id, i.canonical_name as item, i.default_unit as unit, i.is_staple,
@@ -289,9 +290,11 @@ async def stock_rows(
              and (cast(:location as uuid) is null or l.id = :location)
              and (cast(:statuses as text[]) is null or s.status = any(:statuses))
              and (cast(:days as int) is null
-                  or (s.expires_on is not null and s.expires_on <= current_date + cast(:days as int)))
+                  or (s.expires_on is not null
+                      and s.expires_on <= coalesce(cast(:today as date), current_date) + cast(:days as int)))
            order by l.name, i.canonical_name""",
         h=household_id, item=item_id, location=location_id, statuses=statuses, days=expiring_within_days,
+        today=today,
     )
 
 

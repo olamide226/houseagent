@@ -5,6 +5,7 @@
 import asyncio
 import signal
 from collections.abc import Awaitable, Callable
+from functools import partial
 
 import structlog
 
@@ -19,6 +20,12 @@ from app.worker import jobs
 log = structlog.get_logger()
 RESTART_SECONDS = 5
 HEARTBEAT_SECONDS = 60
+SCHEDULED: list[tuple[Callable[[], Awaitable[int]], float]] = [
+    (jobs.fire_reminders, jobs.REMINDERS_SECONDS),
+    (jobs.expand_recurrence, jobs.RECURRENCE_SECONDS),
+    (jobs.daily_brief, jobs.DIGEST_POLL_SECONDS),
+    (jobs.weekly_digest, jobs.DIGEST_POLL_SECONDS),
+]
 
 
 async def supervise(name: str, job: Callable[[], Awaitable[None]]) -> None:
@@ -51,6 +58,8 @@ async def main() -> None:
         asyncio.create_task(supervise(
             "inbound", lambda: jobs.inbound_job(settings, runtime, adapters, stt, outbox_wake))),
         asyncio.create_task(supervise("outbox", lambda: jobs.outbox_job(adapters, outbox_wake))),
+        *(asyncio.create_task(supervise(job.__name__, partial(jobs.every, seconds, job, outbox_wake)))
+          for job, seconds in SCHEDULED),
         asyncio.create_task(heartbeat()),
     ]
     log.info("worker_started", channels=[c.value for c in adapters], llm_provider=settings.llm_provider)
