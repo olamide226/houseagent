@@ -16,3 +16,7 @@
   expect:
     stock: {milk: {status: low, qty: 2}}
     shopping_list_active: [milk]
+
+- name: undo an appointment
+  turns: [{from: Ola, text: "book the dentist for Friday at 2pm"}, {from: Ola, text: "undo that"}]
+  expect: {calendar: [], calendar_cancelled: 0, reminders_scheduled: 0}

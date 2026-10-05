@@ -1,0 +1,21 @@
+# Every case starts on Monday 5 October 2026 at 12:00, London time.
+- name: one-off reminder for me
+  turns: [{from: Ola, text: "remind me to call the landlord on Friday at 9am"}]
+  expect:
+    reminders: [{text_contains: landlord, local_fire: "Fri 9 Oct 09:00", target: member, member: Ola, repeats: false}]
+    calendar: []
+
+- name: reminder in two hours
+  turns: [{from: Ada, text: "remind me in two hours to ring mum"}]
+  expect:
+    reminders: [{text_contains: mum, local_fire: "Mon 5 Oct 14:00", target: member, member: Ada, repeats: false}]
+
+- name: repeating reminder for everyone
+  turns: [{from: Ola, text: "remind us every Sunday at 6pm to put the bins out"}]
+  expect:
+    reminders: [{text_contains: bins, local_fire: "Sun 11 Oct 18:00", target: household, rrule_contains: FREQ=WEEKLY}]
+
+- name: a reminder set for late tonight is sent despite quiet hours
+  turns: [{from: Ola, text: "remind me at 11pm tonight to put the bins out"}]
+  expect:
+    reminders: [{text_contains: bins, local_fire: "Mon 5 Oct 23:00", member: Ola, urgency: high}]

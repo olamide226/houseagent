@@ -1,0 +1,54 @@
+# Every case starts on Monday 5 October 2026 at 12:00, London time, unless it sets `now`.
+- name: appointment then move
+  turns:
+    - {from: Ola, text: "Ada has GP on Wednesday at 10:30 at Hurley Clinic"}
+    - {from: Ola, text: "actually make it 11"}
+  expect:
+    calendar: [{title_contains: GP, participants: [Ada], local_start: "Wed 7 Oct 11:00", location_contains: Hurley, repeats: false}]
+    calendar_cancelled: 0
+    reminders_scheduled: 2
+    events: []
+
+- name: weekly activity for a child
+  seed: {members: [{name: Tobi, role: child}]}
+  turns: [{from: Ada, text: "Tobi has Chatterbox every Tuesday at 9am at the library, starting tomorrow"}]
+  expect:
+    calendar: [{title_contains: Chatterbox, participants: [Tobi], local_start: "Tue 6 Oct 09:00", rrule_contains: FREQ=WEEKLY}]
+    events: []
+
+- name: appointment after the clocks change
+  turns: [{from: Ola, text: "I've got the dentist on Wednesday 28 October at 2:15pm"}]
+  expect:
+    calendar: [{title_contains: dentist, local_start: "Wed 28 Oct 14:15", repeats: false}]
+    reminders_scheduled: 2
+
+- name: cancel an appointment
+  seed:
+    events:
+      - {title: Dentist, starts_at: "2026-10-09 14:00", participants: [Ola]}
+      - {title: GP, starts_at: "2026-10-07 10:30", participants: [Ada]}
+  turns: [{from: Ola, text: "the dentist on Friday is cancelled"}]
+  expect:
+    calendar: [{title_contains: GP, local_start: "Wed 7 Oct 10:30"}]
+    calendar_cancelled: 1
+    reminders_scheduled: 2
+
+- name: skip one week of a recurring activity
+  seed:
+    members: [{name: Tobi, role: child}]
+    events: [{title: Chatterbox, starts_at: "2026-10-06 09:00", rrule: "FREQ=WEEKLY;BYDAY=TU", participants: [Tobi]}]
+  turns: [{from: Ada, text: "no Chatterbox tomorrow, it's half term"}]
+  expect:
+    calendar: [{title_contains: Chatterbox, rrule_contains: FREQ=WEEKLY, exdates: ["2026-10-06"]}]
+    calendar_cancelled: 0
+    reminders_scheduled: 0
+
+- name: asking what is on writes nothing
+  seed: {events: [{title: GP, starts_at: "2026-10-07 10:30", participants: [Ada]}]}
+  turns: [{from: Ola, text: "what have we got on this week?"}]
+  expect: {writes: 0, reply: text}
+
+- name: appointment mentioned in the group
+  turns: [{from: Ada, scope: group, text: "I've booked the boiler service for Thursday at 2pm"}]
+  expect:
+    calendar: [{title_contains: boiler, local_start: "Thu 8 Oct 14:00", repeats: false}]
