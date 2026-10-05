@@ -1,0 +1,28 @@
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form class="card" hx-post="/dashboard/shopping/add" hx-target="#shopping">
+  <input type="text" name="item" placeholder="Item" required>
+  <input type="text" name="store_hint" placeholder="Shop (optional)">
+  <button>Add</button>
+</form>
+{% macro rows(entries) %}
+<ul class="rows">
+{% for entry in entries %}
+  <li>
+    <span class="grow">{{ entry.item }}{% if entry.quantity %} x {{ entry.quantity.normalize() }}{% if entry.unit %} {{ entry.unit }}{% endif %}{% endif %}
+      <span class="muted">{{ entry.category }}{% if entry.reason != "explicit" %}, {{ entry.reason }}{% endif %}</span></span>
+    <form hx-post="/dashboard/shopping/{{ entry.id }}/store" hx-target="#shopping">
+      <input type="text" name="store_hint" value="{{ entry.store_hint or '' }}" placeholder="Shop" size="8">
+    </form>
+    <button hx-post="/dashboard/shopping/{{ entry.id }}/bought" hx-target="#shopping">Bought</button>
+    <button class="quiet" hx-post="/dashboard/shopping/{{ entry.id }}/remove" hx-target="#shopping">Remove</button>
+  </li>
+{% endfor %}
+</ul>
+{% endmacro %}
+<div class="card">
+  {% if needed %}{{ rows(needed) }}{% else %}<p class="muted">The list is empty.</p>{% endif %}
+</div>
+{% if predicted %}
+<h2>Probably needed</h2>
+<div class="card">{{ rows(predicted) }}</div>
+{% endif %}

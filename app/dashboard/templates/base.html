@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Home{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body{% if session %} hx-headers='{"X-CSRF-Token": "{{ session.csrf }}"}'{% endif %}>
+{% if session %}
+<header>
+  <strong>{{ session.household }}</strong>
+  <nav>
+    <a href="/dashboard">Today</a>
+    <a href="/dashboard/shopping">Shopping</a>
+    <a href="/dashboard/inventory">Inventory</a>
+    <a href="/dashboard/activity">Activity</a>
+    <a href="/dashboard/playground">Playground</a>
+  </nav>
+  <form method="post" action="/logout">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <button class="quiet" title="Signed in as {{ session.name }}">Log out</button>
+  </form>
+</header>
+{% endif %}
+<main>{% block main %}{% endblock %}</main>
+</body>
+</html>

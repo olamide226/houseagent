@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Today{% endblock %}
+{% block main %}
+<h1>{{ today.strftime("%A %-d %B") }}</h1>
+<div class="card">
+  <div class="stat"><a href="/dashboard/shopping">{{ list_count }}</a></div>
+  <div class="muted">on the shopping list</div>
+  <form method="post" action="/dashboard/shopping/add">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <input type="text" name="item" placeholder="Add to the list" required>
+    <button>Add</button>
+  </form>
+</div>
+<h2>Low or out</h2>
+<div class="card">
+  <ul class="rows">
+  {% for row in low %}
+    <li><a class="grow" href="/dashboard/inventory/items/{{ row.item_id }}">{{ row.item }}</a>
+        <span class="{{ row.status }}">{{ row.status }}</span><span class="muted">{{ row.location }}</span></li>
+  {% else %}<li class="muted">Nothing is running low.</li>{% endfor %}
+  </ul>
+</div>
+<h2>Expiring within 3 days</h2>
+<div class="card">
+  <ul class="rows">
+  {% for row in expiring %}
+    <li><a class="grow" href="/dashboard/inventory/items/{{ row.item_id }}">{{ row.item }}</a>
+        <span class="muted">{{ row.location }}, {{ row.expires_on.strftime("%-d %b") }}</span></li>
+  {% else %}<li class="muted">Nothing is about to expire.</li>{% endfor %}
+  </ul>
+</div>
+{% endblock %}

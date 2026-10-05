@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Playground{% endblock %}
+{% block main %}
+<h1>Playground</h1>
+<p class="muted">Talk to the assistant here. Dry run by default: the whole turn is rolled back, so nothing is saved
+  and each message starts fresh.</p>
+<form class="card" hx-post="/dashboard/playground" hx-target="#turns" hx-swap="afterbegin" hx-on::after-request="this.text.value = ''">
+  <input type="text" name="text" placeholder="e.g. we're out of eggs" required autofocus>
+  <label><input type="checkbox" name="apply" value="true"> Apply for real</label>
+  <button>Send</button>
+</form>
+<div id="turns"></div>
+{% endblock %}

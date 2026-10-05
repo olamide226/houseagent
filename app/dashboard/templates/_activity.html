@@ -1,0 +1,46 @@
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% macro action_row(action) %}
+<li><span class="grow"><strong>{{ action.tool }}</strong>{% if action.undone_at %} <span class="muted">(undone)</span>{% endif %}
+      <pre>{{ action.result }}</pre></span>
+  {% if action.undoable and not action.undone_at %}
+  <button class="quiet" hx-post="/dashboard/activity/actions/{{ action.id }}/undo" hx-target="#activity">Undo</button>
+  {% endif %}</li>
+{% endmacro %}
+{% for entry in feed %}
+<div class="card">
+  <div class="muted">{{ entry.at.strftime("%-d %b %H:%M") }} UTC &middot; {{ entry.member or "system" }}
+    &middot; {% if entry.kind == "turn" %}{{ entry.channel }} {{ entry.scope }}{% else %}dashboard{% endif %}</div>
+  {% if entry.kind == "turn" %}
+  {% set turn = entry.meta.get("turn") %}
+  <div>{{ entry.text or "" }}{% for media in entry.media %} <span class="muted">[{{ media.kind }}]</span>{% endfor %}
+    {% if entry.meta.get("reaction_emoji") %}<span class="muted">reacted {{ entry.meta.reaction_emoji }}</span>{% endif %}</div>
+  {% if entry.status == "failed" %}<div class="error">Failed: {{ entry.meta.get("error", "") }}</div>{% endif %}
+  {% if turn %}
+  <ul class="rows">
+    {% for call in turn.tool_calls %}
+    <li><span class="grow"><strong>{{ call.name }}</strong> <span class="muted">{{ call.args | tojson }}</span>
+          <pre{% if call.is_error %} class="error"{% endif %}>{{ call.result }}</pre></span></li>
+    {% endfor %}
+    {% for action in entry.actions %}{% if action.undoable and not action.undone_at %}
+    <li><span class="grow muted">{{ action.tool }} can be undone</span>
+        <button class="quiet" hx-post="/dashboard/activity/actions/{{ action.id }}/undo" hx-target="#activity">Undo</button></li>
+    {% elif action.undone_at %}<li class="muted">{{ action.tool }} was undone</li>{% endif %}{% endfor %}
+  </ul>
+  <div>&rarr; {% if turn.outcome == "noop" %}<span class="muted">no reply</span>
+       {% elif turn.outcome == "ack" %}{{ entry.react_emoji or "ack" }}
+       {% else %}{{ entry.reply or "" }}{% endif %}
+    {% if entry.outbox_status %}<span class="muted">({{ entry.outbox_status }})</span>{% endif %}
+    {% if entry.outbox_status == "failed" %}
+    <span class="error">{{ entry.last_error }}</span>
+    <button class="quiet" hx-post="/dashboard/activity/outbox/{{ entry.outbox_id }}/retry" hx-target="#activity">Retry send</button>
+    {% endif %}</div>
+  <div class="muted">{{ turn.usage.input_tokens }} in ({{ turn.usage.cached_tokens }} cached), {{ turn.usage.output_tokens }} out
+    &middot; {{ turn.latency_ms }} ms</div>
+  {% endif %}
+  {% else %}
+  <ul class="rows">{{ action_row(entry) }}</ul>
+  {% endif %}
+</div>
+{% else %}
+<p class="muted">Nothing has happened yet.</p>
+{% endfor %}

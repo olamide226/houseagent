@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Set up your household{% endblock %}
+{% block main %}
+<h1>Set up your household</h1>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form class="stack card" method="post" action="/setup">
+  <input type="hidden" name="token" value="{{ token }}">
+  <label>Household name <input type="text" name="household" required autofocus></label>
+  <label>Time zone <input type="text" name="timezone" value="{{ timezone }}" required></label>
+  <label>Your name <input type="text" name="admin" required></label>
+  <button>Create household</button>
+</form>
+{% endblock %}

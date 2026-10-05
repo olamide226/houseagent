@@ -1,0 +1,40 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f7f6f3; --card: #fff; --text: #1d1d1b; --muted: #6b6a66; --line: #e2e0da;
+  --accent: #1f6f4a; --warn: #a15c00; --bad: #a3282f;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #161615; --card: #1f1f1d; --text: #ecebe7; --muted: #9b9a95; --line: #33322f;
+          --accent: #6cc79a; --warn: #e0a458; --bad: #f08a8f; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; padding: .75rem 1rem;
+         border-bottom: 1px solid var(--line); background: var(--card); }
+header strong { margin-right: auto; }
+nav { display: flex; flex-wrap: wrap; gap: .25rem .9rem; }
+a { color: var(--accent); text-decoration: none; }
+a:hover, a[aria-current] { text-decoration: underline; }
+main { max-width: 46rem; margin: 0 auto; padding: 1rem; }
+h1 { font-size: 1.35rem; margin: .25rem 0 1rem; }
+h2 { font-size: 1.05rem; margin: 1.5rem 0 .5rem; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: .6rem; padding: .85rem 1rem; margin-bottom: .75rem; }
+.muted { color: var(--muted); font-size: .9rem; }
+.error { color: var(--bad); }
+.low { color: var(--warn); } .out { color: var(--bad); }
+ul.rows { list-style: none; margin: 0; padding: 0; }
+ul.rows > li { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; padding: .55rem 0;
+               border-bottom: 1px solid var(--line); }
+ul.rows > li:last-child { border-bottom: 0; }
+ul.rows .grow { flex: 1 1 10rem; }
+form { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin: 0; }
+form.stack { flex-direction: column; align-items: stretch; max-width: 24rem; }
+input, select, textarea, button { font: inherit; padding: .45rem .6rem; border: 1px solid var(--line);
+                                  border-radius: .45rem; background: var(--card); color: var(--text); }
+input[type=text], textarea { flex: 1 1 9rem; min-width: 0; }
+button { cursor: pointer; background: var(--accent); border-color: var(--accent); color: var(--bg); }
+button.quiet { background: transparent; color: var(--accent); border-color: var(--line); }
+pre { white-space: pre-wrap; margin: .35rem 0 0; font-size: .85rem; color: var(--muted); }
+.stat { font-size: 1.6rem; font-weight: 600; }
+.qr svg { width: 12rem; height: 12rem; background: #fff; border-radius: .4rem; }
+code { font-size: 1.1rem; letter-spacing: .08em; }

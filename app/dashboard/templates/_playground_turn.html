@@ -1,0 +1,17 @@
+<div class="card">
+  <div><strong>{{ session.name }}:</strong> {{ text }}</div>
+  {% if error %}
+  <div class="error">{{ error }}</div>
+  {% else %}
+  <ul class="rows">
+    {% for call in result.tool_calls %}
+    <li><span class="grow"><strong>{{ call.name }}</strong> <span class="muted">{{ call.args | tojson }}</span>
+          <pre{% if call.is_error %} class="error"{% endif %}>{{ call.result }}</pre></span></li>
+    {% endfor %}
+  </ul>
+  <div>&rarr; {% if result.noop %}<span class="muted">NOOP (no reply)</span>{% elif result.ack_only %}ACK (a reaction)
+       {% else %}{{ result.reply }}{% endif %}</div>
+  <div class="muted">{{ "applied" if applied else "dry run, nothing saved" }} &middot;
+    {{ result.usage.input_tokens }} in, {{ result.usage.output_tokens }} out</div>
+  {% endif %}
+</div>

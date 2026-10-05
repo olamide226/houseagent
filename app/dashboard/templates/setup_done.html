@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Household created{% endblock %}
+{% block main %}
+<h1>Household created</h1>
+<p>{{ admin }}, connect your chat to {{ agent }} with this invite. It works once per channel and expires in 7 days.
+   This page will not be shown again.</p>
+<div class="card">
+  {% if link %}
+  <p><a href="{{ link }}">Open in Telegram</a></p>
+  <p class="qr">{{ qr | safe }}</p>
+  {% endif %}
+  <p>Or send this code to {{ agent }}: <code>{{ code }}</code></p>
+</div>
+<p class="muted">Once connected, send <strong>dashboard</strong> to {{ agent }} to get a login link.</p>
+{% endblock %}
