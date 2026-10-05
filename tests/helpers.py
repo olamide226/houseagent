@@ -195,3 +195,19 @@ def tg_update(update_id: int, text: str | None = None, *, user_id: int = 1001, n
     if text is not None:
         body["text"] = text
     return {"update_id": update_id, "message": body}
+
+
+def london(text: str) -> Any:
+    """A UTC instant from London wall-clock time, e.g. london("2026-10-27 09:00")."""
+    from datetime import datetime
+
+    from app.core.timeutil import to_utc
+
+    return to_utc(datetime.fromisoformat(text), "Europe/London")
+
+
+def wall(moment: Any) -> str:
+    """London wall-clock time of an instant, e.g. "Tue 27 Oct 09:00"."""
+    from app.core.timeutil import local
+
+    return f"{local(moment, 'Europe/London'):%a %-d %b %H:%M}"

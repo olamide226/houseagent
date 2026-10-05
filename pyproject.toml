@@ -19,6 +19,7 @@ dependencies = [
     "qrcode",
     "inflect",
     "structlog",
+    "python-dateutil>=2.9.0.post0",
 ]
 
 [project.optional-dependencies]
@@ -64,7 +65,7 @@ strict = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["inflect.*", "qrcode.*"]
+module = ["inflect.*", "qrcode.*", "dateutil.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
