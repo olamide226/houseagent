@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 
 from app.agent.base import Ctx, ToolError
 from app.db import execute, fetch_all, fetch_one, fetch_val, jsonb
@@ -20,6 +21,16 @@ PK: dict[str, tuple[str, ...]] = {
     "items": ("id",),
     "events": ("id",),
     "reminders": ("id",),
+    "members": ("id",),
+    "households": ("id",),
+    "household_facts": ("id",),
+    "places": ("id",),
+}
+# Tables where undo puts back only these columns. Tokens and the session version are never
+# rolled back, or an undo could revive a revoked invite or a logged-out session.
+PARTIAL: dict[str, tuple[str, ...]] = {
+    "members": ("name", "role", "preferred_channel", "quiet_start", "quiet_end"),
+    "households": ("digest_time", "onboarding_state"),
 }
 _IDENT = re.compile(r"^[a-z_]+$")
 UNDO_WINDOW_HOURS = 24
@@ -42,9 +53,10 @@ class Recorder:
         if (table, key) in self._before:
             return
         where = " and ".join(f"{column} = :{column}" for column in PK[table])
-        self._before[(table, key)] = await fetch_val(
-            self.ctx.conn, f"select to_jsonb(t) from {table} t where {where}", **pk
-        )
+        row = await fetch_val(self.ctx.conn, f"select to_jsonb(t) from {table} t where {where}", **pk)
+        if row is not None and table in PARTIAL:
+            row = {column: row[column] for column in (*PK[table], *PARTIAL[table])}
+        self._before[(table, key)] = row
         self.touched.append({"table": table, "id": key})
 
     def created(self, table: str, row_id: str) -> None:
@@ -153,8 +165,12 @@ async def undo_action(ctx: Ctx, action_id: str) -> str:
         else:
             where = " and ".join(f"{column} = :{column}" for column in pk)
             for key in op["ids"]:
-                await execute(ctx.conn, f"delete from {table} where {where}",
-                              **dict(zip(pk, key.split(":"), strict=True)))
+                try:
+                    async with ctx.conn.begin_nested():
+                        await execute(ctx.conn, f"delete from {table} where {where}",
+                                      **dict(zip(pk, key.split(":"), strict=True)))
+                except IntegrityError:
+                    raise ToolError(f"can't undo {action['tool']}: other records now depend on it") from None
     await _log_stock_restores(ctx, action["inverse"])
     await execute(ctx.conn, "update agent_actions set undone_at = clock_timestamp() where id = :id",
                   id=action["id"])
@@ -165,6 +181,15 @@ async def _restore(ctx: Ctx, table: str, pk: tuple[str, ...], row: dict[str, Any
     columns = [c for c in row if c not in pk]
     if not all(_IDENT.fullmatch(c) for c in row):
         raise ToolError("stored undo data is malformed")
+    if table in PARTIAL:
+        await execute(
+            ctx.conn,
+            f"""update {table} t set {", ".join(f"{c} = r.{c}" for c in columns)}
+                from jsonb_populate_record(null::{table}, cast(:row as jsonb)) r
+                where {" and ".join(f"t.{c} = r.{c}" for c in pk)}""",
+            row=jsonb(row),
+        )
+        return
     await execute(
         ctx.conn,
         f"""insert into {table} select * from jsonb_populate_record(null::{table}, cast(:row as jsonb))

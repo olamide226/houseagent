@@ -94,6 +94,15 @@ async def update_item(rec: Recorder, item_id: str, *, aliases: list[str], is_sta
     rec.lines.append(f"OK: {item['canonical_name']} updated")
 
 
+async def mark_staple(rec: Recorder, item_id: str) -> None:
+    """Something the household always keeps in: it goes on the list by itself when it runs out."""
+    item = await _item(rec, item_id)
+    if not item["is_staple"]:
+        await rec.before("items", id=item_id)
+        await execute(rec.ctx.conn, "update items set is_staple = true where id = :id", id=item_id)
+    rec.lines.append(f"OK: {item['canonical_name']} is a staple")
+
+
 async def merge_items(rec: Recorder, keep_id: str, duplicate_id: str) -> None:
     """Fold `duplicate` into `keep`: events, stock, list entries and aliases, in one transaction.
     Not undoable: the duplicate's rows are rewritten in place."""

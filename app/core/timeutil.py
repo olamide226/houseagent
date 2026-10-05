@@ -1,4 +1,5 @@
 """Household time. Timestamps are UTC everywhere; conversion happens only at the edges."""
+import re
 from collections.abc import Iterable
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
@@ -33,6 +34,22 @@ def day_bounds(day: date, timezone: str) -> tuple[datetime, datetime]:
 
 
 # ---------------------------------------------------------------- quiet hours
+_CLOCK = re.compile(r"^(\d{1,2})(?:[:.](\d{2}))?(?::\d{2})?\s*(am|pm)?$")
+
+
+def parse_clock(text: str) -> time:
+    """A time of day as people write it: 07:30, 7.30, 7am, 9:30pm. Raises ValueError otherwise."""
+    found = _CLOCK.fullmatch(text.strip().lower())
+    if not found:
+        raise ValueError(f"'{text}' is not a time of day")
+    hour, minute, half = int(found[1]), int(found[2] or 0), found[3]
+    if half and not 1 <= hour <= 12:
+        raise ValueError(f"'{text}' is not a time of day")
+    if half:
+        hour = hour % 12 + (12 if half == "pm" else 0)
+    return time(hour, minute)   # raises ValueError past 23:59
+
+
 def in_quiet_hours(at: time, start: time | None, end: time | None) -> bool:
     """`start > end` is a window that crosses midnight, e.g. 21:30 to 07:00."""
     if start is None or end is None or start == end:

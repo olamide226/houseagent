@@ -27,6 +27,11 @@ def new_invite_code() -> str:
     return f"{head}-{tail}"
 
 
+def invite_link(code: str, bot_username: str | None) -> str | None:
+    """The Telegram deep link that presses Start and redeems the code in one tap."""
+    return f"https://t.me/{bot_username}?start={code}" if bot_username else None
+
+
 def parse_invite_code(text: str | None) -> str | None:
     """The code if the whole message is one (case-insensitive), else None."""
     code = (text or "").strip().upper()
