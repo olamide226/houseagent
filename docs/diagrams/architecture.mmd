@@ -1,0 +1,12 @@
+flowchart LR
+    TG[Telegram] -- webhook --> API
+    Browser -- dashboard --> API
+    subgraph image[one image, two processes]
+        API[api: uvicorn app.main:app]
+        W[worker: python -m app.worker.main]
+    end
+    API -- "insert messages, NOTIFY inbound" --> PG[(Postgres)]
+    PG -- "received messages, pending outbox" --> W
+    W -- "tool writes, outbox rows" --> PG
+    W -- tool-calling loop --> LLM[LLM provider]
+    W -- "sendMessage, setMessageReaction" --> TG
