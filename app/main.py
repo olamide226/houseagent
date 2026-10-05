@@ -17,6 +17,7 @@ from app.config import configure_logging, get_settings
 from app.core.envelope import Channel
 from app.dashboard import auth, routes
 from app.db import engine, fetch_val, tx
+from app.ics import routes as ics
 from app.llm.base import make_llm
 from app.pipeline import inbound
 
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "dashboard" / "static"), name="static")
     app.include_router(auth.router)
     app.include_router(routes.router)
+    app.include_router(ics.router)
 
     @app.exception_handler(auth.LoginRequired)
     async def login_required(request: Request, exc: auth.LoginRequired) -> Response:
