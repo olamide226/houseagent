@@ -5,14 +5,30 @@ unless urgent" and "every job may run twice", and the milestone exit: a weekly a
 one-off appointment remind at the right local time on both sides of the 25 Oct 2026 clock change.
 """
 import asyncio
+import time
 from datetime import date, timedelta
 
+import pytest
+
+from app.agent.loop import LoopRuntime
 from app.agent.tools import run_tool
+from app.config import get_settings
 from app.core.envelope import Channel
 from app.db import execute, fetch_all, tx
 from app.pipeline import router
 from app.worker import jobs
-from tests.helpers import FakeAdapter, add_item, add_member, ctx_for, london, seed_home, wall
+from tests.helpers import (
+    FakeAdapter,
+    FakeLLM,
+    add_item,
+    add_member,
+    ctx_for,
+    london,
+    say,
+    seed_home,
+    tg_update,
+    wall,
+)
 
 NOW = london("2026-10-05 12:00")     # a Monday
 
@@ -364,3 +380,30 @@ async def test_no_weekly_digest_when_there_is_nothing_to_say():
         await family(conn)
     assert await jobs.weekly_digest(london("2026-10-11 18:00")) == 0
     assert await rows("select 1 from outbox") == []
+
+
+# ---------------------------------------------------------------- the worker loop
+async def test_the_inbound_job_wakes_on_notify_and_closes_its_listener_when_cancelled(client):
+    listeners = "select 1 from pg_stat_activity where datname = current_database() and query ilike 'listen%'"
+    async with tx() as conn:
+        await seed_home(conn)
+    job = asyncio.create_task(jobs.inbound_job(get_settings(), LoopRuntime(FakeLLM(say("NOOP"))), {}, None,
+                                               asyncio.Event()))
+    await asyncio.sleep(0.3)                       # it has found nothing and is waiting out its 2 s poll
+    assert len(await rows(listeners)) == 1
+
+    posted = time.monotonic()
+    await client.post("/webhooks/telegram", json=tg_update(1, "morning all"),
+                      headers={"X-Telegram-Bot-Api-Secret-Token": "test-webhook-secret"})
+    while (await rows("select status from messages"))[0]["status"] != "processed":
+        assert time.monotonic() - posted < 1.0, "the job waited for its poll instead of waking on NOTIFY"
+        await asyncio.sleep(0.02)
+
+    job.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await job
+    for _ in range(50):
+        if not await rows(listeners):
+            break
+        await asyncio.sleep(0.02)
+    assert await rows(listeners) == []

@@ -38,24 +38,26 @@ async def inbound_job(settings: Settings, runtime: AgentRuntime, adapters: dict[
                       stt: SpeechToText | None, outbox_wake: asyncio.Event) -> None:
     """Process settled batches. Wakes on NOTIFY inbound, when a batch's debounce ends, or every 2 s."""
     wake = asyncio.Event()
-    listener = await engine().raw_connection()
-    try:
-        await listener.driver_connection.add_listener("inbound", lambda *_: wake.set())  # type: ignore[union-attr]
-        while True:
-            wake.clear()
-            async with tx() as conn:
-                ready = await inbound.ready_households(conn, settings.debounce_seconds)
-            for household_id in ready:
-                await inbound.process_household(household_id, runtime, adapters, stt=stt,
-                                                public_base_url=settings.public_base_url)
-                outbox_wake.set()
-            async with tx() as conn:
-                pending = await inbound.seconds_until_ready(conn, settings.debounce_seconds)
-            timeout = POLL_SECONDS if pending is None else min(POLL_SECONDS, pending)
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(wake.wait(), timeout)
-    finally:
-        listener.close()
+    async with engine().connect() as listening:
+        listener = (await listening.get_raw_connection()).driver_connection
+        assert listener is not None
+        await listener.add_listener("inbound", lambda *_: wake.set())
+        try:
+            while True:
+                wake.clear()
+                async with tx() as conn:
+                    ready = await inbound.ready_households(conn, settings.debounce_seconds)
+                for household_id in ready:
+                    await inbound.process_household(household_id, runtime, adapters, stt=stt,
+                                                    public_base_url=settings.public_base_url)
+                    outbox_wake.set()
+                async with tx() as conn:
+                    pending = await inbound.seconds_until_ready(conn, settings.debounce_seconds)
+                timeout = POLL_SECONDS if pending is None else min(POLL_SECONDS, pending)
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(wake.wait(), timeout)
+        finally:
+            await listening.invalidate()   # it is still listening: close it, never return it to the pool
 
 
 async def outbox_job(adapters: dict[Channel, ChannelAdapter], wake: asyncio.Event) -> None:
