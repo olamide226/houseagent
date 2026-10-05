@@ -60,8 +60,9 @@ Both are **below the release bar**.
 | `openai_compat` | `https://api.deepseek.com/` | 16/19 (84%) | 3/3 | 2/3 | 98,643 (65,920) | 4,723 |
 | `anthropic` | `https://api.deepseek.com/anthropic` | 17/19 (89%) | 3/3 | 3/3 | 91,160 (82,432) | 3,921 |
 
-Cost: the account balance, shown to the cent, read $4.93 before the run and $4.92 after it and the
-follow-up checks below, so the run cost about a cent.
+Cost: the account balance, shown to the cent, read $4.93 before any model call in this milestone
+and $4.91 after everything (adapter probes, two smoke turns, this run, and the traced re-runs
+below). The full run itself is roughly a cent.
 
 Failures, each traced by re-running the case with tool calls printed:
 
