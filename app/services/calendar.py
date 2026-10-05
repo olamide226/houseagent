@@ -256,10 +256,12 @@ async def modify_event(
     changes: dict[str, Any] = {
         name: value for name, value in {
             "starts_at": starts_at, "ends_at": ends_at, "title": (title or "").strip() or None,
-            "location": location or None, "notes": notes or None,
             "participant_ids": None if participant_ids is None else list(participant_ids),
         }.items() if value is not None
     }
+    for name, text in (("location", location), ("notes", notes)):
+        if text is not None:
+            changes[name] = text.strip() or None      # an empty string clears it
     if not cancel and not changes:
         raise ToolError("say what to change: a new time, title, place or people, or cancel")
     if event["rrule"] and scope == "this":
@@ -441,8 +443,9 @@ async def occurrences_between(conn: AsyncConnection, household_id: str, start: d
 
 
 async def standalone_reminders(conn: AsyncConnection, household_id: str, start: datetime, end: datetime,
-                               member_id: str | None = None) -> list[dict[str, Any]]:
-    """Scheduled reminders that belong to no event and fire in the window, repeats expanded."""
+                               member_id: str | None = None, *, expand: bool = True) -> list[dict[str, Any]]:
+    """Scheduled reminders that belong to no event and fire in the window. A repeating one
+    appears once per occurrence, or only at its next time when `expand` is false."""
     rows = await fetch_all(
         conn,
         """select r.id, r.text, r.fire_at, r.rrule, r.target, m.name as member, h.timezone
@@ -455,6 +458,7 @@ async def standalone_reminders(conn: AsyncConnection, household_id: str, start: 
     for row in rows:
         if row["rrule"]:
             times = occurrences(row["rrule"], row["fire_at"], row["timezone"], max(start, row["fire_at"]), end)
+            times = times if expand else times[:1]
         else:
             times = [row["fire_at"]] if row["fire_at"] >= start else []
         found += [{**row, "fire_at": at} for at in times]

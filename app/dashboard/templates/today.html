@@ -11,6 +11,24 @@
     <button>Add</button>
   </form>
 </div>
+{% for day, entries in days.items() %}
+<h2>{{ "Today" if day == today.date() else "Tomorrow" }}</h2>
+<div class="card">
+  <ul class="rows">
+  {% for entry in entries %}
+    <li><span>{{ entry.at.strftime("%H:%M") }}</span>
+    {% if entry.event %}
+      <span class="grow">{{ entry.event.title }}{% if entry.event.participants %} ({{ entry.event.participants | join(", ") }}){% endif %}</span>
+      <span class="muted">{{ entry.event.location or "" }}</span>
+    {% else %}
+      <span class="grow">{{ entry.reminder.text }}</span><span class="muted">reminder, {{ entry.reminder.member or "everyone" }}</span>
+    {% endif %}</li>
+  {% endfor %}
+  </ul>
+</div>
+{% else %}
+<p class="muted">Nothing on <a href="/dashboard/calendar">the calendar</a> today or tomorrow.</p>
+{% endfor %}
 <h2>Low or out</h2>
 <div class="card">
   <ul class="rows">

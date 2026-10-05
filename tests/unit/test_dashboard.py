@@ -1,8 +1,9 @@
 """Dashboard: first-run setup, magic-link login, sessions, CSRF, and writes through the shared services."""
 import re
+from datetime import timedelta
 
 from app.agent.loop import LoopRuntime
-from app.core.timeutil import utcnow
+from app.core.timeutil import local, utcnow
 from app.db import fetch_all, fetch_one, tx
 from app.main import app
 from app.services import members
@@ -58,8 +59,8 @@ async def test_pages_need_a_session_and_a_magic_link_works_exactly_once(client):
     async with tx() as conn:
         home = await seed_home(conn)
         token = await members.create_login_token(conn, home.ola, utcnow())
-    for path in ("/dashboard", "/dashboard/shopping", "/dashboard/inventory", "/dashboard/activity",
-                 "/dashboard/playground"):
+    for path in ("/dashboard", "/dashboard/shopping", "/dashboard/inventory", "/dashboard/calendar",
+                 "/dashboard/activity", "/dashboard/playground"):
         refused = await client.get(path)
         assert refused.status_code == 401 and "login link" in refused.text
 
@@ -95,14 +96,18 @@ async def test_every_post_needs_the_csrf_token(client):
     async with tx() as conn:
         home = await seed_home(conn)
     csrf = await login(client, home)
+    nothing = "00000000-0000-0000-0000-000000000000"
     posts = ["/dashboard/shopping/add", "/dashboard/playground", "/logout",
-             "/dashboard/activity/actions/00000000-0000-0000-0000-000000000000/undo"]
+             f"/dashboard/activity/actions/{nothing}/undo", "/dashboard/calendar/add", "/dashboard/calendar/feed",
+             f"/dashboard/calendar/events/{nothing}/cancel", f"/dashboard/calendar/reminders/{nothing}/cancel"]
     for path in posts:
-        assert (await client.post(path, data={"item": "eggs", "text": "hi"})).status_code == 403
-        wrong = await client.post(path, data={"item": "eggs", "text": "hi"}, headers={"X-CSRF-Token": "0" * 64})
-        assert wrong.status_code == 403
+        form = {"item": "eggs", "text": "hi", "title": "GP", "when": "2030-01-01T10:00"}
+        assert (await client.post(path, data=form)).status_code == 403
+        assert (await client.post(path, data=form, headers={"X-CSRF-Token": "0" * 64})).status_code == 403
     async with tx() as conn:
         assert await active_list(conn, home) == {}
+        assert await fetch_all(conn, "select 1 from events") == []
+        assert await fetch_one(conn, "select calendar_token_hash from households") == {"calendar_token_hash": None}
     # The token also works as a form field, for plain form posts.
     added = await client.post("/dashboard/shopping/add", data={"item": "eggs", "csrf": csrf["X-CSRF-Token"]})
     assert added.status_code == 303
@@ -263,6 +268,159 @@ async def test_playground_is_a_dry_run_unless_apply_is_ticked(client):
     app.state.runtime = LoopRuntime(FakeLLM())                               # the model call fails
     failed = await client.post("/dashboard/playground", data={"text": "hello", "apply": "true"}, headers=csrf)
     assert failed.status_code == 200 and "ran out of scripted responses" in failed.text
+
+
+# ---------------------------------------------------------------- calendar
+def in_days(days, clock="10:30"):
+    """A datetime-local form value a few days from now, in household time."""
+    return f"{local(utcnow() + timedelta(days=days), 'Europe/London'):%Y-%m-%d}T{clock}"
+
+
+async def calendar_rows(home):
+    async with tx() as conn:
+        events = await fetch_all(conn, "select * from events where household_id = :h order by created_at", h=home.id)
+        reminders = await fetch_all(
+            conn, "select status, text from reminders where household_id = :h order by fire_at", h=home.id)
+    return events, reminders
+
+
+async def test_calendar_page_adds_edits_and_cancels_through_the_calendar_service(client):
+    async with tx() as conn:
+        home = await seed_home(conn)
+        tobi = await add_member(conn, home, "Tobi", role="child")
+    csrf = await login(client, home)
+    empty = await client.get("/dashboard/calendar")
+    assert empty.status_code == 200 and "Nothing booked" in empty.text
+
+    page = await client.post("/dashboard/calendar/add", headers=csrf, data={
+        "title": "Dentist", "when": in_days(3), "who": "Tobi", "location": "High St"})
+    assert page.status_code == 200 and "Dentist" in page.text and "<html" not in page.text
+    (event,), reminders = await calendar_rows(home)
+    assert (event["title"], event["kind"], event["rrule"], event["location"]) == ("Dentist", "appointment", None, "High St")
+    assert [str(p) for p in event["participant_ids"]] == [tobi] and event["created_by"] == home.ola
+    assert f"{local(event['starts_at'], 'Europe/London'):%Y-%m-%dT%H:%M}" == in_days(3)
+    # The same reminder plan a chat booking gets: the day before and an hour before, to the household.
+    assert [r["status"] for r in reminders] == ["scheduled", "scheduled"]
+    assert all(r["text"].startswith("Dentist for Tobi") for r in reminders)
+
+    edited = await client.post(f"/dashboard/calendar/events/{event['id']}/edit", headers=csrf, data={
+        "title": "Orthodontist", "when": in_days(4, "14:00"), "location": ""})
+    assert "Orthodontist" in edited.text
+    (event,), reminders = await calendar_rows(home)
+    assert (event["title"], event["location"]) == ("Orthodontist", None)             # an empty field clears it
+    assert f"{local(event['starts_at'], 'Europe/London'):%Y-%m-%dT%H:%M}" == in_days(4, "14:00")
+    assert all("at 14:00" in r["text"] for r in reminders) and len(reminders) == 2
+
+    await client.post(f"/dashboard/calendar/events/{event['id']}/cancel", headers=csrf)
+    (event,), reminders = await calendar_rows(home)
+    assert event["status"] == "cancelled" and {r["status"] for r in reminders} == {"cancelled"}
+    async with tx() as conn:
+        logged = await fetch_all(conn, "select source, tool, member_id from agent_actions order by created_at")
+    assert [(a["source"], a["tool"], a["member_id"]) for a in logged] == [
+        ("dashboard", "calendar.add", home.ola), ("dashboard", "calendar.edit", home.ola),
+        ("dashboard", "calendar.cancel", home.ola)]
+
+    for bad, why in [({"who": "Zed"}, "nobody called Zed"), ({"when": "soon"}, "pick a date and a time"),
+                     ({"when": "2020-01-01T10:00"}, "already passed")]:
+        refused = await client.post("/dashboard/calendar/add", headers=csrf, data={
+            "title": "Nope", "when": in_days(3), **bad})
+        assert why in refused.text
+    assert len((await calendar_rows(home))[0]) == 1
+
+
+async def test_calendar_page_skips_one_occurrence_of_a_series_and_activity_can_undo_it(client):
+    async with tx() as conn:
+        home = await seed_home(conn)
+    csrf = await login(client, home)
+    await client.post("/dashboard/calendar/add", headers=csrf, data={
+        "title": "Chatterbox", "when": in_days(1, "09:00"), "repeat": "weekly"})
+    (series,), _ = await calendar_rows(home)
+    assert (series["rrule"], series["kind"]) == ("FREQ=WEEKLY", "activity")
+    page = (await client.get("/dashboard/calendar")).text
+    assert page.count("Skip this one") >= 4 and "Repeating" in page          # every week in the next 30 days
+
+    second = local(series["starts_at"] + timedelta(days=7), "Europe/London").date()
+    await client.post(f"/dashboard/calendar/events/{series['id']}/skip", headers=csrf, data={"day": second.isoformat()})
+    (series,), _ = await calendar_rows(home)
+    assert series["exdates"] == [second] and series["status"] == "active"
+    assert f'value="{second.isoformat()}"' not in (await client.get("/dashboard/calendar")).text
+
+    not_a_day = await client.post(f"/dashboard/calendar/events/{series['id']}/skip", headers=csrf, data={"day": "x"})
+    assert "not a date" in not_a_day.text
+
+    async with tx() as conn:
+        action = await fetch_one(conn, "select id from agent_actions where tool = 'calendar.skip'")
+    await client.post(f"/dashboard/activity/actions/{action['id']}/undo", headers=csrf)
+    assert (await calendar_rows(home))[0][0]["exdates"] == []
+
+
+async def test_calendar_page_lists_and_cancels_reminders_and_today_shows_what_is_coming(client):
+    from app.agent.tools import run_tool
+    from tests.helpers import ctx_for
+
+    soon = utcnow() + timedelta(minutes=90)
+    async with tx() as conn:
+        home = await seed_home(conn)
+        ctx = ctx_for(conn, home)
+        for name, args in [
+            ("set_reminder", {"text": "call the landlord", "fire_at": (soon + timedelta(minutes=5)).isoformat()}),
+            ("set_reminder", {"text": "bins out", "rrule": "FREQ=DAILY;BYHOUR=18", "target": "household"}),
+            ("schedule_event", {"title": "School run", "starts_at": soon.isoformat(), "location": "St Mary's"}),
+            ("schedule_event", {"title": "Next week", "starts_at": (soon + timedelta(days=7)).isoformat()}),
+        ]:
+            result, is_error = await run_tool(name, args, ctx)
+            assert not is_error, result
+    csrf = await login(client, home)
+
+    today = (await client.get("/dashboard")).text
+    assert "School run" in today and "St Mary&#39;s" in today and "call the landlord" in today
+    assert "Next week" not in today
+
+    page = (await client.get("/dashboard/calendar")).text
+    assert "call the landlord" in page and page.count("bins out") == 1 and "Next week" in page
+    async with tx() as conn:
+        reminder = await fetch_one(conn, "select id from reminders where text = 'call the landlord'")
+    await client.post(f"/dashboard/calendar/reminders/{reminder['id']}/cancel", headers=csrf)
+    again = await client.post(f"/dashboard/calendar/reminders/{reminder['id']}/cancel", headers=csrf)
+    assert "no longer scheduled" in again.text
+    async with tx() as conn:
+        assert await fetch_one(conn, "select status from reminders where id = :id", id=reminder["id"]) == {
+            "status": "cancelled"}
+
+
+async def test_calendar_page_gives_a_subscribe_link_that_serves_the_feed(client):
+    async with tx() as conn:
+        home = await seed_home(conn)
+    csrf = await login(client, home)
+    assert "/ics/" not in (await client.get("/dashboard/calendar")).text
+    page = await client.post("/dashboard/calendar/feed", headers=csrf)
+    link = re.search(r'value="http://testserver(/ics/[\w-]+\.ics)"', page.text).group(1)
+    assert (await client.get(link)).status_code == 200
+    assert "/ics/" not in (await client.get("/dashboard/calendar")).text         # shown once only
+
+
+async def test_another_households_calendar_cannot_be_changed(client):
+    from app.agent.tools import run_tool
+    from tests.helpers import ctx_for
+
+    async with tx() as conn:
+        home = await seed_home(conn)
+        other = await seed_home(conn, telegram_id=None)
+        ctx = ctx_for(conn, other)
+        when = (utcnow() + timedelta(days=2)).isoformat()
+        await run_tool("schedule_event", {"title": "Their GP", "starts_at": when}, ctx)
+        await run_tool("set_reminder", {"text": "their reminder", "fire_at": when}, ctx)
+        event = await fetch_one(conn, "select id from events")
+        reminder = await fetch_one(conn, "select id from reminders where event_id is null")
+    csrf = await login(client, home)
+    assert "Their GP" not in (await client.get("/dashboard/calendar")).text
+    for path in (f"events/{event['id']}/cancel", f"events/{event['id']}/edit", f"reminders/{reminder['id']}/cancel"):
+        refused = await client.post(f"/dashboard/calendar/{path}", headers=csrf,
+                                    data={"title": "Mine", "when": in_days(3)})
+        assert "no longer" in refused.text
+    (theirs,), reminders = await calendar_rows(other)
+    assert (theirs["title"], theirs["status"]) == ("Their GP", "active")
+    assert {r["status"] for r in reminders} == {"scheduled"}
 
 
 async def test_health_endpoints(client):

@@ -4,6 +4,7 @@ Pages read through app/services and write through the same service functions the
 tools use, logged in agent_actions with source 'dashboard'.
 """
 from collections.abc import Awaitable, Callable
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -14,17 +15,20 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from app.agent import actions
 from app.agent.actions import Recorder, record
 from app.agent.base import Ctx, ToolError
-from app.agent.resolve import Ambiguous, resolve_item
-from app.core.timeutil import local, utcnow
+from app.agent.resolve import Ambiguous, resolve_item, resolve_members
+from app.config import get_settings
+from app.core.timeutil import day_bounds, local, to_utc, utcnow
 from app.dashboard.auth import Session, current_session, require_csrf, templates
 from app.db import advisory_lock, engine, fetch_all, fetch_one, tx
 from app.pipeline import inbound
 from app.pipeline import router as outbound
-from app.services import inventory, shopping
+from app.services import calendar, households, inventory, shopping
 
 router = APIRouter(prefix="/dashboard", default_response_class=HTMLResponse)
 
 ACTIVITY_LIMIT = 200
+CALENDAR_DAYS = 30
+REPEATS = {"": None, "daily": "FREQ=DAILY", "weekly": "FREQ=WEEKLY", "monthly": "FREQ=MONTHLY"}
 
 
 def _ctx(conn: AsyncConnection, session: Session) -> Ctx:
@@ -56,14 +60,32 @@ def _decimal(value: str) -> Decimal | None:
 # ---------------------------------------------------------------- Today
 @router.get("")
 async def today(request: Request, session: Session = Depends(current_session)) -> Response:
+    now = utcnow()
+    today = local(now, session.timezone)
+    _, tomorrow_night = day_bounds(today.date() + timedelta(days=1), session.timezone)
     async with tx() as conn:
         context = {
-            "today": local(utcnow(), session.timezone),
+            "today": today,
+            "days": _by_day(await calendar.occurrences_between(conn, session.household_id, now, tomorrow_night),
+                            await calendar.standalone_reminders(conn, session.household_id, now, tomorrow_night),
+                            session.timezone),
             "list_count": len(await shopping.active_entries(conn, session.household_id, include_predicted=False)),
             "low": await inventory.stock_rows(conn, session.household_id, statuses=["low", "out"]),
-            "expiring": await inventory.stock_rows(conn, session.household_id, expiring_within_days=3),
+            "expiring": await inventory.stock_rows(conn, session.household_id, expiring_within_days=3,
+                                                   today=today.date()),
         }
     return _page(request, "today.html", session, **context)
+
+
+def _by_day(occurrences: list[calendar.Occurrence], reminders: list[dict[str, Any]],
+            timezone: str) -> dict[date, list[dict[str, Any]]]:
+    """Events and standalone reminders as one time-ordered list per household-local day."""
+    entries: list[dict[str, Any]] = [{"at": local(o.start, timezone), "event": o} for o in occurrences]
+    entries += [{"at": local(r["fire_at"], timezone), "reminder": r} for r in reminders]
+    days: dict[date, list[dict[str, Any]]] = {}
+    for entry in sorted(entries, key=lambda entry: entry["at"]):
+        days.setdefault(entry["at"].date(), []).append(entry)
+    return days
 
 
 # ---------------------------------------------------------------- Shopping list
@@ -209,6 +231,92 @@ async def item_merge(request: Request, item_id: str, duplicate_id: str = Form(..
 
     args = {"keep_id": item_id, "duplicate_id": duplicate_id}
     return await _item(request, session, item_id, await _write(session, "inventory.merge_items", args, merge))
+
+
+# ---------------------------------------------------------------- Calendar
+async def _calendar(request: Request, session: Session, template: str = "_calendar.html",
+                    error: str | None = None, feed: str | None = None) -> Response:
+    now = utcnow()
+    until = now + timedelta(days=CALENDAR_DAYS)
+    async with tx() as conn:
+        coming = await calendar.occurrences_between(conn, session.household_id, now, until)
+        context = {
+            "days": _by_day(coming, [], session.timezone),
+            "series": await calendar.active_events(conn, session.household_id, recurring=True),
+            "reminders": await calendar.standalone_reminders(conn, session.household_id, now, until, expand=False),
+        }
+    return _page(request, template, session, error=error, feed=feed, local=local, repeats=REPEATS, **context)
+
+
+def _when(value: str, timezone: str) -> datetime:
+    try:
+        return to_utc(datetime.fromisoformat(value), timezone)
+    except ValueError:
+        raise ToolError("pick a date and a time") from None
+
+
+@router.get("/calendar")
+async def calendar_page(request: Request, session: Session = Depends(current_session)) -> Response:
+    return await _calendar(request, session, "calendar.html")
+
+
+@router.post("/calendar/add")
+async def calendar_add(request: Request, title: str = Form(...), when: str = Form(...), repeat: str = Form(""),
+                       who: str = Form(""), location: str = Form(""),
+                       session: Session = Depends(require_csrf)) -> Response:
+    async def add(rec: Recorder) -> None:
+        names = [name.strip() for name in who.split(",") if name.strip()]
+        people, unknown = await resolve_members(rec.ctx.conn, session.household_id, names, session.member_id)
+        if unknown:
+            raise ToolError(f"nobody called {', '.join(unknown)} is in the family")
+        await calendar.schedule_event(
+            rec, title=title, starts_at=_when(when, session.timezone), rrule=REPEATS.get(repeat),
+            kind="activity" if REPEATS.get(repeat) else "appointment", participant_ids=people, location=location)
+
+    args = {"title": title, "when": when, "repeat": repeat, "who": who, "location": location}
+    return await _calendar(request, session, error=await _write(session, "calendar.add", args, add))
+
+
+@router.post("/calendar/events/{event_id}/{verb}")
+async def calendar_change(request: Request, event_id: str, verb: str, title: str = Form(""), when: str = Form(""),
+                          location: str = Form(""), day: str = Form(""),
+                          session: Session = Depends(require_csrf)) -> Response:
+    async def change(rec: Recorder) -> None:
+        if verb == "edit":
+            await calendar.modify_event(rec, event_id, scope="all", title=title,
+                                        starts_at=_when(when, session.timezone), location=location)
+        elif verb == "cancel":
+            await calendar.modify_event(rec, event_id, scope="all", cancel=True)
+        elif verb == "skip":
+            try:
+                await calendar.modify_event(rec, event_id, scope="this", cancel=True,
+                                            occurrence=date.fromisoformat(day))
+            except ValueError:
+                raise ToolError("that is not a date") from None
+        else:
+            raise ToolError("unknown action")
+
+    args = {"event_id": event_id, "title": title, "when": when, "location": location, "day": day}
+    return await _calendar(request, session, error=await _write(session, f"calendar.{verb}", args, change))
+
+
+@router.post("/calendar/reminders/{reminder_id}/cancel")
+async def calendar_reminder_cancel(request: Request, reminder_id: str,
+                                   session: Session = Depends(require_csrf)) -> Response:
+    async def cancel(rec: Recorder) -> None:
+        await calendar.cancel_reminder(rec, reminder_id)
+
+    error = await _write(session, "calendar.cancel_reminder", {"reminder_id": reminder_id}, cancel)
+    return await _calendar(request, session, error=error)
+
+
+@router.post("/calendar/feed")
+async def calendar_feed(request: Request, session: Session = Depends(require_csrf)) -> Response:
+    """A new subscribe link. Only the token's hash is kept, so the link is shown this once
+    and any earlier link stops working."""
+    async with tx() as conn:
+        token = await households.new_calendar_token(conn, session.household_id)
+    return await _calendar(request, session, feed=f"{get_settings().public_base_url}/ics/{token}.ics")
 
 
 # ---------------------------------------------------------------- Activity

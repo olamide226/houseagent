@@ -1,0 +1,88 @@
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form class="card" hx-post="/dashboard/calendar/add" hx-target="#calendar">
+  <input type="text" name="title" placeholder="What" required>
+  <input type="datetime-local" name="when" required>
+  <select name="repeat">
+    {% for value in repeats %}<option value="{{ value }}">{{ value or "once" }}</option>{% endfor %}
+  </select>
+  <input type="text" name="who" placeholder="Who (optional)">
+  <input type="text" name="location" placeholder="Where (optional)">
+  <button>Add</button>
+</form>
+{% macro edit(event_id, title, at, location) %}
+<details>
+  <summary class="muted">Edit</summary>
+  <form hx-post="/dashboard/calendar/events/{{ event_id }}/edit" hx-target="#calendar">
+    <input type="text" name="title" value="{{ title }}" required>
+    <input type="datetime-local" name="when" value="{{ at.strftime('%Y-%m-%dT%H:%M') }}" required>
+    <input type="text" name="location" value="{{ location or '' }}" placeholder="Where">
+    <button>Save</button>
+  </form>
+</details>
+{% endmacro %}
+<h2>Next 30 days</h2>
+{% for day, entries in days.items() %}
+<div class="card">
+  <strong>{{ day.strftime("%A %-d %B") }}</strong>
+  <ul class="rows">
+  {% for entry in entries %}{% set event = entry.event %}
+    <li>
+      <span>{{ entry.at.strftime("%H:%M") }}</span>
+      <span class="grow">{{ event.title }}{% if event.participants %} ({{ event.participants | join(", ") }}){% endif %}
+        <span class="muted">{{ event.location or "" }}{% if event.rrule %} repeats{% endif %}</span></span>
+      {% if event.rrule %}
+      <form hx-post="/dashboard/calendar/events/{{ event.event_id }}/skip" hx-target="#calendar">
+        <input type="hidden" name="day" value="{{ day.isoformat() }}">
+        <button class="quiet">Skip this one</button>
+      </form>
+      {% else %}
+      {{ edit(event.event_id, event.title, entry.at, event.location) }}
+      <button class="quiet" hx-post="/dashboard/calendar/events/{{ event.event_id }}/cancel" hx-target="#calendar">Cancel</button>
+      {% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+{% else %}
+<p class="muted">Nothing booked. Add something above, or just tell the assistant.</p>
+{% endfor %}
+{% if series %}
+<h2>Repeating</h2>
+<div class="card">
+  <ul class="rows">
+  {% for event in series %}{% set at = local(event.starts_at, session.timezone) %}
+    <li>
+      <span class="grow">{{ event.title }}{% if event.participants %} ({{ event.participants | join(", ") }}){% endif %}
+        <span class="muted">{{ at.strftime("%H:%M") }}, {{ event.rrule }}{% if event.location %}, {{ event.location }}{% endif %}</span></span>
+      {{ edit(event.id, event.title, at, event.location) }}
+      <button class="quiet" hx-post="/dashboard/calendar/events/{{ event.id }}/cancel" hx-target="#calendar">Cancel all</button>
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% if reminders %}
+<h2>Reminders</h2>
+<div class="card">
+  <ul class="rows">
+  {% for reminder in reminders %}
+    <li>
+      <span>{{ local(reminder.fire_at, session.timezone).strftime("%a %-d %b %H:%M") }}</span>
+      <span class="grow">{{ reminder.text }}
+        <span class="muted">{{ reminder.member or "everyone" }}{% if reminder.rrule %}, {{ reminder.rrule }}{% endif %}</span></span>
+      <button class="quiet" hx-post="/dashboard/calendar/reminders/{{ reminder.id }}/cancel" hx-target="#calendar">Cancel</button>
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+<h2>Phone calendar</h2>
+<div class="card">
+  {% if feed %}
+  <p>Subscribe to this link in Apple or Google Calendar. It is shown only this once:</p>
+  <p><input type="text" readonly value="{{ feed }}" onfocus="this.select()"></p>
+  {% else %}
+  <p class="muted">A read-only feed of these events. Making a new link stops any earlier one working.</p>
+  <button class="quiet" hx-post="/dashboard/calendar/feed" hx-target="#calendar">New subscribe link</button>
+  {% endif %}
+</div>
