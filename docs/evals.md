@@ -93,8 +93,8 @@ One run of the 12 new cases (calendar 7, reminders 4, and the undo case "undo an
 | `anthropic` | `https://api.deepseek.com/anthropic` | 12/12 | 1/1 | 101,556 (93,184) | 3,248 |
 
 Cost: the account balance, shown to the cent, read $4.91 before the milestone's first model call
-and $4.91 after this run and three live smoke turns, so the whole milestone cost under a cent at
-the resolution the provider reports.
+and $4.90 after this run and three live smoke turns (it still read $4.91 straight after the run and
+changed a few minutes later). So the whole milestone cost about a cent.
 
 One run is one sample per case. It shows the tools and prompts work together on this model; it
 does not measure how often a case would fail over many runs.
