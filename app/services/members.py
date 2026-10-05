@@ -51,8 +51,8 @@ async def _member(rec: Recorder, member_id: str, *, adult: bool = False) -> dict
     return member
 
 
-async def add_member(rec: Recorder, name: str, role: str) -> tuple[str, bool]:
-    """Add someone to the family. Returns (member id, created); a name already there is not added twice."""
+async def add_member(rec: Recorder, name: str, role: str) -> tuple[dict[str, Any], bool]:
+    """Add someone to the family. Returns (member, created); a name already there is not added twice."""
     name = " ".join(name.split())
     if not name or role not in ("adult", "child"):
         raise ToolError("give a name, and adult or child")
@@ -62,14 +62,18 @@ async def add_member(rec: Recorder, name: str, role: str) -> tuple[str, bool]:
     )
     if existing:
         rec.lines.append(f"OK: {existing['name']} is already in the family ({existing['role']})")
-        return existing["id"], False
+        return existing, False
     member_id = str(await fetch_val(
         rec.ctx.conn, "insert into members (household_id, name, role) values (:h, :name, :role) returning id",
         h=rec.ctx.household_id, name=name, role=role,
     ))
     rec.created("members", member_id)
     rec.lines.append(f"NEW: {name} ({role})")
-    return member_id, True
+    return {"id": member_id, "name": name, "role": role}, True
+
+
+async def name_of(conn: AsyncConnection, member_id: str) -> str:
+    return str(await fetch_val(conn, "select name from members where id = :id", id=member_id))
 
 
 async def is_connected(conn: AsyncConnection, member_id: str) -> bool:

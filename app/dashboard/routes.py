@@ -4,7 +4,7 @@ Pages read through app/services and write through the same service functions the
 tools use, logged in agent_actions with source 'dashboard'.
 """
 from collections.abc import Awaitable, Callable
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -17,12 +17,12 @@ from app.agent.actions import Recorder, record
 from app.agent.base import Ctx, ToolError
 from app.agent.resolve import Ambiguous, resolve_item, resolve_members
 from app.config import get_settings
-from app.core.timeutil import day_bounds, local, to_utc, utcnow
-from app.dashboard.auth import Session, current_session, require_csrf, templates
+from app.core.timeutil import day_bounds, local, parse_clock, to_utc, utcnow
+from app.dashboard.auth import Session, current_session, invite_context, require_csrf, templates
 from app.db import advisory_lock, engine, fetch_all, fetch_one, tx
 from app.pipeline import inbound
 from app.pipeline import router as outbound
-from app.services import calendar, households, inventory, shopping
+from app.services import calendar, households, inventory, members, shopping
 
 router = APIRouter(prefix="/dashboard", default_response_class=HTMLResponse)
 
@@ -317,6 +317,112 @@ async def calendar_feed(request: Request, session: Session = Depends(require_csr
     async with tx() as conn:
         token = await households.new_calendar_token(conn, session.household_id)
     return await _calendar(request, session, feed=f"{get_settings().public_base_url}/ics/{token}.ics")
+
+
+# ---------------------------------------------------------------- Family
+async def _family(request: Request, session: Session, template: str = "_family.html", error: str | None = None,
+                  invite: dict[str, str | None] | None = None) -> Response:
+    async with tx() as conn:
+        family = await members.family(conn, session.household_id, utcnow())
+    return _page(request, template, session, family=family, error=error, invite=invite, local=local)
+
+
+@router.get("/family")
+async def family_page(request: Request, session: Session = Depends(current_session)) -> Response:
+    return await _family(request, session, "family.html")
+
+
+@router.post("/family/add")
+async def family_add(request: Request, name: str = Form(...), role: str = Form("adult"),
+                     session: Session = Depends(require_csrf)) -> Response:
+    """Add a child, or an adult with an invite to pass on. The invite is shown this once."""
+    shown: dict[str, str | None] = {}
+
+    async def add(rec: Recorder) -> None:
+        member, created = await members.add_member(rec, name, role)
+        if not created:
+            raise ToolError(f"{member['name']} is already in the family")
+        if role == "adult":
+            shown.update(invite_context(member["name"], await members.invite(rec, member["id"])))
+
+    error = await _write(session, "family.add", {"name": name, "role": role}, add)
+    return await _family(request, session, error=error, invite=shown if shown and not error else None)
+
+
+@router.post("/family/{member_id}/{verb}")
+async def family_change(request: Request, member_id: str, verb: str, channel: str = Form(""),
+                        session: Session = Depends(require_csrf)) -> Response:
+    shown: dict[str, str | None] = {}
+
+    async def change(rec: Recorder) -> None:
+        if verb == "invite":
+            code = await members.invite(rec, member_id)
+            shown.update(invite_context(await members.name_of(rec.ctx.conn, member_id), code))
+        elif verb == "revoke":
+            await members.revoke_invite(rec, member_id)
+        elif verb == "channel":
+            await members.set_preferred_channel(rec, member_id, channel)
+        else:
+            raise ToolError("unknown action")
+
+    error = await _write(session, f"family.{verb}", {"member_id": member_id, "channel": channel}, change)
+    return await _family(request, session, error=error, invite=shown if shown and not error else None)
+
+
+# ---------------------------------------------------------------- Settings
+async def _settings(request: Request, session: Session, template: str = "_settings.html",
+                    error: str | None = None) -> Response:
+    async with tx() as conn:
+        context = {
+            "family": await members.family(conn, session.household_id, utcnow()),
+            "facts": await households.facts(conn, session.household_id),
+            "digest_time": await households.digest_time(conn, session.household_id),
+        }
+    return _page(request, template, session, error=error, **context)
+
+
+def _clock(value: str) -> time | None:
+    try:
+        return parse_clock(value) if value.strip() else None
+    except ValueError:
+        raise ToolError(f"'{value}' is not a time of day") from None
+
+
+@router.get("/settings")
+async def settings_page(request: Request, session: Session = Depends(current_session)) -> Response:
+    return await _settings(request, session, "settings.html")
+
+
+@router.post("/settings/brief")
+async def settings_brief(request: Request, at: str = Form(...), session: Session = Depends(require_csrf)) -> Response:
+    async def change(rec: Recorder) -> None:
+        when = _clock(at)
+        if when is None:
+            raise ToolError("the morning brief needs a time")
+        await households.set_digest_time(rec, when)
+
+    return await _settings(request, session, error=await _write(session, "settings.brief", {"at": at}, change))
+
+
+@router.post("/settings/quiet/{member_id}")
+async def settings_quiet(request: Request, member_id: str, start: str = Form(""), end: str = Form(""),
+                         session: Session = Depends(require_csrf)) -> Response:
+    async def change(rec: Recorder) -> None:
+        await members.set_quiet_hours(rec, [member_id], _clock(start), _clock(end))
+
+    args = {"member_id": member_id, "start": start, "end": end}
+    return await _settings(request, session, error=await _write(session, "settings.quiet_hours", args, change))
+
+
+@router.post("/settings/facts")
+async def settings_fact(request: Request, key: str = Form(...), value: str = Form(""), member_id: str = Form(""),
+                        session: Session = Depends(require_csrf)) -> Response:
+    """Add, change or (with no value) forget a fact."""
+    async def change(rec: Recorder) -> None:
+        await households.set_fact(rec, key, value, member_id or None)
+
+    args = {"key": key, "value": value, "member_id": member_id}
+    return await _settings(request, session, error=await _write(session, "settings.fact", args, change))
 
 
 # ---------------------------------------------------------------- Activity

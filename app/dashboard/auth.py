@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from app.config import get_settings
+from app.core.identity import invite_link
 from app.core.timeutil import utcnow
 from app.db import tx
 from app.services import households, members
@@ -72,6 +73,16 @@ async def require_csrf(request: Request, session: Session = Depends(current_sess
     return session
 
 
+def invite_context(name: str, code: str) -> dict[str, str | None]:
+    """The three ways into an invite: a Telegram deep link, a QR code of it, and the raw code."""
+    settings = get_settings()
+    link = invite_link(code, settings.tg_bot_username)
+    qr = None
+    if link:
+        qr = qrcode.make(link, image_factory=qrcode.image.svg.SvgPathImage, box_size=8).to_string(encoding="unicode")
+    return {"name": name, "code": code, "link": link, "qr": qr, "agent": settings.agent_name}
+
+
 def _setup_allowed(token: str) -> bool:
     expected = get_settings().setup_token or ""
     return bool(expected) and hmac.compare_digest(token.encode(), expected.encode())
@@ -89,7 +100,6 @@ async def setup_form(request: Request, token: str = "") -> Response:
 @router.post("/setup", response_class=HTMLResponse)
 async def setup_submit(request: Request, token: str = Form(""), household: str = Form(...),
                        timezone: str = Form(...), admin: str = Form(...)) -> Response:
-    settings = get_settings()
     async with tx() as conn:
         # Serialise first-run submissions so two cannot both create a household.
         await conn.exec_driver_sql("select pg_advisory_xact_lock(hashtext('setup'))")
@@ -101,12 +111,7 @@ async def setup_submit(request: Request, token: str = Form(""), household: str =
                 status_code=422)
         _, member_id = await households.create_household(conn, household.strip(), timezone, admin.strip())
         code = await members.create_invite(conn, member_id, utcnow())
-    link = f"https://t.me/{settings.tg_bot_username}?start={code}" if settings.tg_bot_username else None
-    qr = None
-    if link:
-        qr = qrcode.make(link, image_factory=qrcode.image.svg.SvgPathImage, box_size=8).to_string(encoding="unicode")
-    return templates.TemplateResponse(request, "setup_done.html", {
-        "admin": admin.strip(), "code": code, "link": link, "qr": qr, "agent": settings.agent_name})
+    return templates.TemplateResponse(request, "setup_done.html", {"invite": invite_context(admin.strip(), code)})
 
 
 @router.get("/login/{token}")

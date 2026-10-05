@@ -1,13 +1,24 @@
 """Dashboard: first-run setup, magic-link login, sessions, CSRF, and writes through the shared services."""
 import re
-from datetime import timedelta
+from datetime import time, timedelta
 
 from app.agent.loop import LoopRuntime
 from app.core.timeutil import local, utcnow
-from app.db import fetch_all, fetch_one, tx
+from app.db import execute, fetch_all, fetch_one, tx
 from app.main import app
-from app.services import members
-from tests.helpers import FakeLLM, active_list, add_item, add_member, call, say, seed_home, stock_of, tg_update
+from app.services import households, members
+from tests.helpers import (
+    FakeLLM,
+    active_list,
+    add_item,
+    add_member,
+    call,
+    london,
+    say,
+    seed_home,
+    stock_of,
+    tg_update,
+)
 
 SETUP = "/setup?token=test-setup-token"
 FORM = {"token": "test-setup-token", "household": "Adebayo", "timezone": "Europe/London", "admin": "Ola"}
@@ -60,7 +71,7 @@ async def test_pages_need_a_session_and_a_magic_link_works_exactly_once(client):
         home = await seed_home(conn)
         token = await members.create_login_token(conn, home.ola, utcnow())
     for path in ("/dashboard", "/dashboard/shopping", "/dashboard/inventory", "/dashboard/calendar",
-                 "/dashboard/activity", "/dashboard/playground"):
+                 "/dashboard/activity", "/dashboard/playground", "/dashboard/family", "/dashboard/settings"):
         refused = await client.get(path)
         assert refused.status_code == 401 and "login link" in refused.text
 
@@ -99,15 +110,22 @@ async def test_every_post_needs_the_csrf_token(client):
     nothing = "00000000-0000-0000-0000-000000000000"
     posts = ["/dashboard/shopping/add", "/dashboard/playground", "/logout",
              f"/dashboard/activity/actions/{nothing}/undo", "/dashboard/calendar/add", "/dashboard/calendar/feed",
-             f"/dashboard/calendar/events/{nothing}/cancel", f"/dashboard/calendar/reminders/{nothing}/cancel"]
+             f"/dashboard/calendar/events/{nothing}/cancel", f"/dashboard/calendar/reminders/{nothing}/cancel",
+             "/dashboard/family/add", f"/dashboard/family/{home.ola}/invite", "/dashboard/settings/brief",
+             f"/dashboard/settings/quiet/{home.ola}", "/dashboard/settings/facts"]
     for path in posts:
-        form = {"item": "eggs", "text": "hi", "title": "GP", "when": "2030-01-01T10:00"}
+        form = {"item": "eggs", "text": "hi", "title": "GP", "when": "2030-01-01T10:00", "name": "Ada",
+                "at": "05:00", "start": "20:00", "end": "08:00", "key": "milk", "value": "Arla"}
         assert (await client.post(path, data=form)).status_code == 403
         assert (await client.post(path, data=form, headers={"X-CSRF-Token": "0" * 64})).status_code == 403
     async with tx() as conn:
         assert await active_list(conn, home) == {}
         assert await fetch_all(conn, "select 1 from events") == []
-        assert await fetch_one(conn, "select calendar_token_hash from households") == {"calendar_token_hash": None}
+        assert await fetch_one(conn, "select calendar_token_hash, digest_time from households") == {
+            "calendar_token_hash": None, "digest_time": time(7, 30)}
+        assert await fetch_all(conn, "select name, invite_code_hash, quiet_start from members") == [
+            {"name": "Ola", "invite_code_hash": None, "quiet_start": time(21, 30)}]
+        assert await fetch_all(conn, "select 1 from household_facts") == []
     # The token also works as a form field, for plain form posts.
     added = await client.post("/dashboard/shopping/add", data={"item": "eggs", "csrf": csrf["X-CSRF-Token"]})
     assert added.status_code == 303
@@ -426,3 +444,160 @@ async def test_another_households_calendar_cannot_be_changed(client):
 async def test_health_endpoints(client):
     assert (await client.get("/healthz")).json() == {"status": "ok"}
     assert (await client.get("/readyz")).json() == {"status": "ready"}
+
+
+# ---------------------------------------------------------------- Family and Settings
+SECRET = {"X-Telegram-Bot-Api-Secret-Token": "test-webhook-secret"}
+
+
+async def test_family_page_adds_an_adult_whose_invite_connects_them_without_anyone_touching_sql(client):
+    async with tx() as conn:
+        home = await seed_home(conn)
+    csrf = await login(client, home)
+
+    added = await client.post("/dashboard/family/add", data={"name": " Ada ", "role": "adult"}, headers=csrf)
+    code = re.search(r"<code>([A-Z]{4}-[A-Z0-9]{4})</code>", added.text).group(1)
+    assert f"https://t.me/home_test_bot?start={code}" in added.text and "<svg" in added.text
+    assert code not in (await client.get("/dashboard/family")).text          # shown once: only its hash is kept
+    again = await client.post("/dashboard/family/add", data={"name": "ada", "role": "adult"}, headers=csrf)
+    assert "already in the family" in again.text
+    await client.post("/dashboard/family/add", data={"name": "Tobi", "role": "child"}, headers=csrf)
+
+    async with tx() as conn:
+        family = await fetch_all(conn, "select name, role, invite_code_hash is not null as invited from members "
+                                       "order by created_at")
+    assert family == [{"name": "Ola", "role": "adult", "invited": False},
+                      {"name": "Ada", "role": "adult", "invited": True},
+                      {"name": "Tobi", "role": "child", "invited": False}]
+
+    # Ada taps the link on her own phone and is in.
+    await client.post("/webhooks/telegram", json=tg_update(1, f"/start {code}", user_id=1002, name="Ada"),
+                      headers=SECRET)
+    page = (await client.get("/dashboard/family")).text
+    async with tx() as conn:
+        linked = await fetch_one(conn, "select m.name, m.preferred_channel from channel_identities ci "
+                                       "join members m on m.id = ci.member_id where ci.handle = '1002'")
+        logged = await fetch_all(conn, "select source, tool, member_id, inverse <> '[]' as undoable "
+                                       "from agent_actions order by created_at")
+    assert linked == {"name": "Ada", "preferred_channel": "telegram"}
+    assert page.count("telegram") == 2 and "not connected" not in page       # both adults show their channel
+    assert [(a["source"], a["tool"], a["undoable"]) for a in logged] == [
+        ("dashboard", "family.add", True), ("dashboard", "family.add", True), ("agent", "invite.redeem", False)]
+    # And Ada, now an adult with a chat, can log in herself.
+    async with tx() as conn:
+        ada = (await fetch_one(conn, "select id from members where name = 'Ada'"))["id"]
+    assert (await login(client, home, ada))["X-CSRF-Token"]
+
+
+async def test_family_page_replaces_and_revokes_invites_and_sets_the_preferred_channel(client):
+    async with tx() as conn:
+        home = await seed_home(conn)
+        ada = await add_member(conn, home, "Ada")
+        tobi = await add_member(conn, home, "Tobi", role="child")
+    csrf = await login(client, home)
+
+    def code_in(page):
+        return re.search(r"<code>([A-Z]{4}-[A-Z0-9]{4})</code>", page.text).group(1)
+
+    first = code_in(await client.post(f"/dashboard/family/{ada}/invite", headers=csrf))
+    second = code_in(await client.post(f"/dashboard/family/{ada}/invite", headers=csrf))
+    assert "invite open until" in (await client.get("/dashboard/family")).text
+    await client.post("/webhooks/telegram", json=tg_update(1, first, user_id=1002, name="Ada"), headers=SECRET)
+    async with tx() as conn:
+        assert await fetch_all(conn, "select 1 from channel_identities where member_id = :m", m=ada) == []   # replaced
+
+    revoked = await client.post(f"/dashboard/family/{ada}/revoke", headers=csrf)
+    assert "invite open until" not in revoked.text
+    await client.post("/webhooks/telegram", json=tg_update(2, second, user_id=1002, name="Ada"), headers=SECRET)
+    async with tx() as conn:
+        assert await fetch_all(conn, "select 1 from channel_identities where member_id = :m", m=ada) == []   # revoked
+
+    assert "only adults" in (await client.post(f"/dashboard/family/{tobi}/invite", headers=csrf)).text
+    refused = await client.post(f"/dashboard/family/{home.ola}/channel", data={"channel": "whatsapp"}, headers=csrf)
+    assert "has not connected whatsapp" in refused.text
+    async with tx() as conn:
+        await execute(conn, "insert into channel_identities (member_id, channel, handle) "
+                            "values (:m, 'whatsapp', '+447700900001')", m=home.ola)
+    await client.post(f"/dashboard/family/{home.ola}/channel", data={"channel": "whatsapp"}, headers=csrf)
+    async with tx() as conn:
+        assert await fetch_one(conn, "select preferred_channel from members where id = :m", m=home.ola) == {
+            "preferred_channel": "whatsapp"}
+
+
+async def test_settings_page_changes_the_brief_time_quiet_hours_and_facts_through_the_services(client):
+    async with tx() as conn:
+        home = await seed_home(conn)
+        ada = await add_member(conn, home, "Ada", telegram_id="1002")
+    csrf = await login(client, home)
+    page = (await client.get("/dashboard/settings")).text
+    assert 'value="07:30"' in page and 'value="21:30"' in page
+
+    await client.post("/dashboard/settings/brief", data={"at": "06:45"}, headers=csrf)
+    await client.post(f"/dashboard/settings/quiet/{ada}", data={"start": "22:30", "end": "06:00"}, headers=csrf)
+    await client.post(f"/dashboard/settings/quiet/{home.ola}", data={"start": "", "end": ""}, headers=csrf)
+    await client.post("/dashboard/settings/facts", data={"key": "Milk brand", "value": "Cravendale"}, headers=csrf)
+    await client.post("/dashboard/settings/facts", data={"key": "shops", "value": "Tesco Extra, Costco"}, headers=csrf)
+    await client.post("/dashboard/settings/facts", data={"key": "allergy", "value": "peanuts", "member_id": ada},
+                      headers=csrf)
+
+    async def state():
+        async with tx() as conn:
+            return {
+                "brief": (await fetch_one(conn, "select digest_time from households"))["digest_time"],
+                "quiet": {r["name"]: (r["quiet_start"], r["quiet_end"]) for r in await fetch_all(
+                    conn, "select name, quiet_start, quiet_end from members")},
+                "facts": {(r["key"], r["member_id"]): r["value"] for r in await fetch_all(
+                    conn, "select key, member_id, value from household_facts")},
+                "shops": sorted(r["name"] for r in await fetch_all(conn, "select name from places where kind = 'store'")),
+            }
+
+    saved = await state()
+    assert saved == {
+        "brief": time(6, 45), "quiet": {"Ola": (None, None), "Ada": (time(22, 30), time(6))},
+        "facts": {("milk_brand", None): "Cravendale", ("shops", None): "Tesco Extra, Costco", ("allergy", ada): "peanuts"},
+        "shops": ["Costco", "Tesco Extra"]}
+    # The quiet hours just saved are what holds a send: a 23:00 reminder for Ada waits until 06:00.
+    async with tx() as conn:
+        assert local(await members.quiet_until(conn, home.id, ada, london("2026-10-06 23:00")),
+                     "Europe/London").strftime("%d %H:%M") == "07 06:00"
+        assert await members.quiet_until(conn, home.id, home.ola, london("2026-10-06 23:00")) is None
+
+    for path, form in ((f"/dashboard/settings/quiet/{ada}", {"start": "22:00", "end": ""}),
+                       ("/dashboard/settings/brief", {"at": "breakfast"}),
+                       ("/dashboard/settings/facts", {"key": "quiet_hours", "value": "22:00-07:00"})):
+        assert 'class="error"' in (await client.post(path, data=form, headers=csrf)).text
+    assert await state() == saved
+
+    await client.post("/dashboard/settings/facts", data={"key": "milk_brand", "value": "Arla"}, headers=csrf)
+    await client.post("/dashboard/settings/facts", data={"key": "allergy", "value": "", "member_id": ada}, headers=csrf)
+    assert (await state())["facts"] == {("milk_brand", None): "Arla", ("shops", None): "Tesco Extra, Costco"}
+
+    # Every change is in Activity as a dashboard action and can be undone from there.
+    async with tx() as conn:
+        logged = await fetch_all(conn, "select id, source, tool from agent_actions order by created_at")
+    assert {a["source"] for a in logged} == {"dashboard"}
+    assert [a["tool"] for a in logged] == ["settings.brief", "settings.quiet_hours", "settings.quiet_hours",
+                                           "settings.fact", "settings.fact", "settings.fact", "settings.fact",
+                                           "settings.fact"]
+    for action in (logged[0], logged[1]):
+        await client.post(f"/dashboard/activity/actions/{action['id']}/undo", headers=csrf)
+    restored = await state()
+    assert restored["brief"] == time(7, 30) and restored["quiet"]["Ada"] == (time(21, 30), time(7))
+
+
+async def test_family_and_settings_cannot_reach_another_household(client):
+    async with tx() as conn:
+        home = await seed_home(conn)
+        other_household, stranger = await households.create_household(conn, "Other", "Europe/London", "Sam")
+    csrf = await login(client, home)
+    for path, form in ((f"/dashboard/family/{stranger}/invite", {}),
+                       (f"/dashboard/family/{stranger}/revoke", {}),
+                       (f"/dashboard/settings/quiet/{stranger}", {"start": "10:00", "end": "11:00"}),
+                       ("/dashboard/settings/facts", {"key": "note", "value": "x", "member_id": stranger})):
+        assert 'class="error"' in (await client.post(path, data=form, headers=csrf)).text
+    page = (await client.get("/dashboard/family")).text + (await client.get("/dashboard/settings")).text
+    assert "Sam" not in page
+    async with tx() as conn:
+        sam = await fetch_one(conn, "select invite_code_hash, quiet_start from members where id = :m", m=stranger)
+        assert sam == {"invite_code_hash": None, "quiet_start": time(21, 30)}
+        assert await fetch_all(conn, "select 1 from household_facts") == []

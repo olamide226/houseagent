@@ -12,7 +12,6 @@ from app.core.timeutil import parse_clock
 from app.db import fetch_all
 from app.services import households, inventory, members
 
-_SPLIT = re.compile(r"\s*[,;\n]\s*")
 _SPAN = re.compile(r"\s*(?:-|–|—|\bto\b|\buntil\b)\s*")
 _OFF = {"", "off", "none", "no"}
 
@@ -28,24 +27,18 @@ class Remember(BaseModel):
 
 async def remember(ctx: Ctx, args: Remember) -> str:
     """Save or forget a durable household fact or preference."""
-    key = re.sub(r"[^a-z0-9]+", "_", args.key.lower()).strip("_")
+    key = households.fact_key(args.key)
     value = (args.value or "").strip()
     async with record(ctx, "remember", args) as rec:
         if key == "staples":
-            await _staples(rec, _names(value))
+            await _staples(rec, households.names(value))
         elif key == "morning_brief":
             await households.set_digest_time(rec, _clock(value))
         elif key == "quiet_hours":
             await _quiet_hours(rec, value, args.about)
         else:
             await households.set_fact(rec, key, value, await _one_member(ctx, args.about))
-            if key in ("shops", "main_supermarket"):
-                await households.add_stores(rec, _names(value))
     return rec.result
-
-
-def _names(value: str) -> list[str]:
-    return [name for name in _SPLIT.split(value) if name]
 
 
 def _clock(value: str) -> time:

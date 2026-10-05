@@ -1,5 +1,6 @@
 """Household bootstrap (spec section 12.1), onboarding state, the brief time, facts, shops
 and the calendar feed token."""
+import re
 import secrets
 from datetime import time
 from typing import Any
@@ -15,6 +16,17 @@ from app.services import inventory
 
 # Spec section 12.2, in order. `presence` joins the list with the Shortcut endpoint (milestone 5).
 ONBOARDING_STEPS = ("family", "routines", "shops", "staples", "tour", "rhythm")
+SETTING_KEYS = ("staples", "morning_brief", "quiet_hours")   # said like facts, stored as settings (ADR 0016)
+STORE_KEYS = ("shops", "main_supermarket")                   # facts whose values are also `places`
+
+
+def fact_key(raw: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", raw.lower()).strip("_")
+
+
+def names(value: str) -> list[str]:
+    """A comma-separated list as people type it."""
+    return [name for name in re.split(r"\s*[,;\n]\s*", value.strip()) if name]
 
 
 async def household_exists(conn: AsyncConnection) -> bool:
@@ -86,6 +98,11 @@ async def advance_onboarding(rec: Recorder, step: str, skipped: bool = False) ->
 
 
 # ---------------------------------------------------------------- settings and facts
+async def digest_time(conn: AsyncConnection, household_id: str) -> time:
+    found: time = await fetch_val(conn, "select digest_time from households where id = :h", h=household_id)
+    return found
+
+
 async def set_digest_time(rec: Recorder, at: time) -> None:
     await rec.before("households", id=rec.ctx.household_id)
     await execute(rec.ctx.conn, "update households set digest_time = :at where id = :h",
@@ -96,7 +113,7 @@ async def set_digest_time(rec: Recorder, at: time) -> None:
 async def facts(conn: AsyncConnection, household_id: str) -> list[dict[str, Any]]:
     return await fetch_all(
         conn,
-        """select f.id, f.key, f.value, m.name as member from household_facts f
+        """select f.id, f.key, f.value, f.member_id, m.name as member from household_facts f
            left join members m on m.id = f.member_id where f.household_id = :h order by m.name nulls first, f.key""",
         h=household_id,
     )
@@ -105,9 +122,15 @@ async def facts(conn: AsyncConnection, household_id: str) -> list[dict[str, Any]
 async def set_fact(rec: Recorder, key: str, value: str | None, member_id: str | None = None) -> None:
     """Upsert a fact about the household, or about one member; no value forgets it."""
     conn, household_id = rec.ctx.conn, rec.ctx.household_id
-    value = (value or "").strip()
+    key, value = fact_key(key), (value or "").strip()
     if not key:
         raise ToolError("a fact needs a name")
+    if key in SETTING_KEYS:
+        raise ToolError(f"{key} is a setting, not a fact")
+    if member_id is not None and not await fetch_val(
+            conn, "select exists (select 1 from members where id = :m and household_id = :h)",
+            m=member_id, h=household_id):
+        raise ToolError("nobody like that is in the family")
     fact_id = await fetch_val(
         conn, "select id from household_facts where household_id = :h and key = :key "
               "and member_id is not distinct from :member", h=household_id, key=key, member=member_id)
@@ -128,6 +151,8 @@ async def set_fact(rec: Recorder, key: str, value: str | None, member_id: str | 
         else:
             await execute(conn, "delete from household_facts where id = :id", id=fact_id)
     rec.lines.append(f"OK: {key} = {value}" if value else f"OK: forgot {key}")
+    if key in STORE_KEYS:
+        await add_stores(rec, names(value))
 
 
 async def add_stores(rec: Recorder, names: list[str]) -> None:

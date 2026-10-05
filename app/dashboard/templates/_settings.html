@@ -1,0 +1,52 @@
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<h2>Morning brief</h2>
+<form class="card" hx-post="/dashboard/settings/brief" hx-target="#settings">
+  <input type="time" name="at" value="{{ digest_time.strftime('%H:%M') }}" aria-label="Morning brief time" required>
+  <button>Save</button>
+  <span class="muted">Sent only on days with something due. {{ session.timezone }} time.</span>
+</form>
+<h2>Quiet hours</h2>
+<div class="card">
+  <ul class="rows">
+  {% for member in family if member.role == "adult" %}
+    <li>
+      <span class="grow">{{ member.name }}</span>
+      <form hx-post="/dashboard/settings/quiet/{{ member.id }}" hx-target="#settings">
+        <input type="time" name="start" value="{{ member.quiet_start.strftime('%H:%M') if member.quiet_start else '' }}" aria-label="Quiet from">
+        <span class="muted">to</span>
+        <input type="time" name="end" value="{{ member.quiet_end.strftime('%H:%M') if member.quiet_end else '' }}" aria-label="Quiet until">
+        <button class="quiet">Save</button>
+      </form>
+    </li>
+  {% endfor %}
+  </ul>
+  <p class="muted">Reminders wait until quiet hours end, unless urgent. Clear both times to turn them off.</p>
+</div>
+<h2>Facts</h2>
+<div class="card">
+  <ul class="rows">
+  {% for fact in facts %}
+    <li>
+      <span class="grow">{{ fact.key }}{% if fact.member %} <span class="muted">{{ fact.member }}</span>{% endif %}</span>
+      <form hx-post="/dashboard/settings/facts" hx-target="#settings">
+        <input type="hidden" name="key" value="{{ fact.key }}">
+        <input type="hidden" name="member_id" value="{{ fact.member_id or '' }}">
+        <input type="text" name="value" value="{{ fact.value }}" aria-label="{{ fact.key }}" required>
+        <button class="quiet">Save</button>
+      </form>
+      <button class="quiet" hx-post="/dashboard/settings/facts" hx-target="#settings"
+              hx-vals='{{ {"key": fact.key, "member_id": fact.member_id or "", "value": ""} | tojson }}'>Forget</button>
+    </li>
+  {% else %}<li class="muted">Nothing remembered yet. Tell the assistant, or add a fact here.</li>{% endfor %}
+  </ul>
+  <form hx-post="/dashboard/settings/facts" hx-target="#settings">
+    <input type="text" name="key" placeholder="Fact, e.g. milk brand" required>
+    <input type="text" name="value" placeholder="Value" required>
+    <select name="member_id" aria-label="About">
+      <option value="">everyone</option>
+      {% for member in family %}<option value="{{ member.id }}">{{ member.name }}</option>{% endfor %}
+    </select>
+    <button>Add</button>
+  </form>
+</div>
+<p class="muted">The phone calendar subscribe link is on the <a href="/dashboard/calendar">Calendar</a> page.</p>

@@ -1,0 +1,45 @@
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if invite %}
+<h2>Invite for {{ invite.name }}</h2>
+<p>Pass this on to {{ invite.name }}. It works once per channel, expires in 7 days, and is shown only this once.</p>
+{% include "_invite.html" %}
+{% endif %}
+<div class="card">
+  <ul class="rows">
+  {% for member in family %}
+    <li>
+      <span class="grow"><strong>{{ member.name }}</strong>
+        <span class="muted">{{ member.role }}{% if member.is_admin %}, admin{% endif %}{% if member.role == "adult" %},
+          {{ member.channels | join(", ") or "not connected" }}{% endif %}</span></span>
+      {% if member.channels | length > 1 %}
+      <form hx-post="/dashboard/family/{{ member.id }}/channel" hx-target="#family">
+        <select name="channel" aria-label="Message {{ member.name }} on">
+          {% for channel in member.channels %}
+          <option value="{{ channel }}"{% if channel == member.preferred_channel %} selected{% endif %}>{{ channel }}</option>
+          {% endfor %}
+        </select>
+        <button class="quiet">Message here</button>
+      </form>
+      {% endif %}
+      {% if member.role == "adult" %}
+      {% if member.invite_open_until %}
+      <span class="muted">invite open until {{ local(member.invite_open_until, session.timezone).strftime("%a %-d %b") }}</span>
+      <button class="quiet" hx-post="/dashboard/family/{{ member.id }}/revoke" hx-target="#family">Revoke</button>
+      {% endif %}
+      <button class="quiet" hx-post="/dashboard/family/{{ member.id }}/invite" hx-target="#family">New invite</button>
+      {% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+<h2>Add someone</h2>
+<form class="card" hx-post="/dashboard/family/add" hx-target="#family">
+  <input type="text" name="name" placeholder="Name" required>
+  <select name="role" aria-label="Role">
+    <option value="adult">adult</option>
+    <option value="child">child</option>
+  </select>
+  <button>Add</button>
+</form>
+<p class="muted">An adult gets an invite to connect their own chat. A new invite replaces the earlier one.
+   Children have no chat and no login.</p>

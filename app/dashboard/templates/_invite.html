@@ -1,0 +1,7 @@
+<div class="card">
+  {% if invite.link %}
+  <p><a href="{{ invite.link }}">Open in Telegram</a></p>
+  <p class="qr">{{ invite.qr | safe }}</p>
+  {% endif %}
+  <p>Or send this code to {{ invite.agent }}: <code>{{ invite.code }}</code></p>
+</div>
