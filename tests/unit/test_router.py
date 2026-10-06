@@ -375,6 +375,20 @@ async def test_whatsapp_text_is_free_form_inside_24_hours_and_the_template_from_
     assert out == {"text": "Bins tonight", "meta": {"template": TEMPLATE} if templated else {}}
 
 
+async def test_what_we_send_does_not_keep_the_window_open():
+    async with tx() as conn:
+        home, _ = await on_whatsapp(conn, heard=timedelta(days=2))
+        await tell(conn, home, "first")
+    adapter = whatsapp()
+    await router.dispatch_due({Channel.whatsapp: adapter}, now=NOON)          # recorded as our message, just now
+    async with tx() as conn:
+        assert await fetch_val(conn, "select count(*) from messages where direction = 'out' "
+                                     "and created_at > :recent", recent=NOON - timedelta(days=1)) == 1
+        await tell(conn, home, "second")
+    await router.dispatch_due({Channel.whatsapp: adapter}, now=NOON)
+    assert [params for _, _, params in adapter.templates] == [["first"], ["second"]] and adapter.sent == []
+
+
 async def test_connecting_with_an_invite_code_opens_the_window_like_a_message():
     async with tx() as conn:
         home, _ = await on_whatsapp(conn, connected=timedelta(hours=1))   # the code is not kept as a message
@@ -393,7 +407,7 @@ async def test_a_group_has_its_own_window_and_telegram_has_none():
         for thread_id, text in [(group, "to the quiet group"), (chat, "to telegram")]:
             await enqueue(conn, OutboundMessage(household_id=home.id, target="thread", thread_id=thread_id, text=text,
                                                 respect_quiet_hours=False), send_after=NOON)
-    wa, telegram = whatsapp(), FakeAdapter()
+    wa, telegram = whatsapp(), FakeAdapter(template=TEMPLATE)             # a template, but no window to be outside of
     adapters = {Channel.whatsapp: wa, Channel.telegram: telegram}
     await router.dispatch_due(adapters, now=NOON)
     assert wa.templates == [("Z3JvdXAZD", TEMPLATE, ["to the quiet group"])]   # ...but nobody wrote in the group

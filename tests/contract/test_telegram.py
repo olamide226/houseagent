@@ -7,7 +7,7 @@ import respx
 from fastapi import HTTPException
 from starlette.requests import Request
 
-from app.channels.base import ChannelError, NotSupported
+from app.channels.base import ChannelError, NotSupported, PermanentError
 from app.channels.telegram import TelegramAdapter
 from app.core.envelope import MediaRef
 
@@ -92,6 +92,20 @@ async def test_api_and_network_errors_raise_without_leaking_the_token(adapter):
     with pytest.raises(ChannelError) as caught:
         await adapter.send_text("1", "hi")
     assert TOKEN not in str(caught.value) and caught.value.__cause__ is None
+
+
+@respx.mock
+async def test_a_refusal_is_final_but_throttling_and_server_errors_are_retried(adapter):
+    for status, description in [(403, "Forbidden: bot was blocked by the user"), (400, "Bad Request: chat not found"),
+                                (401, "Unauthorized")]:
+        respx.post(f"{API}/sendMessage").respond(status, json={"ok": False, "description": description})
+        with pytest.raises(PermanentError, match=description):
+            await adapter.send_text("1", "hi")
+    for status in (429, 500, 502):
+        respx.post(f"{API}/sendMessage").respond(status, json={"ok": False, "description": "try later"})
+        with pytest.raises(ChannelError) as caught:
+            await adapter.send_text("1", "hi")
+        assert not isinstance(caught.value, PermanentError)
 
 
 async def test_templates_are_not_supported_and_dm_thread_is_the_user_id(adapter):
