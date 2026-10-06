@@ -54,8 +54,27 @@ def tool_source(spec: ToolSpec) -> str:
 
 
 def tool_schema(spec: ToolSpec) -> dict[str, Any]:
+    schema = spec.args.model_json_schema()
     return {"name": spec.name, "description": (spec.fn.__doc__ or "").strip(),
-            "parameters": spec.args.model_json_schema()}
+            "parameters": _plain(schema, schema.get("$defs", {}))}
+
+
+def _plain(node: Any, defs: dict[str, Any]) -> Any:
+    """The same JSON schema in the plainer form Letta's argument handling needs: references
+    inlined, and an optional value given its one type instead of `anyOf` that type or null.
+    Letta 0.16.8 fails a call ("Unsupported type: None") when such an argument is passed."""
+    if isinstance(node, list):
+        return [_plain(item, defs) for item in node]
+    if not isinstance(node, dict):
+        return node
+    if "$ref" in node:
+        referred = defs[node["$ref"].rsplit("/", 1)[1]]
+        return _plain({**referred, **{key: value for key, value in node.items() if key != "$ref"}}, defs)
+    node = {key: _plain(value, defs) for key, value in node.items() if key != "$defs"}
+    kinds = [option for option in node.get("anyOf", []) if option != {"type": "null"}]
+    if len(kinds) == 1:
+        node = {**kinds[0], **{key: value for key, value in node.items() if key != "anyOf"}}
+    return node
 
 
 class LettaRuntime:

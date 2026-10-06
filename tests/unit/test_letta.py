@@ -193,7 +193,19 @@ async def test_the_first_turn_creates_the_households_agent_with_our_tools_blocks
     assert [t["json_schema"]["name"] for t in registered] == list(REGISTRY)
     assert all(f"def {t['json_schema']['name']}(" in t["source_code"] and t["json_schema"]["description"]
                for t in registered)
-    assert registered[0]["json_schema"]["parameters"] == REGISTRY["log_inventory"].args.model_json_schema()
+    # The same arguments the loop offers, in the plainer form Letta can coerce: nothing by
+    # reference, and an optional value under its one type.
+    for tool in registered:
+        ours = REGISTRY[tool["json_schema"]["name"]].args.model_json_schema()
+        theirs = tool["json_schema"]["parameters"]
+        assert list(theirs["properties"]) == list(ours["properties"]) and theirs.get("required") == ours.get("required")
+        assert not any(word in json.dumps(theirs) for word in ("anyOf", "$ref", "$defs"))
+    schemas = {t["json_schema"]["name"]: t["json_schema"]["parameters"]["properties"] for t in registered}
+    fire_at = schemas["set_reminder"]["fire_at"]
+    assert (fire_at["type"], fire_at["format"], fire_at["default"]) == ("string", "date-time", None) and fire_at["description"]
+    change = schemas["log_inventory"]["changes"]["items"]
+    assert change["type"] == "object" and change["required"] == ["item", "action"]
+    assert change["properties"]["quantity"]["type"] == "number" and "enum" in change["properties"]["action"]
 
     created = sent(api["create"])
     assert created["name"] == f"household-{home.id}" and created["model"] == "openai-proxy/some-model"
