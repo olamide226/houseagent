@@ -9,7 +9,6 @@ from app.agent.actions import Recorder, record
 from app.agent.base import Ctx, ToolError
 from app.agent.resolve import Ambiguous, resolve_item, resolve_members
 from app.core.timeutil import parse_clock
-from app.db import fetch_all
 from app.services import households, inventory, members
 
 _SPAN = re.compile(r"\s*(?:-|–|—|\bto\b|\buntil\b)\s*")
@@ -20,9 +19,12 @@ class Remember(BaseModel):
     key: str = Field(description=(
         "snake_case, e.g. 'milk_brand', 'main_supermarket'. These keys change how the household runs: "
         "'staples' (things always kept in the house, comma-separated), 'shops' (where the family shops, "
-        "comma-separated), 'morning_brief' (HH:MM), 'quiet_hours' (HH:MM-HH:MM, or off)"))
+        "comma-separated), 'morning_brief' (a time), 'quiet_hours' (start-end, or off). Give times as they "
+        "were said: 7am, 9:30pm, 21:30"))
     value: str | None = Field(None, description="None forgets the fact")
-    about: str | None = Field(None, description="Member name, or omit for the whole household")
+    about: str | None = Field(None, description=(
+        "Whose it is: a member's name, 'me' for the person speaking, 'us' for every adult. Omit for a fact "
+        "about the whole household. Quiet hours with nobody named are the speaker's alone"))
 
 
 async def remember(ctx: Ctx, args: Remember) -> str:
@@ -63,13 +65,11 @@ async def _staples(rec: Recorder, names: list[str]) -> None:
 
 async def _quiet_hours(rec: Recorder, value: str, about: str | None) -> None:
     ctx = rec.ctx
-    if about:
-        people, unknown = await resolve_members(ctx.conn, ctx.household_id, [about], ctx.member_id)
-        if unknown:
-            raise ToolError(f"nobody called {about} is in the family")
-    else:
-        people = [row["id"] for row in await fetch_all(
-            ctx.conn, "select id from members where household_id = :h and role = 'adult'", h=ctx.household_id)]
+    # Nobody named means the speaker: "don't message me after 8" must not silence the other adult.
+    people, unknown = await resolve_members(ctx.conn, ctx.household_id, [about or "me"], ctx.member_id)
+    if unknown:
+        raise ToolError(f"nobody called {about} is in the family" if about else
+                        "say whose quiet hours these are: a name, or 'us' for every adult")
     if value.lower() in _OFF:
         await members.set_quiet_hours(rec, people, None, None)
         return

@@ -42,7 +42,7 @@ STEP_GUIDE = {
     "shops": "Where do you usually shop? Any specialist shops? Save with remember: key main_supermarket, and key shops for all of them.",
     "staples": "What do you always need to keep in the house? Save with remember, key staples.",
     "tour": "Ask for photos of the fridge, the freezer and the store cupboard. Log what you can see in each with log_inventory.",
-    "rhythm": "Morning brief at 07:30 and quiet from 21:30 to 07:00, OK? Save any change with remember: keys morning_brief and quiet_hours.",
+    "rhythm": "Morning brief at 07:30 and quiet from 21:30 to 07:00, OK? Save any change with remember: keys morning_brief and quiet_hours (about us: this question is for the whole household).",
     "presence": "Nothing to ask. Call onboarding_advance with step presence: each adult is then sent a private message with their personal link for shop-arrival nudges and the phone steps. Say that it is optional.",
 }
 

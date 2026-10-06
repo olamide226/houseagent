@@ -7,7 +7,7 @@ from datetime import time, timedelta
 import pytest
 
 from app.agent import actions
-from app.agent.base import ToolError
+from app.agent.base import Ctx, ToolError
 from app.agent.loop import LoopRuntime
 from app.agent.prompt import STEP_GUIDE
 from app.agent.tools import run_tool
@@ -431,7 +431,11 @@ async def test_shops_become_places_and_the_brief_time_and_quiet_hours_are_real_s
     assert await rows("select digest_time from households") == [{"digest_time": time(6, 45)}]
 
     quiet = "select name, quiet_start, quiet_end from members where role = 'adult' order by name"
-    await tool(home, "remember", key="quiet_hours", value="22:00-06:30")      # nobody named: every adult
+    await tool(home, "remember", key="quiet_hours", value="20:00-07:00", speaker="Ada")    # nobody named: the speaker
+    assert await rows(quiet) == [{"name": "Ada", "quiet_start": time(20), "quiet_end": time(7)},
+                                 {"name": "Ola", "quiet_start": time(21, 30), "quiet_end": time(7)}]
+    result, _ = await tool(home, "remember", key="quiet_hours", value="22:00-06:30", about="us")
+    assert result == "OK: quiet hours for Ola, Ada: 22:00 to 06:30"
     assert await rows(quiet) == [{"name": "Ada", "quiet_start": time(22), "quiet_end": time(6, 30)},
                                  {"name": "Ola", "quiet_start": time(22), "quiet_end": time(6, 30)}]
     await tool(home, "remember", key="quiet_hours", value="11pm to 7am", about="me", speaker="Ada")
@@ -449,6 +453,12 @@ async def test_shops_become_places_and_the_brief_time_and_quiet_hours_are_real_s
                 {"key": "quiet_hours", "value": "22:00-25:00"}, {"key": "quiet_hours", "value": "21:00-07:00", "about": "Tobi"}):
         result, is_error = await tool(home, "remember", **bad)
         assert is_error, bad
+    result, is_error = await tool(home, "remember", key="quiet_hours", value="21:00-07:00", about="Grandma")
+    assert is_error and "nobody called Grandma" in result
+    async with tx() as conn:                                # a turn with no speaker has nobody to mean
+        result, is_error = await run_tool("remember", {"key": "quiet_hours", "value": "21:00-07:00"},
+                                          Ctx(conn=conn, household_id=home.id, member_id=None))
+    assert is_error and "whose" in result
     assert await rows("select digest_time from households") == [{"digest_time": time(6, 45)}]
     assert (await rows(quiet))[0]["quiet_start"] == time(23)
 
