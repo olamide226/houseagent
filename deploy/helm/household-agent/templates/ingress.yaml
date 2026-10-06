@@ -1,0 +1,52 @@
+{{- /*
+The allowlist: only these paths reach the api from outside. /internal and /readyz never do.
+/static is the dashboard's stylesheet and htmx, so it travels with the dashboard paths.
+*/ -}}
+{{- $channels := list "/webhooks" "/presence" "/ics" "/healthz" -}}
+{{- $dashboard := list "/setup" "/login" "/logout" "/dashboard" "/static" -}}
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "household-agent.name" . }}
+  labels:
+    {{- include "household-agent.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts: [{{ .Values.ingress.host | quote }}]
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          {{- include "household-agent.paths" (list . (ternary (concat $channels $dashboard) $channels .Values.dashboard.public)) | nindent 10 }}
+{{- end }}
+{{- if and (not .Values.dashboard.public) .Values.dashboard.internalIngress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "household-agent.name" . }}-dashboard
+  labels:
+    {{- include "household-agent.labels" . | nindent 4 }}
+  {{- with .Values.dashboard.internalIngress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.dashboard.internalIngress.className }}
+  rules:
+    - host: {{ .Values.dashboard.internalIngress.host | quote }}
+      http:
+        paths:
+          {{- include "household-agent.paths" (list . $dashboard) | nindent 10 }}
+{{- end }}

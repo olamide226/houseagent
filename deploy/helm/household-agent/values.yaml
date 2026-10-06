@@ -1,0 +1,74 @@
+# One image runs as two processes: the api (webhooks, dashboard) and the worker (everything slow).
+image:
+  repository: ghcr.io/olamide226/houseagent
+  tag: ""            # defaults to the chart's appVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Every credential comes from a Secret that already exists in the namespace (a Sealed Secret,
+# for example). Its keys are environment variable names: DATABASE_URL, SESSION_SECRET,
+# SETUP_TOKEN, LLM_API_KEY, TG_BOT_TOKEN, TG_WEBHOOK_SECRET, WA_ACCESS_TOKEN, WA_APP_SECRET,
+# WA_VERIFY_TOKEN, BB_PASSWORD, BB_WEBHOOK_SECRET, S3_ACCESS_KEY, S3_SECRET_KEY, STT_API_KEY,
+# INTERNAL_TOOL_TOKEN, LETTA_API_KEY. Nothing secret belongs in this file.
+existingSecret: household-agent
+
+# Everything that is not a secret, as environment variables for both processes.
+# See docs/operations.md for the full list.
+config:
+  PUBLIC_BASE_URL: https://home.example.com
+  AGENT_NAME: Home
+  AGENT_RUNTIME: loop
+  DEFAULT_TIMEZONE: Europe/London
+  LLM_PROVIDER: openai_compat
+  LLM_BASE_URL: ""
+  LLM_MODEL: ""
+  MEDIA_BACKEND: s3
+  LOG_LEVEL: INFO
+
+api:
+  replicas: 1
+  port: 8000
+  migrate: true          # run `alembic upgrade head` in an init container before the api starts
+  resources:
+    requests: {cpu: 50m, memory: 192Mi}
+    limits: {memory: 512Mi}
+  # The api is stateless, so scaling out is configuration only.
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 70
+
+worker:
+  replicas: 1
+  heartbeatFile: /tmp/worker-heartbeat   # touched every minute; the liveness probe watches its age
+  heartbeatMaxAgeSeconds: 180
+  internalPort: 8001                     # the Letta tool bridge; only exposed when AGENT_RUNTIME is letta
+  resources:
+    requests: {cpu: 50m, memory: 256Mi}
+    limits: {memory: 768Mi}
+
+ingress:
+  enabled: true
+  className: ""
+  host: home.example.com
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  tls:
+    enabled: true
+    secretName: household-agent-tls
+
+# false: the dashboard, login, logout and setup paths are left off the public ingress above and
+# served only by a second ingress (a tailnet ingress class, for example).
+dashboard:
+  public: true
+  internalIngress:
+    enabled: false
+    className: tailscale
+    host: home.tailnet.example
+    annotations: {}
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

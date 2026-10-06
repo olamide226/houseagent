@@ -47,6 +47,52 @@ worker. The image is `python:3.12-slim` with `ffmpeg` and runs as `nobody`. Comp
 object store: point `S3_*` in `.env` at a bucket you have, or leave them unset and photos are not
 read.
 
+## Deploying with Helm
+
+The chart is `deploy/helm/household-agent/`: one image, an `api` Deployment with its Service and
+an ingress, and a `worker` Deployment. Postgres is not in the chart: run it with CloudNativePG or
+use a managed one, and put its URL in the Secret.
+
+```sh
+helm lint deploy/helm/household-agent
+helm template home deploy/helm/household-agent -f my-values.yaml      # read what would be applied
+helm upgrade --install home deploy/helm/household-agent -f my-values.yaml
+```
+
+**It has been linted and rendered, not installed.** No cluster was available when it was written
+([ADR 0030](adr/0030-helm-chart-shape.md)), and the image is not published anywhere yet: build it
+from the `Dockerfile`, push it to your registry, and set `image.repository` and `image.tag`.
+
+- **Secrets are referenced, never embedded.** `existingSecret` names a Secret you create (with
+  Sealed Secrets, for example) whose keys are environment variable names: `DATABASE_URL`,
+  `SESSION_SECRET`, `SETUP_TOKEN`, `LLM_API_KEY` and each channel's tokens. The chart creates no
+  Secret and renders no credential. Everything else goes in `config`, which becomes a ConfigMap;
+  both are loaded into both processes.
+- **api:** one replica, `maxSurge: 1` and `maxUnavailable: 0`, so a new pod is ready before the
+  old one stops and a deploy drops no webhook. Liveness is `/healthz`, readiness `/readyz`
+  (database reachable and migrated). An init container runs `alembic upgrade head` first; set
+  `api.migrate: false` to run migrations yourself. `api.autoscaling.enabled` adds an HPA (CPU
+  70%, 1 to 3 replicas).
+- **worker:** one replica. Its liveness probe checks that the heartbeat file
+  (`worker.heartbeatFile`) was touched in the last `worker.heartbeatMaxAgeSeconds` (180); the
+  worker touches it every minute. A second replica is safe, not useful for one household.
+- **Ingress:** only these paths reach the api: `/webhooks`, `/presence`, `/ics`, `/healthz`, and
+  for the dashboard `/setup`, `/login`, `/logout`, `/dashboard`, `/static`. `/internal` and
+  `/readyz` are never routed. With `dashboard.public: false` the dashboard paths are left off
+  that ingress, and `dashboard.internalIngress` can serve them on another ingress class, such as
+  a tailnet one. TLS is cert-manager's, through the ingress annotations.
+- **Pods** run as `nobody` with a read-only root file system; `/tmp` is an `emptyDir` for the
+  heartbeat file and voice-note conversion.
+- **BlueBubbles** is reached at `BB_BASE_URL` over the tailnet; the cluster needs a route to it
+  (the Tailscale operator or a subnet router). Nothing on the Mac is public.
+- **Letta**, if switched on with `config.AGENT_RUNTIME: letta`, makes the chart give the worker a
+  port and a Service and set `INTERNAL_BASE_URL` and `WORKER_INTERNAL_URL` to the two in-cluster
+  addresses Letta's tools call back to.
+
+Backups are not in the chart. Take `pg_dump` or CloudNativePG backups of the database; media in
+the bucket is covered by the bucket's own versioning or lifecycle. The System page's export is a
+readable copy of one household, not a restore format: there is no import.
+
 ## Media storage
 
 Photos and voice notes are kept through `MediaStore`
@@ -274,8 +320,14 @@ user. The schema is dropped and rebuilt from migration `0001` at the start of ea
 Keep keys in an untracked `.env`. `.gitignore` excludes `.env` and `.env.*` except `.env.example`.
 Nothing in the test suite, fixtures or eval results contains a credential.
 
-## Not covered yet
+## Token rotation
 
-Helm chart, backups, and the outage runbook for BlueBubbles belong to later milestones. The
-calendar feed token is rotated from the Calendar page, a presence link from Settings, and an
-invite is replaced or revoked on the Family page.
+The calendar feed token is rotated from the Calendar page, a presence link from Settings, and an
+invite is replaced or revoked on the Family page. "Log out everywhere" ends every dashboard
+session of a member. Provider tokens, webhook secrets, `SESSION_SECRET` and
+`INTERNAL_TOOL_TOKEN` are changed in the Secret and take effect when both processes restart;
+changing `SESSION_SECRET` logs everyone out.
+
+## Not covered
+
+A restore drill has not been done, and there is no import for the System page's export.

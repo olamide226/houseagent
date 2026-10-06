@@ -1,0 +1,71 @@
+{{- $letta := eq (toString .Values.config.AGENT_RUNTIME) "letta" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "household-agent.name" . }}-worker
+  labels:
+    {{- include "household-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      {{- include "household-agent.selector" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        {{- include "household-agent.labels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "household-agent.scheduling" . | nindent 6 }}
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: worker
+          image: {{ include "household-agent.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "app.worker.main"]
+          {{- if $letta }}
+          ports:
+            - {name: internal, containerPort: {{ .Values.worker.internalPort }}}
+          {{- end }}
+          {{- include "household-agent.env" . | nindent 10 }}
+          # The worker touches this file every minute for as long as its event loop turns.
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import os, sys, time; sys.exit(time.time() - os.path.getmtime({{ .Values.worker.heartbeatFile | squote }}) > {{ .Values.worker.heartbeatMaxAgeSeconds }})"
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 10
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          {{- include "household-agent.securityContext" . | nindent 10 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+{{- if $letta }}
+---
+# Only under the Letta runtime: Letta's tools call back into the worker for the turns it runs.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "household-agent.name" . }}-worker
+  labels:
+    {{- include "household-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  selector:
+    {{- include "household-agent.selector" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+  ports:
+    - {name: internal, port: {{ .Values.worker.internalPort }}, targetPort: internal}
+{{- end }}

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: household-agent
+description: A household assistant over chat. One image, two Deployments (api and worker), Postgres outside the chart.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
