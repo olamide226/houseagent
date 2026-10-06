@@ -1,4 +1,6 @@
 """All configuration is environment variables read by one Settings class (spec section 3)."""
+import logging
+import re
 from functools import lru_cache
 from typing import Literal
 
@@ -67,13 +69,32 @@ def get_settings() -> Settings:
     return Settings()
 
 
-def configure_logging(level: str) -> None:
-    """JSON logs via structlog. Lines carry ids, never message text."""
-    import logging
+# A presence, login or calendar token is the last part of its path, and the setup token and the
+# iMessage webhook secret are query parameters. None of them belongs in a log.
+_SECRET_IN_URL = re.compile(r"(^/(?:presence|login|ics)/|[?&](?:token|secret)=)[^/?&\s]+")
 
+
+def mask_secrets(url: str) -> str:
+    return _SECRET_IN_URL.sub(r"\1…", url)
+
+
+class _MaskAccessLog(logging.Filter):
+    """uvicorn's access log prints each request's path and query: mask the secrets in it."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(mask_secrets(arg) if isinstance(arg, str) else arg for arg in record.args)
+        return True
+
+
+def configure_logging(level: str) -> None:
+    """JSON logs via structlog. Lines carry ids, never message text or tokens."""
     import structlog
 
     logging.basicConfig(level=level.upper(), format="%(message)s")
+    access = logging.getLogger("uvicorn.access")
+    if not any(isinstance(existing, _MaskAccessLog) for existing in access.filters):
+        access.addFilter(_MaskAccessLog())
     # httpx logs full request URLs at INFO, and the Telegram URL contains the bot token.
     for noisy in ("httpx", "httpx2", "httpcore", "httpcore2"):
         logging.getLogger(noisy).setLevel(logging.WARNING)

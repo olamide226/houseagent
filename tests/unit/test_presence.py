@@ -389,3 +389,24 @@ async def test_an_adult_whose_phone_never_reports_does_not_keep_the_household_ou
 async def fetch_count(sql):
     async with tx() as conn:
         return await fetch_val(conn, sql)
+
+
+# ---------------------------------------------------------------- tokens stay out of the logs
+@pytest.mark.parametrize("path,logged", [
+    ("/presence/q8Zk3v_Lr-1x", "/presence/…"),
+    ("/login/q8Zk3v_Lr-1x", "/login/…"),
+    ("/ics/q8Zk3v_Lr-1x.ics", "/ics/…"),
+    ("/setup?token=hunter2", "/setup?token=…"),
+    ("/webhooks/imessage?x=1&secret=hunter2&y=2", "/webhooks/imessage?x=1&secret=…&y=2"),
+    ("/dashboard/settings/presence/4e2c", "/dashboard/settings/presence/4e2c"),      # a member id, not a token
+    ("/dashboard/shopping", "/dashboard/shopping"),
+])
+def test_the_access_log_never_shows_a_token_from_a_request_path(path, logged):
+    import logging
+
+    from app.config import _MaskAccessLog
+
+    record = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d',
+                               ("127.0.0.1:50000", "POST", path, "1.1", 204), None)
+    assert _MaskAccessLog().filter(record) is True
+    assert record.getMessage() == f'127.0.0.1:50000 - "POST {logged} HTTP/1.1" 204'
