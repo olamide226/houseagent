@@ -28,7 +28,8 @@ from app.db import execute, fetch_all, fetch_one, tx
 from app.llm.anthropic import AnthropicClient
 from app.llm.openai_compat import OpenAICompatClient
 from app.llm.types import Usage
-from app.pipeline.inbound import simulate_turn
+from app.pipeline.inbound import PLAYGROUND, _upsert_thread, simulate_turn
+from app.pipeline.router import record_outbound
 from app.services import calendar, households, shopping
 from tests.helpers import add_item, add_member, ctx_for, london, seed_home, wall
 
@@ -91,6 +92,12 @@ async def seed(case: dict[str, Any], now: datetime) -> Any:
                 ("out" if stock[location] == 0 else "in_stock"))
         for name in spec.get("list", []):
             await shopping.add_entry(_recorder(conn, home), ids[name], "explicit")
+        for name in spec.get("guesses", []):    # on the list as "probably", as the consumption model leaves them
+            await execute(conn, "insert into shopping_list_items (household_id, item_id, reason) "
+                                "values (:h, :item, 'predicted')", h=home.id, item=ids[name])
+        for said in spec.get("said", []):       # something the assistant sent this person a few minutes ago
+            thread = await _upsert_thread(conn, home.id, PLAYGROUND, f"{PLAYGROUND}:{home.members[said['to']]}", "dm")
+            await record_outbound(conn, home.id, str(thread), said["text"], {}, None, at=now - timedelta(minutes=5))
         if "onboarding" in spec:   # the step setup has reached; everything before it is done
             steps = households.ONBOARDING_STEPS
             done = list(steps[:steps.index(spec["onboarding"])])
@@ -119,7 +126,7 @@ async def observed(home: Any) -> dict[str, Any]:
                where i.household_id = :h""", h=home.id)
         active = await fetch_all(
             conn,
-            """select lower(i.canonical_name) as item from shopping_list_items s
+            """select lower(i.canonical_name) as item, s.reason from shopping_list_items s
                join items i on i.id = s.item_id where s.household_id = :h and s.status = 'needed'""", h=home.id)
         actions = await fetch_all(conn, "select tool from agent_actions where household_id = :h", h=home.id)
         booked = await fetch_all(
@@ -134,7 +141,8 @@ async def observed(home: Any) -> dict[str, Any]:
                from reminders r left join members m on m.id = r.member_id
                where r.household_id = :h and r.status = 'scheduled' order by r.fire_at""", h=home.id)
         family = await fetch_all(
-            conn, """select name, role, to_char(quiet_start, 'HH24:MI') || '-' || to_char(quiet_end, 'HH24:MI') as quiet
+            conn, """select id, name, role, to_char(quiet_start, 'HH24:MI') || '-' || to_char(quiet_end, 'HH24:MI') as quiet,
+                            presence_token_hash is not null as has_link
                      from members where household_id = :h""", h=home.id)
         household = await fetch_one(
             conn, "select onboarding_state, to_char(digest_time, 'HH24:MI') as brief from households where id = :h",
@@ -145,6 +153,7 @@ async def observed(home: Any) -> dict[str, Any]:
             conn, "select lower(canonical_name) as item from items where household_id = :h and is_staple", h=home.id)
         sends = await fetch_all(conn, "select text, target, member_id from outbox where household_id = :h", h=home.id)
     return {"events": events, "stock": stock, "active": sorted(row["item"] for row in active), "actions": actions,
+            "asked_for": sorted(row["item"] for row in active if row["reason"] != "predicted"),
             "calendar": booked, "reminders": reminders, "family": family, "household": household, "facts": facts,
             "shops": [row["name"] for row in shops], "staples": [row["item"] for row in staples], "sends": sends}
 
@@ -184,9 +193,13 @@ def check(expect: dict[str, Any], seen: dict[str, Any], seeded_list: list[str], 
         assert rows[0]["status"] == wanted["status"], rows[0]
         if "qty" in wanted:
             assert rows[0]["qty"] == _decimal(wanted["qty"]), rows[0]
+    if "shopping_list_asked_for" in expect:     # really on the list, not only guessed to be running low
+        assert seen["asked_for"] == sorted(key(name) for name in expect["shopping_list_asked_for"]), seen["active"]
     if expect.get("writes") == 0:
         assert seen["events"] == [] and seen["actions"] == []
         assert Counter(seen["active"]) == Counter(key(name) for name in seeded_list)
+    for wanted in expect.get("reply_mentions", []):
+        assert wanted.lower() in last_reply.lower(), f"reply was {last_reply!r}"
     if "reply" in expect:
         kind = last_reply if last_reply in ("ACK", "NOOP") else "text"
         assert kind == expect["reply"], f"reply was {last_reply!r}"
@@ -225,6 +238,11 @@ def check_family(expect: dict[str, Any], seen: dict[str, Any], home: Any) -> Non
         assert seen["household"]["brief"] == expect["brief"], seen["household"]
     for name, wanted in expect.get("quiet", {}).items():
         assert {m["name"]: m["quiet"] for m in seen["family"]}[name] == wanted, seen["family"]
+    if "presence_links" in expect:              # who was sent a personal link, and has one
+        sent = {send["member_id"] for send in seen["sends"] if "/presence/" in (send["text"] or "")}
+        linked = sorted(m["name"] for m in seen["family"] if m["has_link"] and m["id"] in sent)
+        assert linked == sorted(expect["presence_links"]), (seen["sends"], seen["family"])
+        assert sent == {m["id"] for m in seen["family"] if m["has_link"]}
     if "invites_sent" in expect:
         invites = [send for send in seen["sends"] if re.search(r"[A-Z]{4}-[A-Z0-9]{4}", send["text"] or "")]
         assert len(invites) == expect["invites_sent"], seen["sends"]

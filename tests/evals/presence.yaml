@@ -1,0 +1,40 @@
+# Answers to what presence and the consumption model send by themselves. `seed.guesses` are on
+# the list as "probably"; `seed.said` is a message the assistant sent that person five minutes ago.
+- name: yes to the low-stock prompt puts the guessed items on the list
+  seed:
+    items: [{name: milk, stock: {fridge: 1}}, {name: bread, stock: {store: 1}}, {name: rice, stock: {store: 2}}]
+    guesses: [milk, bread]
+    said: [{to: Ola, text: "Probably running low: milk, bread. Add to the list?"}]
+  turns: [{from: Ola, text: "yes please"}]
+  expect:
+    shopping_list_asked_for: [milk, bread]
+
+- name: only one of the guessed items is wanted
+  seed:
+    items: [{name: milk, stock: {fridge: 1}}, {name: bread, stock: {store: 1}}]
+    guesses: [milk, bread]
+    said: [{to: Ada, text: "Probably running low: milk, bread. Add to the list?"}]
+  turns: [{from: Ada, text: "just the milk, we've got plenty of bread"}]
+  expect:
+    shopping_list_asked_for: [milk]
+
+- name: no to the low-stock prompt adds nothing
+  seed:
+    items: [{name: milk, stock: {fridge: 1}}, {name: bread, stock: {store: 1}}]
+    guesses: [milk, bread]
+    said: [{to: Ola, text: "Probably running low: milk, bread. Add to the list?"}]
+  turns: [{from: Ola, text: "no thanks, we're fine for both"}]
+  expect:
+    shopping_list_asked_for: []
+    events: []
+
+- name: yes to the out-and-about offer reads the list back and changes nothing
+  seed:
+    items: [{name: egg}, {name: bread}, {name: bleach}]
+    list: [egg, bread, bleach]
+    said: [{to: Ola, text: "You're out. The list has 3 items, want it?"}]
+  turns: [{from: Ola, text: "yes"}]
+  expect:
+    writes: 0
+    reply: text
+    reply_mentions: [egg, bread, bleach]
