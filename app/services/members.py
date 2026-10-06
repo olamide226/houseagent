@@ -39,6 +39,16 @@ async def family(conn: AsyncConnection, household_id: str, now: datetime) -> lis
     )
 
 
+async def identities(conn: AsyncConnection, household_id: str) -> list[dict[str, Any]]:
+    """Every connected handle in the household, with whose it is and when it connected."""
+    return await fetch_all(
+        conn,
+        """select ci.channel, ci.handle, ci.verified_at, m.id as member_id, m.name
+           from channel_identities ci join members m on m.id = ci.member_id where m.household_id = :h""",
+        h=household_id,
+    )
+
+
 async def _member(rec: Recorder, member_id: str, *, adult: bool = False) -> dict[str, Any]:
     member = await fetch_one(
         rec.ctx.conn, "select id, name, role from members where id = :id and household_id = :h for update",

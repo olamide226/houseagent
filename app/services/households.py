@@ -1,23 +1,28 @@
-"""Household bootstrap (spec section 12.1), onboarding state, the brief time, facts, shops
-and the calendar feed token."""
+"""Household bootstrap (spec section 12.1), onboarding state, the brief time, facts, shops,
+the calendar feed token, and the household's chats and primary group."""
 import re
 import secrets
 from datetime import time
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import structlog
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.agent.actions import Recorder
 from app.agent.base import ToolError
+from app.core.envelope import GroupUpdate
 from app.core.identity import hash_token
 from app.db import execute, fetch_all, fetch_one, fetch_val, jsonb
 from app.services import inventory
 
+log = structlog.get_logger()
 # Spec section 12.2, in order. `presence` joins the list with the Shortcut endpoint (milestone 5).
 ONBOARDING_STEPS = ("family", "routines", "shops", "staples", "tour", "rhythm")
 SETTING_KEYS = ("staples", "morning_brief", "quiet_hours")   # said like facts, stored as settings (ADR 0016)
 STORE_KEYS = ("shops", "main_supermarket")                   # facts whose values are also `places`
+PENDING = "pending:"   # a group asked for but not yet created: its thread is `pending:{subject}` until then
+SUBJECT_MAX = 128      # WhatsApp's limit on a group's name
 
 
 def fact_key(raw: str) -> str:
@@ -170,3 +175,83 @@ async def add_stores(rec: Recorder, names: list[str]) -> None:
         elif place["kind"] != "store":
             await rec.before("places", id=place["id"])
             await execute(rec.ctx.conn, "update places set kind = 'store' where id = :id", id=place["id"])
+
+
+# ---------------------------------------------------------------- chats and the primary group
+async def threads(conn: AsyncConnection, household_id: str) -> list[dict[str, Any]]:
+    """The household's chats on real channels, groups first, with when each was last heard from."""
+    return await fetch_all(
+        conn,
+        """select t.id, t.channel, t.scope, t.external_thread_id, t.id = h.primary_thread_id as is_primary,
+                  (select max(m.created_at) from messages m
+                   where m.thread_id = t.id and m.direction = 'in') as last_in
+           from threads t join households h on h.id = t.household_id
+           where t.household_id = :h and t.channel in ('telegram', 'whatsapp', 'imessage')
+           order by t.scope desc, t.created_at""",
+        h=household_id,
+    )
+
+
+async def group_thread(conn: AsyncConnection, household_id: str, thread_id: str) -> dict[str, Any]:
+    """One of the household's group chats that exists on its channel, or a ToolError."""
+    thread = await fetch_one(
+        conn, "select id, channel, external_thread_id from threads "
+              "where id = :id and household_id = :h and scope = 'group'", id=thread_id, h=household_id)
+    if thread is None or thread["external_thread_id"].startswith(PENDING):
+        raise ToolError("that is not one of this household's group chats")
+    return thread
+
+
+async def set_primary_thread(rec: Recorder, thread_id: str) -> None:
+    """Which group gets what is addressed to the whole household (briefs, shared reminders)."""
+    thread = await group_thread(rec.ctx.conn, rec.ctx.household_id, thread_id)
+    await execute(rec.ctx.conn, "update households set primary_thread_id = :t where id = :h",
+                  t=thread_id, h=rec.ctx.household_id)
+    rec.appended("threads", thread_id)
+    rec.lines.append(f"OK: the {thread['channel']} group is now the family's main chat")
+
+
+async def start_group(rec: Recorder, channel: str, subject: str) -> str:
+    """Note a group that is about to be asked for. Returns the subject as it will be sent."""
+    subject = " ".join(subject.split())
+    if not subject or len(subject) > SUBJECT_MAX:
+        raise ToolError(f"give the group a name of up to {SUBJECT_MAX} characters")
+    thread_id = await fetch_val(
+        rec.ctx.conn,
+        """insert into threads (household_id, channel, external_thread_id, scope)
+           values (:h, :channel, :pending, 'group') on conflict do nothing returning id""",
+        h=rec.ctx.household_id, channel=channel, pending=PENDING + subject,
+    )
+    if thread_id is None:
+        raise ToolError(f"a group called {subject} is already being created")
+    rec.appended("threads", str(thread_id))
+    rec.lines.append(f"OK: asked {channel} for a group called {subject}")
+    return subject
+
+
+async def finish_group(conn: AsyncConnection, update: GroupUpdate) -> None:
+    """The channel's answer about a group we asked for: it becomes the household's primary
+    thread, or on failure the request is dropped. A repeat, or a group nobody asked for, does nothing."""
+    pending = await fetch_one(
+        conn, "select id, household_id from threads where channel = :channel and external_thread_id = :pending "
+              "for update", channel=update.channel.value, pending=PENDING + update.subject)
+    if pending is None:
+        return
+    if update.external_thread_id is None:
+        await execute(conn, "delete from threads where id = :id", id=pending["id"])
+        log.warning("group_not_created", household_id=pending["household_id"], channel=update.channel.value,
+                    error=update.error)
+        return
+    known = await fetch_one(
+        conn, "select id, household_id from threads where channel = :channel and external_thread_id = :external",
+        channel=update.channel.value, external=update.external_thread_id)
+    if known is None:
+        await execute(conn, "update threads set external_thread_id = :external where id = :id",
+                      external=update.external_thread_id, id=pending["id"])
+    else:   # someone wrote in the new group before this arrived, so its thread is already here
+        await execute(conn, "delete from threads where id = :id", id=pending["id"])
+        if known["household_id"] != pending["household_id"]:
+            return
+    await execute(conn, "update households set primary_thread_id = :t where id = :h",
+                  t=(known or pending)["id"], h=pending["household_id"])
+    log.info("group_created", household_id=pending["household_id"], channel=update.channel.value)

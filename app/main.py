@@ -8,11 +8,13 @@ from pathlib import Path
 
 import structlog
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import DBAPIError, InterfaceError
 
 from app.agent.loop import LoopRuntime
 from app.channels.base import ADAPTERS, build_adapters
+from app.channels.whatsapp import WhatsAppAdapter
 from app.config import configure_logging, get_settings
 from app.core.envelope import Channel
 from app.dashboard import auth, routes
@@ -68,6 +70,16 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=503, detail="migrations pending")
         return {"status": "ready"}
 
+    @app.get("/webhooks/whatsapp", response_class=PlainTextResponse)
+    async def whatsapp_subscription(request: Request) -> str:
+        """Meta's check when the webhook is registered: echo `hub.challenge` if the verify token is ours."""
+        adapter = ADAPTERS.get(Channel.whatsapp)
+        if not isinstance(adapter, WhatsAppAdapter):
+            raise HTTPException(status_code=404)
+        query = request.query_params
+        return adapter.subscription_challenge(query.get("hub.mode", ""), query.get("hub.verify_token", ""),
+                                              query.get("hub.challenge", ""))
+
     @app.post("/webhooks/{channel}")
     async def webhook(channel: Channel, request: Request) -> Response:
         """Verify, parse, persist, return 200. All slow work happens in the worker (spec 7.1)."""
@@ -77,7 +89,7 @@ def create_app() -> FastAPI:
         body = await request.body()
         await adapter.verify(request, body)
         try:
-            await inbound.receive(adapter, body)
+            await inbound.receive(adapter, body, ADAPTERS)
         except (DBAPIError, InterfaceError, OSError):
             log.exception("webhook_database_error", channel=channel.value)
             raise HTTPException(status_code=503) from None   # the provider retries

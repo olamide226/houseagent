@@ -11,14 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from app.agent.base import AgentResult, AgentRuntime, Ctx
 from app.agent.loop import message_lines
 from app.channels.base import ChannelAdapter
-from app.core.envelope import Channel, Envelope, InboundEvent, MediaRef, OutboundMessage
+from app.core.envelope import Channel, Envelope, GroupUpdate, InboundEvent, MediaRef, OutboundMessage
 from app.core.identity import member_for_handle, parse_invite_code, redeem_invite
 from app.core.timeutil import utcnow
 from app.db import advisory_lock, execute, fetch_all, fetch_one, fetch_val, jsonb, tx
 from app.llm.stt import SpeechToText
 from app.media.store import MediaStore
 from app.pipeline import media as media_pipeline
-from app.pipeline.router import enqueue, record_outbound
+from app.pipeline.router import delivery_failed, enqueue, record_outbound
 from app.services import households, members
 
 log = structlog.get_logger()
@@ -34,16 +34,23 @@ _invite_attempts: dict[str, deque[float]] = defaultdict(deque)
 
 
 # ---------------------------------------------------------------- webhook side (api process)
-async def receive(adapter: ChannelAdapter, body: bytes) -> None:
+async def receive(adapter: ChannelAdapter, body: bytes, adapters: dict[Channel, ChannelAdapter]) -> None:
     """Parse a verified webhook body and persist its events. Only database errors propagate."""
     try:
         events = await adapter.parse(body)
+        updates = await adapter.parse_updates(body)
     except Exception as exc:
         log.warning("webhook_parse_failed", channel=adapter.channel.value, error=type(exc).__name__)
         return
     for event in events:
         async with tx() as conn:
             await ingest(conn, adapter, event)
+    for update in updates:
+        async with tx() as conn:
+            if isinstance(update, GroupUpdate):
+                await households.finish_group(conn, update)
+            elif update.status == "failed":
+                await delivery_failed(conn, adapters, update)
 
 
 async def ingest(conn: AsyncConnection, adapter: ChannelAdapter, event: InboundEvent) -> None:
