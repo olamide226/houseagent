@@ -67,7 +67,8 @@ async def serve_internal(port: int) -> None:
     """The tool bridge for turns this process runs under the Letta runtime (app/agent/internal.py)."""
     bridge = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     bridge.include_router(internal.router)
-    await uvicorn.Server(uvicorn.Config(bridge, host="0.0.0.0", port=port, log_config=None)).serve()
+    # No lifespan: the bridge has nothing to start or stop, and a cancelled lifespan logs a traceback.
+    await uvicorn.Server(uvicorn.Config(bridge, host="0.0.0.0", port=port, log_config=None, lifespan="off")).serve()
 
 
 async def main() -> None:
