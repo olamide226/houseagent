@@ -10,6 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.agent.base import Ctx, ToolError
 from app.db import execute, fetch_all, fetch_one, fetch_val, jsonb
@@ -105,17 +106,22 @@ async def record(ctx: Ctx, tool: str, args: BaseModel | dict[str, Any]) -> Async
     await recorder.save(tool, args.model_dump(mode="json") if isinstance(args, BaseModel) else args)
 
 
-async def undo_last(ctx: Ctx, n: int) -> list[str]:
-    """Undo this member's newest `n` actions from the past 24 hours, newest first."""
-    actions = await fetch_all(
-        ctx.conn,
-        """select id from agent_actions
+async def undoable(conn: AsyncConnection, household_id: str, member_id: str | None, n: int) -> list[dict[str, Any]]:
+    """This member's newest `n` actions that undo_last would revert, newest first."""
+    return await fetch_all(
+        conn,
+        """select id, result from agent_actions
            where household_id = :household and member_id is not distinct from :member
              and undone_at is null and inverse <> '[]'
              and created_at > clock_timestamp() - make_interval(hours => :hours)
            order by created_at desc limit :n""",
-        household=ctx.household_id, member=ctx.member_id, hours=UNDO_WINDOW_HOURS, n=n,
+        household=household_id, member=member_id, hours=UNDO_WINDOW_HOURS, n=n,
     )
+
+
+async def undo_last(ctx: Ctx, n: int) -> list[str]:
+    """Undo this member's newest `n` actions from the past 24 hours, newest first."""
+    actions = await undoable(ctx.conn, ctx.household_id, ctx.member_id, n)
     if not actions:
         raise ToolError("nothing to undo in the last 24 hours")
     lines: list[str] = []

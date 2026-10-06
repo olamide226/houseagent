@@ -4,10 +4,12 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.agent.loop import LOST, LoopRuntime
+from app.agent.prompt import build_brief
+from app.agent.tools import run_tool
 from app.core.envelope import Channel, Envelope
 from app.db import execute, fetch_val, tx
 from app.llm.types import LLMError, LLMResponse, ToolCall, Usage
-from tests.helpers import FakeLLM, active_list, add_item, call, ctx_for, say, seed_home, stock_of
+from tests.helpers import FakeLLM, active_list, add_item, add_member, call, ctx_for, say, seed_home, stock_of
 
 
 def envelope(home, text, *, thread_id=None, message_ids=None, **extra):
@@ -91,7 +93,6 @@ async def test_system_prompt_carries_the_agent_name_and_a_brief_of_current_state
         await add_item(conn, home, "rice", status="low")
         await add_item(conn, home, "egg", location="fridge", staple=True, qty=1)
         ctx = ctx_for(conn, home)
-        from app.agent.tools import run_tool
         await run_tool("log_inventory", {"changes": [{"item": "egg", "action": "finished"}]}, ctx)
         await LoopRuntime(llm, agent_name="Hearth").handle(envelope(home, "hi"), ctx)
     system = llm.requests[0][0]
@@ -101,6 +102,25 @@ async def test_system_prompt_carries_the_agent_name_and_a_brief_of_current_state
     assert "Family: Ola (adult)" in brief and "Locations: freezer, fridge, store" in brief
     assert "Shopping list (1): egg" in brief
     assert "rice (low)" in brief and "egg (out)" in brief
+    # What the speaker last recorded, which thread history does not show, so "undo" has something to mean.
+    assert brief.endswith("Last change by Ola (what undo_last reverts): OK: egg finished (fridge); "
+                          "NOTE: egg added to shopping list")
+
+
+async def test_the_brief_names_only_the_speakers_own_last_change_that_can_still_be_undone():
+    async with tx() as conn:
+        home = await seed_home(conn)
+        ada = await add_member(conn, home, "Ada")
+        ola = ctx_for(conn, home)
+        await run_tool("update_shopping_list", {"add": [{"item": "bleach"}]}, ola)
+        await run_tool("get_shopping_list", {}, ola)                       # a read is not a change
+        now = datetime.now(UTC)
+        from_ada = envelope(home, "hi").model_copy(update={"member_id": ada, "member_name": "Ada"})
+        assert "Last change" not in await build_brief(conn, from_ada, now)
+        assert (await build_brief(conn, envelope(home, "undo that"), now)).endswith(
+            "Last change by Ola (what undo_last reverts): OK: bleach added to shopping list")
+        await run_tool("undo_last", {}, ola)
+        assert "Last change" not in await build_brief(conn, envelope(home, "hi"), now)
 
 
 async def test_history_is_the_threads_recent_messages_and_excludes_the_current_batch():

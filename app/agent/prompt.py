@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from app.agent.actions import undoable
 from app.core.envelope import Envelope
 from app.core.timeutil import local
 from app.db import fetch_all, fetch_one
@@ -87,6 +88,11 @@ async def build_brief(conn: AsyncConnection, env: Envelope, now: datetime) -> st
     coming = await calendar.occurrences_between(conn, env.household_id, now, now + timedelta(days=7))
     if coming:
         lines.append("Next 7 days: " + _capped([o.line(household["timezone"]) for o in coming], "; "))
+    # Thread history holds what was said, not what was recorded: without this line a model
+    # asked to undo may decide nothing was done, or redo it afterwards.
+    if env.member_id and (last := await undoable(conn, env.household_id, env.member_id, 1)):
+        done = "; ".join(last[0]["result"].splitlines()[:3])
+        lines.append(f"Last change by {env.member_name} (what undo_last reverts): {done[:200]}")
     return "\n".join(lines)
 
 
