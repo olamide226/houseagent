@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     setup_token: str | None = None
 
     agent_name: str = "Home"
-    agent_runtime: Literal["loop"] = "loop"
+    agent_runtime: Literal["loop", "letta"] = "loop"
     default_timezone: str = "Europe/London"
     debounce_seconds: float = 4
     log_level: str = "INFO"
@@ -60,6 +60,14 @@ class Settings(BaseSettings):
     bb_password: str | None = None
     bb_webhook_secret: str | None = None
     bb_private_api: bool = False
+
+    # The optional Letta runtime (spec 8.4). Its tools call back into `/internal/tools/*`.
+    letta_base_url: str | None = None
+    letta_api_key: str | None = None
+    letta_model: str | None = None            # the model's handle as the Letta server names it
+    internal_tool_token: str | None = None
+    internal_base_url: str | None = None      # where Letta reaches the api's /internal; default PUBLIC_BASE_URL
+    worker_internal_url: str = "http://localhost:8001"   # where Letta reaches the worker's; it listens on this port
 
     @property
     def telegram_enabled(self) -> bool:

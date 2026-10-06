@@ -12,7 +12,8 @@ from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import DBAPIError, InterfaceError
 
-from app.agent.loop import LoopRuntime
+from app.agent import internal
+from app.agent.runtime import make_runtime
 from app.channels.base import ADAPTERS, build_adapters
 from app.channels.whatsapp import WhatsAppAdapter
 from app.config import configure_logging, get_settings
@@ -20,7 +21,6 @@ from app.core.envelope import Channel
 from app.dashboard import auth, routes
 from app.db import engine, fetch_val, tx
 from app.ics import routes as ics
-from app.llm.base import make_llm
 from app.media.store import make_media_store
 from app.pipeline import inbound
 from app.presence import routes as presence
@@ -35,8 +35,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging(settings.log_level)
     build_adapters(settings)
     # The Playground runs turns in the api process; chat turns run in the worker.
-    app.state.runtime = LoopRuntime(make_llm(settings), media=make_media_store(settings),
-                                    agent_name=settings.agent_name, max_iterations=settings.llm_max_tool_iterations)
+    app.state.runtime = make_runtime(settings, make_media_store(settings))
     yield
     await engine().dispose()
 
@@ -48,6 +47,7 @@ def create_app() -> FastAPI:
     app.include_router(routes.router)
     app.include_router(ics.router)
     app.include_router(presence.router)
+    app.include_router(internal.router)   # answers 404 unless INTERNAL_TOOL_TOKEN is set; not on the public ingress
 
     @app.exception_handler(auth.LoginRequired)
     async def login_required(request: Request, exc: auth.LoginRequired) -> Response:

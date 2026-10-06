@@ -48,6 +48,50 @@ def _text(role: Any, text: str) -> ChatMessage:
     return ChatMessage(role=role, content=[TextPart(text=text)])
 
 
+async def load_photos(env: Envelope, media: MediaStore | None,
+                      supports_images: bool) -> tuple[list[ImagePart], list[str]]:
+    """Up to four of the turn's photos, loaded through MediaStore, and a note for each one
+    the model will not see."""
+    if not env.images:
+        return [], []
+    if not supports_images:
+        return [], [NO_PHOTOS]
+    photos: list[ImagePart] = []
+    notes: list[str] = []
+    for ref in env.images[:MAX_IMAGES]:
+        try:
+            if media is None or not (ref.storage_key or ref.storage_url):
+                raise LookupError("not stored")
+            data = await media.get(ref)
+            photos.append(ImagePart(mime=ref.mime or "image/jpeg", data_b64=base64.b64encode(data).decode()))
+        except Exception as exc:
+            log.warning("photo_unreadable", household_id=env.household_id, error=type(exc).__name__)
+            notes.append(UNREADABLE)
+    extra = len(env.images) - MAX_IMAGES
+    if extra > 0:
+        notes.append(f"[{extra} more photo{'' if extra == 1 else 's'} not read: at most {MAX_IMAGES} per message]")
+    return photos, notes
+
+
+def turn_text(env: Envelope, notes: list[str]) -> str:
+    """What the member said this turn, as the model reads it."""
+    turn = env.text
+    if env.reply_to_text:
+        turn = f'[replying to: "{env.reply_to_text[:120]}"]\n{turn}'
+    return "\n".join([turn, *notes])
+
+
+def final_result(text: str | None, records: list[ToolCallRecord], usage: Usage) -> AgentResult:
+    """The model's last words as an outcome: exactly ACK, exactly NOOP, or a reply."""
+    answer = (text or "").strip()
+    wrote = any(not record.is_error for record in records)
+    if answer == "ACK" or (not answer and wrote):
+        return AgentResult(reply=None, ack_only=True, tool_calls=records, usage=usage)
+    if answer == "NOOP" or not answer:
+        return AgentResult(reply=None, noop=True, tool_calls=records, usage=usage)
+    return AgentResult(reply=answer, tool_calls=records, usage=usage)
+
+
 class LoopRuntime:
     def __init__(self, llm: LLMClient, *, media: MediaStore | None = None, agent_name: str = "Home",
                  max_iterations: int = 8) -> None:
@@ -60,11 +104,8 @@ class LoopRuntime:
         onboarding = await households.onboarding(ctx.conn, env.household_id)
         system = system_prompt(self._agent_name, await build_brief(ctx.conn, env, env.received_at), onboarding)
         messages = await self._history(env, ctx)
-        turn = env.text
-        if env.reply_to_text:
-            turn = f'[replying to: "{env.reply_to_text[:120]}"]\n{turn}'
-        photos, notes = await self._photos(env)
-        messages.append(ChatMessage(role="user", content=[TextPart(text="\n".join([turn, *notes])), *photos]))
+        photos, notes = await load_photos(env, self._media, self._llm.supports_images)
+        messages.append(ChatMessage(role="user", content=[TextPart(text=turn_text(env, notes)), *photos]))
         tools = tool_definitions(onboarding_active=onboarding["step"] is not None)
 
         records: list[ToolCallRecord] = []
@@ -75,7 +116,7 @@ class LoopRuntime:
             if not response.tool_calls:
                 if response.stop == "error":
                     raise LLMError("the model stopped without an answer")
-                return self._final(response.text, records, usage)
+                return final_result(response.text, records, usage)
             messages.append(ChatMessage(
                 role="assistant", content=[TextPart(text=response.text)] if response.text else [],
                 tool_calls=response.tool_calls, opaque=response.opaque,
@@ -89,39 +130,6 @@ class LoopRuntime:
                 messages.append(ChatMessage(role="tool", content=[TextPart(text=result)],
                                             tool_call_id=call.id, is_error=is_error))
         return AgentResult(reply=LOST, tool_calls=records, usage=usage)
-
-    async def _photos(self, env: Envelope) -> tuple[list[ImagePart], list[str]]:
-        """Up to four of the turn's photos, loaded through MediaStore, and a note for each one
-        the model will not see."""
-        if not env.images:
-            return [], []
-        if not self._llm.supports_images:
-            return [], [NO_PHOTOS]
-        photos: list[ImagePart] = []
-        notes: list[str] = []
-        for ref in env.images[:MAX_IMAGES]:
-            try:
-                if self._media is None or not (ref.storage_key or ref.storage_url):
-                    raise LookupError("not stored")
-                data = await self._media.get(ref)
-                photos.append(ImagePart(mime=ref.mime or "image/jpeg", data_b64=base64.b64encode(data).decode()))
-            except Exception as exc:
-                log.warning("photo_unreadable", household_id=env.household_id, error=type(exc).__name__)
-                notes.append(UNREADABLE)
-        extra = len(env.images) - MAX_IMAGES
-        if extra > 0:
-            notes.append(f"[{extra} more photo{'' if extra == 1 else 's'} not read: at most {MAX_IMAGES} per message]")
-        return photos, notes
-
-    @staticmethod
-    def _final(text: str | None, records: list[ToolCallRecord], usage: Usage) -> AgentResult:
-        answer = (text or "").strip()
-        wrote = any(not record.is_error for record in records)
-        if answer == "ACK" or (not answer and wrote):
-            return AgentResult(reply=None, ack_only=True, tool_calls=records, usage=usage)
-        if answer == "NOOP" or not answer:
-            return AgentResult(reply=None, noop=True, tool_calls=records, usage=usage)
-        return AgentResult(reply=answer, tool_calls=records, usage=usage)
 
     async def _history(self, env: Envelope, ctx: Ctx) -> list[ChatMessage]:
         """The thread's last 20 messages from the past 48 hours, before this turn."""

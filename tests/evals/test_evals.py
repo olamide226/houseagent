@@ -7,7 +7,11 @@ same date whenever the suite runs. Skipped unless RUN_EVALS=1:
 
     RUN_EVALS=1 EVAL_API_KEY=... EVAL_OPENAI_BASE_URL=... EVAL_ANTHROPIC_BASE_URL=... \
         EVAL_MODEL=... uv run pytest tests/evals -m eval
+
+With EVAL_RUNTIME=letta the same cases run once through LettaRuntime against the Letta server at
+EVAL_LETTA_BASE_URL, whose tools call back into a bridge this process serves (docs/evals.md).
 """
+import asyncio
 import json
 import os
 import re
@@ -20,9 +24,12 @@ from typing import Any
 import pytest
 import yaml
 
+from app.agent import internal
 from app.agent.actions import Recorder
+from app.agent.base import AgentRuntime
 from app.agent.loop import LoopRuntime
 from app.agent.resolve import normalise
+from app.config import get_settings
 from app.core.envelope import MediaRef
 from app.db import execute, fetch_all, fetch_one, tx
 from app.llm.anthropic import AnthropicClient
@@ -44,6 +51,16 @@ ENDPOINTS = {
     "openai_compat": os.environ.get("EVAL_OPENAI_BASE_URL") or os.environ.get("DEEPSEEK_OPENAI_BASE_URL"),
     "anthropic": os.environ.get("EVAL_ANTHROPIC_BASE_URL") or os.environ.get("DEEPSEEK_ANTHROPIC_BASE_URL"),
 }
+# The Letta comparison: one runtime, so one "provider". The bridge is this process; the Letta
+# server's tool sandbox must be able to reach EVAL_BRIDGE_URL (a container reaches its host as below).
+LETTA = os.environ.get("EVAL_RUNTIME") == "letta"
+LETTA_BASE_URL = os.environ.get("EVAL_LETTA_BASE_URL", "http://127.0.0.1:8283")
+LETTA_MODEL = os.environ.get("EVAL_LETTA_MODEL")
+BRIDGE_PORT = int(os.environ.get("EVAL_BRIDGE_PORT", "8011"))
+BRIDGE_URL = os.environ.get("EVAL_BRIDGE_URL", f"http://host.docker.internal:{BRIDGE_PORT}")
+BRIDGE_TOKEN = "eval-internal-tool-token"
+PROVIDERS = ["letta"] if LETTA else list(ENDPOINTS)
+_letta: list[AgentRuntime] = []
 CASES = [
     (path.stem, case) for path in sorted(HERE.glob("*.yaml")) for case in yaml.safe_load(path.read_text())
 ]
@@ -63,7 +80,16 @@ def photo(name: str) -> MediaRef:
     return MediaRef(kind="image", mime="image/png", storage_backend="s3", storage_key=name)
 
 
-def make_runtime(provider: str) -> LoopRuntime:
+def make_runtime(provider: str) -> AgentRuntime:
+    if provider == "letta":
+        if not _letta:   # one for the run: it registers the tools with Letta once
+            from letta_client import AsyncLetta
+
+            from app.agent.letta_runtime import LettaRuntime
+
+            _letta.append(LettaRuntime(AsyncLetta(base_url=LETTA_BASE_URL), tool_url=BRIDGE_URL,
+                                       tool_token=BRIDGE_TOKEN, model=LETTA_MODEL, media=FixtureStore()))   # type: ignore[arg-type]
+        return _letta[0]
     client_class = AnthropicClient if provider == "anthropic" else OpenAICompatClient
     return LoopRuntime(client_class(api_key=API_KEY, model=MODEL, base_url=ENDPOINTS[provider]),
                        media=FixtureStore())   # type: ignore[arg-type]
@@ -291,10 +317,32 @@ def _decimal(value: Any) -> Decimal | None:
     return None if value is None else Decimal(str(value))
 
 
-@pytest.mark.parametrize("provider", list(ENDPOINTS))
+@pytest.fixture(scope="session", autouse=True)
+async def _bridge():
+    """Under Letta, serve `/internal/tools/*` from this process for the length of the run."""
+    if not LETTA:
+        yield
+        return
+    import uvicorn
+    from fastapi import FastAPI
+
+    get_settings().internal_tool_token = BRIDGE_TOKEN
+    app = FastAPI()
+    app.include_router(internal.router)
+    server = uvicorn.Server(uvicorn.Config(app, host="0.0.0.0", port=BRIDGE_PORT, log_level="warning"))
+    server.install_signal_handlers = lambda: None   # type: ignore[method-assign]
+    task = asyncio.create_task(server.serve())
+    while not server.started:   # noqa: ASYNC110 (uvicorn offers a flag, not an event)
+        await asyncio.sleep(0.05)
+    yield
+    server.should_exit = True
+    await task
+
+
+@pytest.mark.parametrize("provider", PROVIDERS)
 @pytest.mark.parametrize("suite,case", CASES, ids=[f"{suite}:{case['name']}" for suite, case in CASES])
 async def test_case(provider: str, suite: str, case: dict[str, Any]) -> None:
-    if not (API_KEY and ENDPOINTS[provider]):
+    if not LETTA and not (API_KEY and ENDPOINTS[provider]):
         pytest.skip(f"no credentials for {provider}")
     now = london(case.get("now", NOW))
     home = await seed(case, now)
@@ -321,6 +369,6 @@ def _write_results():
     for provider, cases in outcomes.items():
         passed = sum(1 for outcome in cases.values() if outcome == "passed")
         (RESULTS / f"{provider}.json").write_text(json.dumps({
-            "provider": provider, "model": MODEL, "passed": passed, "total": len(cases),
+            "provider": provider, "model": LETTA_MODEL if LETTA else MODEL, "passed": passed, "total": len(cases),
             "usage": usage_by_provider.get(provider, Usage()).model_dump(), "cases": cases,
         }, indent=2) + "\n")

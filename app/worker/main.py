@@ -7,10 +7,14 @@ import signal
 from collections.abc import Awaitable, Callable
 from functools import partial
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import structlog
+import uvicorn
+from fastapi import FastAPI
 
-from app.agent.loop import LoopRuntime
+from app.agent import internal
+from app.agent.runtime import make_runtime
 from app.channels.base import HealthChecked, build_adapters
 from app.config import configure_logging, get_settings
 from app.core.timeutil import utcnow
@@ -59,13 +63,19 @@ async def heartbeat(path: Path) -> None:
         await asyncio.sleep(HEARTBEAT_SECONDS)
 
 
+async def serve_internal(port: int) -> None:
+    """The tool bridge for turns this process runs under the Letta runtime (app/agent/internal.py)."""
+    bridge = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    bridge.include_router(internal.router)
+    await uvicorn.Server(uvicorn.Config(bridge, host="0.0.0.0", port=port, log_config=None)).serve()
+
+
 async def main() -> None:
     settings = get_settings()
     configure_logging(settings.log_level)
     adapters = build_adapters(settings)
     media = make_media_store(settings)
-    runtime = LoopRuntime(make_llm(settings), media=media, agent_name=settings.agent_name,
-                          max_iterations=settings.llm_max_tool_iterations)
+    runtime = make_runtime(settings, media, tool_url=settings.worker_internal_url)
     stt = make_stt(settings)
     outbox_wake = asyncio.Event()
     scheduled = dict(SCHEDULED)
@@ -86,6 +96,9 @@ async def main() -> None:
           for name, (job, seconds) in scheduled.items()),
         asyncio.create_task(heartbeat(Path(settings.worker_heartbeat_file))),
     ]
+    if settings.agent_runtime == "letta":
+        port = urlsplit(settings.worker_internal_url).port or 8001
+        tasks.append(asyncio.create_task(supervise("internal_tools", partial(serve_internal, port))))
     log.info("worker_started", channels=[c.value for c in adapters], llm_provider=settings.llm_provider)
     stop = asyncio.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):

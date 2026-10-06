@@ -26,6 +26,9 @@ dependencies = [
 [project.optional-dependencies]
 llm-openai = ["openai"]
 llm-anthropic = ["anthropic"]
+letta = [
+    "letta-client>=1.12",
+]
 
 [dependency-groups]
 dev = [
