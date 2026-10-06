@@ -26,6 +26,15 @@ Results, with token totals, are written to `tests/evals/.results/<provider>.json
 which is also where the dashboard's System page reads the last result from.
 Add `-k "calendar or reminders"` to run part of the suite.
 
+One run is one sample per case, and several cases fail one time in five. `EVAL_SAMPLES=5` runs
+every selected case five times (the result file then has one entry per run), and `EVAL_TRACE=1`
+with `pytest -s` prints each turn's tool calls, their results and the reply, which is how a
+failure is told apart from the model answering differently:
+
+```sh
+RUN_EVALS=1 EVAL_SAMPLES=5 EVAL_TRACE=1 ... uv run pytest tests/evals -s -k "undo: or receipt"
+```
+
 To run the same cases through the optional Letta runtime instead, start a Letta server and set
 `EVAL_RUNTIME=letta`, `EVAL_LETTA_BASE_URL` (default `http://127.0.0.1:8283`) and
 `EVAL_LETTA_MODEL` (the model's handle on that server). The test process then serves the tool
@@ -64,6 +73,7 @@ it, by default `http://host.docker.internal:8011`. The result is written as `let
 | `events_include` | Photos: an event whose item name contains `item_contains`, of one of the `type`s, exists. A model may call the item "milk" or "semi skimmed milk" |
 | `events_all` | Every event has this `type`, `source` or `location` (a value or a list of accepted values) |
 | `events_max` | No more events than this, so totals, savings and invented items fail the case |
+| `new_items_max` | No more items than this were created beyond the seeded ones, so a purchase logged under a new name beside the household's own item fails the case |
 | `members_added` | Exactly these people beyond Ola and Ada, with their roles |
 | `onboarding_done`, `onboarding_step` | Steps that must be done; the step setup is now on (`null` when complete) |
 | `staples`, `shops`, `facts`, `facts_mention` | Items flagged as staples; shop names containing each text; a fact by key whose value contains the text; any fact value containing the text |
@@ -105,10 +115,17 @@ inventory events here, so calendar expectations are under `calendar`.
 
 ## Suite
 
-50 cases: inventory (8), shopping list (5), NOOP (3), undo (4), calendar (7), reminders (4),
-photos (5: three receipts, two fridge or freezer photos), onboarding, family and settings (10),
+61 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (7), reminders (4),
+photos (6: four receipts, two fridge or freezer photos), onboarding, family and settings (13),
 and presence (4: answers to the low-stock prompt and the "out and about" offer).
-The spec's target is 40. Release bar: 95% overall and 100% on the NOOP and undo cases, on at
+The spec's target is 40.
+
+Eleven of them are variants written for the pass on repeat mistakes
+([ADR 0031](adr/0031-rules-the-model-kept-breaking.md)): the same mistake asked for with other
+items, other wording and another shop, so that a fix is not judged only on the case it was
+written against. They are the last cases in `inventory.yaml`, `photos.yaml`, `onboarding.yaml`
+and `undo.yaml`. Two of them check the other direction: a finished non-staple that the person
+asks to have listed is listed, and coconut milk on a receipt does not tick off the milk. Release bar: 95% overall and 100% on the NOOP and undo cases, on at
 least two providers.
 
 The photo fixtures in `tests/evals/fixtures/` are drawn by `make_fixtures.py` in that folder
@@ -117,6 +134,73 @@ photo case reads its image through a read-only `MediaStore` over that folder, so
 the same path into the model as a stored Telegram photo.
 
 ## Latest results
+
+One run of the whole suite with the loop runtime, 6 Oct 2026, after the pass on repeat mistakes
+([ADR 0031](adr/0031-rules-the-model-kept-breaking.md)), 61 cases, model `deepseek-flash`
+through both adapters, 432 seconds.
+
+| Adapter | Endpoint | Passed | NOOP | Undo | Input tokens (cached) | Output tokens |
+| --- | --- | --- | --- | --- | --- | --- |
+| `openai_compat` | `https://api.deepseek.com/` | **61/61** | 3/3 | 7/7 | 589,398 (514,684) | 15,317 |
+| `anthropic` | `https://api.deepseek.com/anthropic` | **61/61** | 3/3 | 7/7 | 589,744 (560,633) | 15,759 |
+
+| Category | `openai_compat` | `anthropic` |
+| --- | --- | --- |
+| inventory | 12/12 | 12/12 |
+| shopping list | 5/5 | 5/5 |
+| NOOP | 3/3 | 3/3 |
+| undo | 7/7 | 7/7 |
+| calendar | 7/7 | 7/7 |
+| reminders | 4/4 | 4/4 |
+| photos | 6/6 | 6/6 |
+| onboarding | 13/13 | 13/13 |
+| presence | 4/4 | 4/4 |
+
+The release bar (95% overall and 100% on NOOP and undo, on at least two providers) is **met on
+both endpoints in this run**, for the first time. The 50 cases of the earlier runs are all in
+the 61, so they stand at 50/50 on both. Two things limit what that says. It is one sample per
+case, and the two endpoints are one model on two wire formats, not two providers' models.
+
+Cost: the account balance, shown to the cent, read $4.37 before the run and $4.33 after it.
+
+**The cases behind the pass, five samples each.** The 24 cases the pass was about (the ones
+that kept failing, the related ones, and the new variants) were run five times on each endpoint
+before any change and again at the final code, with tool calls printed:
+
+| | `openai_compat` | `anthropic` |
+| --- | --- | --- |
+| Before (23 cases, 115 runs each) | 81/115 | 94/115 |
+| After (24 cases, 120 runs each) | 120/120 | 119/120 |
+
+| Case | Before | After |
+| --- | --- | --- |
+| batch finish with staple | 0/10 | 9/10 |
+| two things run out in the group and only the staple is listed (new) | 7/10 | 10/10 |
+| long receipt ignores totals and savings | 2/10 | 10/10 |
+| receipt restocks what was bought | 7/10 | 10/10 |
+| receipt lines land on the household's own items (new) | 8/10 | 10/10 |
+| quiet hours changed later just by talking | 5/10 | 10/10 |
+| quiet hours for the speaker alone, said another way (new) | 0/10 | 10/10 |
+| quiet hours for the other adult by name (new) | 5/10 | 10/10 |
+| gone corrected to getting low (new) | 7/10 | 10/10 |
+| taking back a list add, said another way (new) | 9/10 | 10/10 |
+| taking back a run-out, said another way (new) | 6/10 | 10/10 |
+| bought with a stated quantity | 9/10 | 10/10 |
+| the other 11 that were run before | 110/110 | 110/110 |
+| a finished non-staple is listed when the person asks (new, written after the first run) | not run | 10/10 |
+
+The one failure after: "batch finish with staple" answered "Eggs and bread logged as finished —
+eggs are on the shopping list." where the case expects `ACK`. The rows were right and the
+sentence is true; before the pass the usual sentence said bread was on the list as well. So that
+case still fails about one run in ten, and a run of the whole suite can read 60/61.
+
+"Taking back a run-out" was reworded between the two runs. Its second message first read "oops,
+ignore that, there's another bag", and in all 4 of its failures the model recorded the one bag
+it had just been told about (in 2 of them after undoing the mistake), which is a fair reading.
+It now reads
+"oops, ignore that, I was wrong". Its before and after are therefore not the same question.
+
+## Previous full run (milestone 6)
 
 One run of the whole suite with the loop runtime, 6 Oct 2026 (milestone 6), 50 cases, model
 `deepseek-flash` through both adapters, 299 seconds. No case and no prompt changed since the
@@ -162,8 +246,8 @@ Spec section 8.4: the Letta runtime is "promoted only if it beats the loop on th
 
 | Runtime | Passed | NOOP | Undo | Model calls | Input tokens (cached) | Output tokens | Seconds |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| loop, `openai_compat` (above) | 48/50 | 3/3 | 3/4 | not counted | 426,902 (405,502) | 12,776 | 299 for both |
-| loop, `anthropic` (above) | 48/50 | 3/3 | 4/4 | not counted | 440,912 (418,560) | 14,845 | |
+| loop, `openai_compat` ([milestone 6](#previous-full-run-milestone-6)) | 48/50 | 3/3 | 3/4 | not counted | 426,902 (405,502) | 12,776 | 299 for both |
+| loop, `anthropic` (milestone 6) | 48/50 | 3/3 | 4/4 | not counted | 440,912 (418,560) | 14,845 | |
 | **Letta** | **45/50** (90%) | 3/3 | 3/4 | 118 | 506,802 (310,400) | 13,679 | 246 |
 
 | Category | Letta |
@@ -179,6 +263,8 @@ Spec section 8.4: the Letta runtime is "promoted only if it beats the loop on th
 | presence | 2/4 |
 
 One run, 6 Oct 2026, the same 50 cases and the same model. Cost: $4.70 before, $4.69 after.
+It predates the pass on repeat mistakes and was not repeated after it, so it is compared with the
+loop's run of that day, not with the latest one.
 
 | Case that failed under Letta | What the rows showed |
 | --- | --- |

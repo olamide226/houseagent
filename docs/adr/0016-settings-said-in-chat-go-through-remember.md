@@ -18,7 +18,7 @@ that are written where the rest of the system reads them:
 | --- | --- | --- |
 | `staples` | comma-separated items | `items.is_staple`, creating items that are new. No fact row |
 | `morning_brief` | a time of day | `households.digest_time`. No fact row |
-| `quiet_hours` | `start-end`, or `off` | `members.quiet_start` and `quiet_end` for the member named in `about`, or every adult. No fact row |
+| `quiet_hours` | `start-end`, or `off` | `members.quiet_start` and `quiet_end` for the member named in `about`, or every adult. No fact row. (Changed by [ADR 0031](0031-rules-the-model-kept-breaking.md): with nobody named, the speaker alone) |
 | `shops`, `main_supermarket` | names | a fact row, and a `places` row of kind `store` per name |
 
 Every other key is a plain row in `household_facts`. The keys are named in the tool's argument

@@ -41,7 +41,7 @@ household yet**, and how much of it has met the real services differs by part:
 | iMessage | Built from the BlueBubbles server source; tested against payloads built from it. There is no Mac set up yet |
 | Presence | Built; tested with plain HTTP calls, never from a phone |
 | Voice notes | Built; tested with a stand-in transcriber. No speech-to-text service has been tried |
-| Agent quality | Measured on 50 eval cases with one model through two adapters. The release bar is not met: see [docs/evals.md](docs/evals.md#latest-results) |
+| Agent quality | Measured on 61 eval cases with one model through two adapters. The latest run meets the release bar on both, one sample per case: see [docs/evals.md](docs/evals.md#latest-results) |
 | Letta runtime | Optional and off by default. Built, compared with the plain loop on the eval suite, and not promoted: see [docs/evals.md](docs/evals.md#the-letta-comparison) |
 | Helm chart | Linted and rendered; never installed on a cluster |
 

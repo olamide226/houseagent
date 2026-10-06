@@ -20,7 +20,9 @@ optional second implementation ([below](#the-letta-runtime-optional)). The loop:
 The static prompt is `STATIC_PROMPT` in `app/agent/prompt.py`; that file is the source of truth.
 The brief (`build_brief`) lists the time in household time, who is speaking, family, locations,
 facts, the shopping list, low or out items, items expiring within 3 days and the events of the
-next 7 days, each list capped at 25 entries with "+N more".
+next 7 days, each list capped at 25 entries with "+N more". Its last line is the speaker's most
+recent change that can still be undone, as the tool reported it: thread history holds what was
+said, not what was recorded ([ADR 0031](adr/0031-rules-the-model-kept-breaking.md)).
 
 A turn's clock is the time its message arrived (`Ctx.now`), not the time the worker got to it.
 "In two hours" and "tomorrow" count from when it was said. See
@@ -73,7 +75,9 @@ A turn's photos are loaded through `MediaStore` and sent to the model as images 
 What the model does with them is in the static prompt: a receipt becomes `log_inventory` with
 `restocked` and source `receipt`; a fridge, freezer or cupboard photo becomes `adjusted` with
 source `photo` and that location, and nothing is ever marked finished for being absent from a
-photo. The usual rules then apply in code, so a receipt ticks bought items off the shopping list.
+photo. The usual rules then apply in code, so a receipt ticks bought items off the shopping list,
+and a line such as "BASMATI RICE 5KG" is not made a second item beside the household's rice
+([below](#resolution-appagentresolvepy)).
 
 When a photo cannot be shown to the model the turn still runs, with a note in place of the image:
 
@@ -133,7 +137,7 @@ Token usage, tool calls and latency for each turn are stored on the batch's last
 
 | Tool | Writes | Behaviour |
 | --- | --- | --- |
-| `log_inventory` | events, stock, list | Per change: resolve location and item, append the event, apply the stock transition, run the side-effect rules |
+| `log_inventory` | events, stock, list | Per change: resolve location and item, append the event, apply the stock transition, run the side-effect rules. Every `finished` and `low` line says what happened to the shopping list |
 | `query_inventory` | none | Filter by item, location, status, expiry; never creates an item |
 | `update_shopping_list` | list, events | `add`, `bought` (logs `restocked`, source `shopping`), `remove` (dismissed), `bought_all` |
 | `get_shopping_list` | none | Explicit, finished and low entries first, then predicted ones marked "(probably)"; the optional store filter keeps entries naming no shop and those whose shop reads like the one asked for |
@@ -141,7 +145,7 @@ Token usage, tool calls and latency for each turn are stored on the batch's last
 | `modify_event` | events, reminders | Finds the event from how it was described; moves, edits or cancels it; scope `this` on a series changes one date |
 | `list_upcoming` | none | Events in the next `days`, repeats expanded, plus standalone reminders; optional person filter |
 | `set_reminder` | reminders | One-off at `fire_at`, or repeating by `rrule`; for me, the household or a named member |
-| `remember` | facts; some settings | Upserts a fact for the household or one member; no value forgets it. The keys `staples`, `shops`, `main_supermarket`, `morning_brief` and `quiet_hours` are settings ([ADR 0016](adr/0016-settings-said-in-chat-go-through-remember.md)) |
+| `remember` | facts; some settings | Upserts a fact for the household or one member; no value forgets it. The keys `staples`, `shops`, `main_supermarket`, `morning_brief` and `quiet_hours` are settings ([ADR 0016](adr/0016-settings-said-in-chat-go-through-remember.md)). Quiet hours are set for whoever `about` names (`us` is every adult), and for the speaker alone when nobody is named |
 | `add_family_member` | members, an invite | Adds a child or an adult; a name already there is not added twice. For an adult who has not connected, an invite is sent to the person asking, to pass on |
 | `undo_last` | inverse of the last actions | The caller's own actions from the past 24 hours, newest first, `n` up to 5 |
 | `onboarding_advance` | onboarding state | Marks a setup step done or skipped and names the next one |
@@ -152,13 +156,16 @@ Result lines are prefixed so the model can relay or act on them:
 OK: egg finished (fridge)
 NEW: Scotch bonnet
 NOTE: egg added to shopping list
+OK: bread finished (store)
+NOTE: bread not added to shopping list: it is not a staple
 AMBIGUOUS: 'pepper' could be Bell pepper (fridge), Black pepper (store)
+ERROR: 'basmati rice' not recorded. The household already has rice (store). Decide which this is without asking: the same thing, then log it again under that name; a different product, then log it again with new_item true
 ERROR: the shopping list is empty
 OK: GP for Ada on Wed 7 Oct at 10:30, Hurley Clinic
 NOTE: reminders at Tue 6 Oct 10:30, Wed 7 Oct 09:30
 NEW: Ada (adult)
 NOTE: an invite for Ada was sent to this person in a separate message; they pass it on and Ada connects by opening it
-OK: quiet hours for Ola, Ada: 22:00 to 06:30
+OK: quiet hours for Ada: 20:00 to 07:00
 OK: staples done. Next step: tour
 ```
 
@@ -223,6 +230,13 @@ best if it scores at least 0.3, the soonest on a tie. No match is an `ERROR:` li
 The 0.15 comparison includes candidates below 0.55, so "pepper" with Bell pepper (0.58) and Black
 pepper (0.54) on file asks which one instead of silently picking Bell pepper.
 
+**A name that ends with one the household has.** `log_inventory` does not create "basmati rice"
+beside "rice", or "coconut milk" beside "milk", on its own word. When a name matches nothing and
+its last words are an item's name or alias, nothing is recorded for that change and the result
+names the item. The model then logs it under the household's name, or again with `new_item: true`
+if it is a different product. Code can see that the names are related; only the model can say
+whether semi skimmed milk is the milk. `update_shopping_list` and the `staples` setting do not ask.
+
 Locations resolve the same way. The seed locations carry aliases (`deep freezer`, `pantry`,
 `cupboard`, `larder`, `refrigerator`), and an unknown location name creates a custom location.
 
@@ -257,6 +271,16 @@ date or a cancellation puts the event and every reminder row back as they were. 
 - appends an `adjusted` event with source `undo` per reverted stock row; no history is deleted;
 - from chat covers the caller's own actions within 24 hours; from the dashboard Activity page any
   adult can undo any single action.
+
+Two things are done for the model, because live models got them wrong
+([ADR 0031](adr/0031-rules-the-model-kept-breaking.md)):
+
+- The call an undo just reverted is not run again in the same turn. The identical call answers
+  `OK: not done again: that is exactly what was just undone`.
+- `low` logged right after `finished` takes the `finished` back first ("not gone, just low"),
+  when that one change was the whole earlier action, it is under 24 hours old and nothing has
+  touched the item since. The result says so in a `NOTE:`, and the quantity is the one from
+  before the mistake, not zero.
 
 Not undone: item and location creation, learned aliases, merging duplicate items, creating or
 revoking an invite, and an invite that was already sent (the code dies with the member).
