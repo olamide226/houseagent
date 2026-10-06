@@ -22,8 +22,8 @@ log = structlog.get_logger()
 RESTART_SECONDS = 5
 HEARTBEAT_SECONDS = 60
 SCHEDULED: dict[str, tuple[Callable[[], Awaitable[int]], float]] = {
-    "reminders": (jobs.fire_reminders, jobs.REMINDERS_SECONDS),
-    "recurrence": (jobs.expand_recurrence, jobs.RECURRENCE_SECONDS),
+    "fire_reminders": (jobs.fire_reminders, jobs.REMINDERS_SECONDS),
+    "expand_recurrence": (jobs.expand_recurrence, jobs.RECURRENCE_SECONDS),
     "daily_brief": (jobs.daily_brief, jobs.DIGEST_POLL_SECONDS),
     "weekly_digest": (jobs.weekly_digest, jobs.DIGEST_POLL_SECONDS),
 }

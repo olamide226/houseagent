@@ -81,15 +81,65 @@ inventory events here, so calendar expectations are under `calendar`.
 
 ## Suite
 
-31 cases: inventory (8), shopping list (5), NOOP (3), undo (4), calendar (7), reminders (4). The
-spec's target is 40 cases including photos, which arrive with their milestone. Release bar: 95%
-overall and 100% on the NOOP and undo cases, on at least two providers.
+45 cases: inventory (8), shopping list (5), NOOP (3), undo (4), calendar (7), reminders (4),
+photos (5: three receipts, two fridge or freezer photos) and onboarding, family and settings (9).
+The spec's target is 40. Release bar: 95% overall and 100% on the NOOP and undo cases, on at
+least two providers.
+
+The photo fixtures in `tests/evals/fixtures/` are drawn by `make_fixtures.py` in that folder
+(`uv run --with pillow python tests/evals/fixtures/make_fixtures.py`). None is a real photo. A
+photo case reads its image through a read-only `MediaStore` over that folder, so the image takes
+the same path into the model as a stored Telegram photo.
 
 ## Latest results
 
-The suite has not been run as a whole since milestone 2 added its cases. The two tables below are
-separate runs of separate parts, so there is **no current full-suite score**, and the milestone 1
-part was below the release bar when last measured.
+One run of the whole suite, 6 Oct 2026, model `deepseek-flash` through both adapters, with all
+eleven everyday tools on offer (twelve in the onboarding cases). No case was re-run.
+
+| Adapter | Endpoint | Passed | NOOP | Undo | Input tokens (cached) | Output tokens |
+| --- | --- | --- | --- | --- | --- | --- |
+| `openai_compat` | `https://api.deepseek.com/` | **44/45** (97.8%) | 3/3 | 4/4 | 387,586 (277,376) | 11,919 |
+| `anthropic` | `https://api.deepseek.com/anthropic` | **41/45** (91.1%) | 3/3 | 4/4 | 399,018 (376,192) | 11,260 |
+
+| Category | `openai_compat` | `anthropic` |
+| --- | --- | --- |
+| inventory | 7/8 | 7/8 |
+| shopping list | 5/5 | 5/5 |
+| NOOP | 3/3 | 3/3 |
+| undo | 4/4 | 4/4 |
+| calendar | 7/7 | 7/7 |
+| reminders | 4/4 | 4/4 |
+| photos | 5/5 | 3/5 |
+| onboarding | 9/9 | 8/9 |
+
+On this one run the OpenAI-compatible endpoint is above the release bar and the
+Anthropic-compatible endpoint is below it, so the bar ("on at least two providers") is **not met**.
+One run is one sample per case: it does not show how often a case fails over many runs, and a
+44/45 could be a 42 or a 45 next time.
+
+Cost: the account balance, shown to the cent, read $4.90 before the run and $4.87 after it. The
+nine live smoke turns earlier in the milestone had not moved it from $4.90, so part of the three
+cents may be theirs.
+
+Failures, from the assertion messages of this run (the cases were not re-run with tracing):
+
+| Case | Endpoint | What happened |
+| --- | --- | --- |
+| batch finish with staple | `openai_compat` | Rows correct. The model replied "Eggs and bread are on the shopping list." where the case expects `ACK`; bread is not a staple and was not added, so the sentence is also wrong |
+| batch finish with staple | `anthropic` | Bread was on the shopping list as well as eggs: the model added it itself. The same two behaviours were seen in milestone 1 |
+| quiet hours changed later just by talking | `anthropic` | Ada said "don't message me after 8pm". Quiet hours were set to 20:00 to 07:00 for both adults: `remember` was called without `about`, which means everyone |
+| receipt restocks what was bought | `anthropic` | Eggs and bread were logged from the receipt. Milk, which was on the list, was ticked off with `update_shopping_list` instead, so its restock has source `shopping`, not `receipt`. Stock and list ended correct |
+| long receipt ignores totals and savings | `anthropic` | Seven items logged from the receipt, rice as a new item "basmati rice". The model then ticked "rice" off the list, a second restock of the same purchase under another name |
+
+The two receipt failures are one weakness: a receipt's wording ("BASMATI RICE 5KG") does not
+resolve to the household's own item ("rice"), and no deterministic rule can decide that for the
+model ("coconut milk" is not "milk"). The `log_inventory` item description asks for the everyday
+name; this run shows that it is not always followed. Duplicates can be merged on the item's
+dashboard page.
+
+## Earlier partial runs
+
+These were runs of parts of the suite with fewer tools on offer, kept for comparison.
 
 ### Calendar and reminders (milestone 2)
 
