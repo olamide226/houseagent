@@ -1,0 +1,32 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "200000000000002",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "447700900100",
+              "phone_number_id": "100000000000001"
+            },
+            "message_echoes": [
+              {
+                "from": "447700900100",
+                "to": "447700900101",
+                "id": "wamid.HBgMexample0779",
+                "timestamp": "1791230760",
+                "type": "text",
+                "text": {
+                  "body": "Added milk and bread to the list."
+                }
+              }
+            ]
+          },
+          "field": "smb_message_echoes"
+        }
+      ]
+    }
+  ]
+}

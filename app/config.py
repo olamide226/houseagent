@@ -44,9 +44,21 @@ class Settings(BaseSettings):
     tg_bot_username: str | None = None
     tg_webhook_secret: str | None = None
 
+    wa_phone_number_id: str | None = None
+    wa_access_token: str | None = None
+    wa_app_secret: str | None = None
+    wa_verify_token: str | None = None
+    wa_api_version: str = "v26.0"
+    wa_reminder_template: str = "household_reminder"
+
     @property
     def telegram_enabled(self) -> bool:
         return bool(self.tg_bot_token and self.tg_webhook_secret)
+
+    @property
+    def whatsapp_enabled(self) -> bool:
+        return bool(self.wa_phone_number_id and self.wa_access_token and self.wa_app_secret
+                    and self.wa_verify_token)
 
 
 @lru_cache

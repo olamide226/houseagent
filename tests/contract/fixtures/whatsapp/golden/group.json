@@ -1,0 +1,13 @@
+[
+  {
+    "channel": "whatsapp",
+    "external_message_id": "wamid.HBgMexample0778",
+    "external_thread_id": "Y2FwaV9ncm91cDo0NDc3MDA5MDAxMDA6MTIwMzYzMDAwMDAwMDAwMDAwZAZD",
+    "scope": "group",
+    "sender_handle": "GB.1000000000000000000102",
+    "sender_name": "Ada",
+    "text": "yes please, and we finished the rice",
+    "reply_to_external_id": "wamid.HBgMexample0777",
+    "sent_at": "2026-10-05T20:05:00Z"
+  }
+]

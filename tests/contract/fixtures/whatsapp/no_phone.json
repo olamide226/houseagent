@@ -1,0 +1,40 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "200000000000002",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "447700900100",
+              "phone_number_id": "100000000000001"
+            },
+            "contacts": [
+              {
+                "profile": {
+                  "name": "Ada",
+                  "username": "ada.example"
+                },
+                "user_id": "GB.1000000000000000000102"
+              }
+            ],
+            "messages": [
+              {
+                "from_user_id": "GB.1000000000000000000102",
+                "id": "wamid.HBgMexample0506",
+                "timestamp": "1791230820",
+                "type": "text",
+                "text": {
+                  "body": "add bin bags to the list"
+                }
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
+}

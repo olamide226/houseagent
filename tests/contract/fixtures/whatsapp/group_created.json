@@ -1,0 +1,31 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "200000000000002",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "447700900100",
+              "phone_number_id": "100000000000001"
+            },
+            "groups": [
+              {
+                "timestamp": "1791230900",
+                "group_id": "Y2FwaV9ncm91cDo0NDc3MDA5MDAxMDA6MTIwMzYzMDAwMDAwMDAwMDAwZAZD",
+                "type": "group_create",
+                "request_id": "example-request-0001",
+                "subject": "Adebayo family",
+                "invite_link": "https://chat.whatsapp.com/EXAMPLEinviteLINK01",
+                "join_approval_mode": "auto_approve"
+              }
+            ]
+          },
+          "field": "group_lifecycle_update"
+        }
+      ]
+    }
+  ]
+}

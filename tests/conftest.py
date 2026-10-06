@@ -26,9 +26,13 @@ os.environ.update(
     TG_BOT_TOKEN="424242:TEST-TOKEN",
     TG_BOT_USERNAME="home_test_bot",
     TG_WEBHOOK_SECRET="test-webhook-secret",
+    WA_PHONE_NUMBER_ID="100000000000001",
+    WA_ACCESS_TOKEN="test-access-token",
+    WA_APP_SECRET="test-app-secret",
+    WA_VERIFY_TOKEN="test-verify-token",
     DEBOUNCE_SECONDS="0",
 )
-for name in ("STT_PROVIDER", "STT_BASE_URL", "STT_MODEL"):
+for name in ("STT_PROVIDER", "STT_BASE_URL", "STT_MODEL", "WA_API_VERSION", "WA_REMINDER_TEMPLATE"):
     os.environ.pop(name, None)
 
 from app import db  # noqa: E402

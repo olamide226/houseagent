@@ -1,0 +1,19 @@
+[
+  {
+    "channel": "whatsapp",
+    "external_message_id": "wamid.HBgMexample0503",
+    "external_thread_id": "GB.1000000000000000000101",
+    "scope": "dm",
+    "sender_handle": "GB.1000000000000000000101",
+    "sender_name": "Ola",
+    "text": "Tesco receipt",
+    "media": [
+      {
+        "kind": "image",
+        "mime": "image/jpeg",
+        "external_id": "900000000000503"
+      }
+    ],
+    "sent_at": "2026-10-05T20:02:00Z"
+  }
+]

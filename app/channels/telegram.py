@@ -8,8 +8,16 @@ from typing import Any
 import httpx
 from fastapi import HTTPException, Request
 
-from app.channels.base import ChannelError, NotSupported
-from app.core.envelope import Capabilities, Channel, InboundEvent, MediaRef, SendResult
+from app.channels.base import ChannelError, NotSupported, PermanentError
+from app.core.envelope import (
+    Capabilities,
+    Channel,
+    DeliveryStatus,
+    GroupUpdate,
+    InboundEvent,
+    MediaRef,
+    SendResult,
+)
 
 API = "https://api.telegram.org"
 
@@ -40,6 +48,9 @@ class TelegramAdapter:
         else:
             event = None   # edited_message and everything else is ignored in v1
         return [event] if event else []
+
+    async def parse_updates(self, body: bytes) -> list[DeliveryStatus | GroupUpdate]:
+        return []   # Telegram reports a failed send in the reply to the send itself
 
     def _message(self, update: dict[str, Any], message: dict[str, Any]) -> InboundEvent | None:
         sender, chat = message.get("from"), message["chat"]
@@ -132,7 +143,10 @@ class TelegramAdapter:
             # Never include the exception text: httpx errors can carry the URL, which holds the token.
             raise ChannelError(f"telegram {method} failed: {type(exc).__name__}") from None
         if not data.get("ok"):
-            raise ChannelError(f"telegram {method} failed: {data.get('description', response.status_code)}")
+            # 4xx other than "slow down" is final: the chat is gone, the bot is blocked, the token is wrong.
+            final = 400 <= response.status_code < 500 and response.status_code != 429
+            raise (PermanentError if final else ChannelError)(
+                f"telegram {method} failed: {data.get('description', response.status_code)}")
         return data["result"]
 
 

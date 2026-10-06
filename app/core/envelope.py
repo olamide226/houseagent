@@ -84,9 +84,26 @@ class Capabilities(BaseModel):
     images_in: bool
     threaded_replies: bool
     proactive_window_hours: int | None   # 24 for WhatsApp, None = unlimited
+    proactive_template: str | None = None    # what carries a text once that window has closed
     max_text_len: int                    # 4096 Telegram/WhatsApp, 10000 iMessage
     formatting: Literal["plain", "whatsapp", "telegram_html"]
 
 
 class SendResult(BaseModel):
     external_id: str | None
+
+
+class DeliveryStatus(BaseModel):
+    """What a channel says later about a send it had accepted (WhatsApp statuses)."""
+    channel: Channel
+    external_message_id: str
+    status: Literal["sent", "delivered", "read", "failed"]
+    error: str | None = None
+
+
+class GroupUpdate(BaseModel):
+    """How a group the channel was asked to create turned out; no thread id means it failed."""
+    channel: Channel
+    subject: str
+    external_thread_id: str | None = None
+    error: str | None = None

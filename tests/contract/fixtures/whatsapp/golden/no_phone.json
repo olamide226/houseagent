@@ -1,0 +1,12 @@
+[
+  {
+    "channel": "whatsapp",
+    "external_message_id": "wamid.HBgMexample0506",
+    "external_thread_id": "GB.1000000000000000000102",
+    "scope": "dm",
+    "sender_handle": "GB.1000000000000000000102",
+    "sender_name": "Ada",
+    "text": "add bin bags to the list",
+    "sent_at": "2026-10-05T20:07:00Z"
+  }
+]

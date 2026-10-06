@@ -1,0 +1,12 @@
+[
+  {
+    "channel": "whatsapp",
+    "external_message_id": "wamid.HBgMexample0501",
+    "external_thread_id": "GB.1000000000000000000101",
+    "scope": "dm",
+    "sender_handle": "GB.1000000000000000000101",
+    "sender_name": "Ola",
+    "text": "we're out of eggs",
+    "sent_at": "2026-10-05T20:00:00Z"
+  }
+]

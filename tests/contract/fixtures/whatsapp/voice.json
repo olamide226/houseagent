@@ -1,0 +1,44 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "200000000000002",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "447700900100",
+              "phone_number_id": "100000000000001"
+            },
+            "contacts": [
+              {
+                "profile": {
+                  "name": "Ola"
+                },
+                "wa_id": "447700900101",
+                "user_id": "GB.1000000000000000000101"
+              }
+            ],
+            "messages": [
+              {
+                "from": "447700900101",
+                "from_user_id": "GB.1000000000000000000101",
+                "id": "wamid.HBgMexample0502",
+                "timestamp": "1791230460",
+                "type": "audio",
+                "audio": {
+                  "mime_type": "audio/ogg; codecs=opus",
+                  "sha256": "examplevoicesha256=",
+                  "id": "900000000000502",
+                  "voice": true
+                }
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
+}
