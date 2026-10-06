@@ -2,7 +2,7 @@
 
 The full DDL is [`schema.sql`](../schema.sql), applied verbatim by Alembic migration `0001`.
 Table-by-table purpose is in [spec.md section 4](spec.md#4-data-model). This page covers what
-milestones 1 to 4 use and the rules the code enforces.
+milestones 1 to 5 use and the rules the code enforces.
 
 ## Tables in use
 
@@ -12,24 +12,36 @@ milestones 1 to 4 use and the rules the code enforces.
 | `households.onboarding_state`, `households.digest_time` | `onboarding_advance`, `remember`, the Settings page |
 | `members.quiet_start`, `quiet_end`, `preferred_channel`, the invite hash | `remember`, the Settings and Family pages |
 | `household_facts` | `remember`, the Settings page (`services/households.py`) |
-| `places` | shops named in `remember` (kind `store`) |
+| `places` | shops named in `remember` (kind `store`), the Settings page, and a presence ping naming a place for the first time (kind `other`, or `home` for Home) |
+| `members.presence_token_hash` | the presence step of setup, an adult connecting after it, the Settings page |
+| `presence_events` | the presence endpoint, one row per accepted ping |
+| `nudge_log` | the presence rules and the low-stock prompt: one row per nudge key, `sent_at` moved on each time it is sent again |
+| `consumption_profiles` | `services/consumption.py`, from the nightly job, the low-stock prompt and the weekly digest |
 | `channel_identities` | invite redemption (`core/identity.py`) |
 | `login_tokens` | the `dashboard` keyword (`services/members.py`) |
 | `threads`, `messages` | inbound pipeline; the router adds `out` rows; the Channels page adds a group's thread |
 | `households.primary_thread_id` | the first group message, a created group once confirmed, the Channels page |
 | `items` | resolution (new items, learned aliases), dashboard item edits |
 | `inventory_events`, `stock` | `services/inventory.py` only |
-| `shopping_list_items` | `services/shopping.py`, and the inventory side-effect rules |
+| `shopping_list_items` | `services/shopping.py`, the inventory side-effect rules, and the consumption model's guesses (`reason = 'predicted'`) |
 | `events`, `reminders` | `services/calendar.py` only; the recurrence job adds reminder rows, the reminders job updates their status |
 | `households.calendar_token_hash` | the Calendar page's "New subscribe link" |
 | `agent_actions` | every tool call or dashboard action that wrote something, and each invite redemption |
 | `outbox` | turns, invites and welcomes, login links, reminders, digests |
-| `job_runs` | the daily brief and weekly digest, one row per household and run |
+| `job_runs` | the daily brief, the weekly digest, the consumption model and the low-stock prompt, one row per household and run |
 
-Not written yet: `consumption_profiles`, `presence_events`, `nudge_log`.
+Every table in the schema is now written by something.
+
+`nudge_log.dedupe_key` is `store:{member id}:{place id}` (a shop list, again after 2 hours),
+`out:{member id}:{local date}` (the "out and about" offer, once) or `low_stock:{item id}` (asked
+about in the 17:30 prompt, again after 3 days).
+
+`consumption_profiles.predicted_runout_at` is null unless the item has two or more measured
+cycles and has been bought since it last ran out. `samples` counts the cycles that were measured;
+`avg_days_to_finish` is their exponentially weighted mean ([presence.md](presence.md#predictions)).
 
 `households.onboarding_state` is `{"step": "shops", "done": ["family", "routines"], "skipped":
-["routines"]}`. `step` is the first of `family`, `routines`, `shops`, `staples`, `tour`, `rhythm`
+["routines"]}`. `step` is the first of `family`, `routines`, `shops`, `staples`, `tour`, `rhythm`, `presence`
 not yet done, and `null` when setup is complete.
 
 `messages.media` is a list of `MediaRef`. A stored attachment has `storage_backend` and
@@ -81,6 +93,9 @@ default location, else `store`.
 - Ticking an item off the list logs `restocked` with source `shopping` at the usual location.
 - Ticking an item off in the same turn that already logged its restock records nothing more: one
   purchase is one restock.
+- Adding an item that is on the list only as a guess (`reason = 'predicted'`) turns that entry
+  into a real one with the new reason; the list still has one active row per item.
+- "Got everything on the list" ticks off what was asked for and leaves the guesses.
 
 ## Invariants
 

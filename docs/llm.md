@@ -13,6 +13,10 @@ change gated by the eval suite.
 | `ImagePart` | `image_url` with a `data:` URI | `image` block with a base64 source |
 | Stop | `finish_reason` | `stop_reason` |
 
+`make_llm(settings, fast=True)` gives a client for `LLM_FAST_MODEL` (default: `LLM_MODEL`) on the
+same provider. The worker uses it for the one background chore that needs a model: sorting items
+with no category into supermarket sections, with a JSON answer and no tools.
+
 ## Adapter rules
 
 - **Malformed tool arguments** become a `ToolCall` with `error = "invalid JSON arguments"`; the

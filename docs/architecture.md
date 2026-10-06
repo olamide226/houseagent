@@ -8,22 +8,23 @@ flowchart LR
     WA[WhatsApp] -- "webhook, statuses" --> API
     Browser -- dashboard --> API
     Cal[Phone calendar] -- "ICS feed" --> API
+    Phone[iPhone Shortcut] -- "presence: entered, left" --> API
     subgraph image[one image, two processes]
         API[api: uvicorn app.main:app]
         W[worker: python -m app.worker.main]
     end
-    API -- "insert messages, NOTIFY inbound" --> PG[(Postgres)]
+    API -- "insert messages, NOTIFY inbound; presence events and their nudges" --> PG[(Postgres)]
     PG -- "received messages, pending outbox" --> W
     W -- "tool writes, outbox rows" --> PG
     W -- tool-calling loop --> LLM[LLM provider]
-    W -- "replies, reminders, digests" --> TG
+    W -- "replies, reminders, digests, shop lists" --> TG
     W -- "replies, templates" --> WA
 ```
 
 (The same diagram lives in [diagrams/architecture.mmd](diagrams/architecture.mmd).)
 
-- **api** is stateless. It verifies and stores webhooks, serves the dashboard and the calendar
-  feed, and returns fast.
+- **api** is stateless. It verifies and stores webhooks and presence pings, serves the dashboard
+  and the calendar feed, and returns fast.
 - **worker** does everything slow or timed: model calls, transcription, sends, reminders, digests.
 - **Postgres is the source of truth.** The agent reads and writes only through tools, and tools
   only through `app/services/`.
@@ -126,6 +127,16 @@ and sent to the model inline, so the provider never sees a storage URL. With no 
 configured, a failed fetch, or a model without image input, the turn carries a one-line note
 instead and still runs. See [ADR 0018](adr/0018-media-retention-and-photos-without-a-backend.md).
 
+## Presence
+
+`POST /presence/{token}` is the third way into the api, after webhooks and the dashboard. An iOS
+Shortcut on each adult's phone calls it with `enter` or `exit` and a place name. The api stores
+the ping and runs one rule in code (`app/presence/rules.py`): arriving at a shop queues that
+person the list for that shop, leaving home with a long or freshly changed list queues an offer
+of it. Like everything else the api does, it only writes rows; the worker's outbox sends them.
+Every nudge is claimed in `nudge_log` first, so a doubled or replayed ping sends nothing twice.
+Phone setup and the rules are in [presence.md](presence.md).
+
 ## Scheduled jobs
 
 The worker runs each job as its own supervised task (`app/worker/jobs.py`). Every job takes the
@@ -138,7 +149,9 @@ current time as an argument, so tests drive them on a controlled clock.
 | `fire_reminders` | 15 s | Due reminders become outbox rows. A one-off becomes `sent`; a repeating one moves to its next time | `SKIP LOCKED`, and the outbox dedupe key is `reminder:{id}:{fire_at}` |
 | `expand_recurrence` | 1 h | Reminder rows for each recurring event's occurrences in the next 48 hours, skipping exception dates | Unique `(event_id, fire_at)` |
 | `daily_brief` | 1 min check | At the household's `digest_time`: today's events and reminders, items to use within 2 days. Nothing on an empty day | A `job_runs` row per household and date |
-| `weekly_digest` | 1 min check | Sunday 18:00: the week ahead, the list count, low and expiring items | A `job_runs` row per household and ISO week |
+| `weekly_digest` | 1 min check | Sunday 18:00: the week ahead, the list count, low and expiring items, and what will probably run low that week | A `job_runs` row per household and ISO week |
+| `consumption_model` | 1 min check | Once a day from 03:00: relearns each item's run-out interval, refreshes the list's "probably" entries, then fills missing item categories in one model call per household | A `job_runs` row per household and date; the refresh is idempotent |
+| `low_stock_prompt` | 1 min check | 17:30: asks the household about items predicted to run out within 2 days that nobody was asked about in the last 3 | A `job_runs` row per household and date, and a `nudge_log` row per item |
 | `media_cleanup` | 1 h, only with a media backend | Deletes stored media on messages older than `MEDIA_RETENTION_DAYS` and drops the storage fields; text and transcripts stay | `SKIP LOCKED`; a cleaned message no longer matches |
 
 A reminder is sent within about 17 seconds of its `fire_at` (15 s tick, then the outbox, which the
@@ -162,13 +175,12 @@ app/
   services/      the one write path, shared by tools and dashboard
   dashboard/     auth, routes, templates, static
   ics/           the read-only calendar feed
+  presence/      the Shortcut endpoint and its rules
   worker/        supervisor and jobs
 tests/           unit/ contract/ evals/
 ```
 
 ## Not built yet
 
-iMessage, and with it the adapter health check that would move sends away from a channel that is
-down before they fail. The jobs `consumption_model`, `low_stock_prompt` and `imessage_health` are
-later milestones, so the weekly digest lists low and out items but not predicted ones. Presence,
-and with it the last onboarding step, is milestone 5.
+iMessage, and with it the `imessage_health` job that would move sends away from a channel that is
+down before they fail. The Letta runtime and the System page are milestone 6 too.

@@ -8,13 +8,14 @@ Everything is read by `Settings` in `app/config.py`, from the environment or a l
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | yes | | `postgresql+asyncpg://...`, Postgres 15+ |
-| `PUBLIC_BASE_URL` | yes | | Webhook and login links; `https://` also makes the session cookie Secure |
+| `PUBLIC_BASE_URL` | yes | | Webhook, presence and login links; `https://` also makes the session cookie Secure |
 | `SESSION_SECRET` | yes | | Signs dashboard cookies and CSRF tokens |
 | `SETUP_TOKEN` | first run | | Unlocks `/setup` until a household exists |
 | `LLM_PROVIDER` | yes | | `openai_compat` or `anthropic` |
 | `LLM_BASE_URL` | for `openai_compat` | | Endpoint; optional override for `anthropic` |
 | `LLM_API_KEY` | yes (except local models) | | Provider key |
 | `LLM_MODEL` | yes | | Must support tool calling |
+| `LLM_FAST_MODEL` | no | `LLM_MODEL` | A cheaper model for the nightly job that sorts items into categories |
 | `LLM_SUPPORTS_IMAGES` | no | `true` | `false`: photos are not sent to the model and the agent says it cannot read them |
 | `LLM_MAX_TOOL_ITERATIONS` | no | `8` | Loop guard |
 | `STT_PROVIDER`, `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL` | no | | Voice-note transcription (`openai_compat`) |
@@ -81,14 +82,15 @@ uv run python -m app.worker.main             # worker, in a second terminal
 ## Worker jobs
 
 `python -m app.worker.main` runs `inbound`, `outbox`, `fire_reminders` (every 15 s),
-`expand_recurrence` (hourly), `daily_brief` and `weekly_digest` (checked every minute) and, when a
-media backend is configured, `media_cleanup` (hourly). What each
+`expand_recurrence` (hourly), `daily_brief`, `weekly_digest`, `consumption_model` and
+`low_stock_prompt` (checked every minute) and, when a media backend is configured,
+`media_cleanup` (hourly). What each
 does and why running it twice is harmless is in
 [architecture.md](architecture.md#scheduled-jobs). Log events worth watching:
 `reminder_queued`, `digest_queued`, `outbox_sent`, `outbox_held_for_quiet_hours`,
 `outbox_send_failed`, `outbox_delivery_failed`, `outbox_fallback_queued`, `group_created`,
 `group_not_created`, `media_failed`, `photo_unreadable`, `media_cleaned`, `media_cleanup_failed`,
-`invite_redeemed`, `job_crashed`.
+`invite_redeemed`, `items_categorised`, `categorise_failed`, `categorise_unreadable`, `job_crashed`.
 
 ```sql
 -- reminders that should have gone and have not
@@ -138,11 +140,49 @@ The brief time is `households.digest_time` and quiet hours are `members.quiet_st
 `quiet_end`, all in household time. Change them on the dashboard Settings page or by telling the
 assistant ("make the morning brief 7", "don't message me after 9pm").
 
+## Presence
+
+Phone setup is in [presence.md](presence.md). The endpoint answers 204 to everything, so the
+logs are where a Shortcut is debugged. The api logs one line per call:
+
+| Event | Meaning |
+| --- | --- |
+| `presence` | A ping was stored. `place_kind` and `rule` say what it set off (`store_arrival`, `out_and_about`, `both_home`, or nothing) |
+| `presence_ignored` | `reason` is `unknown token` (wrong, or replaced on Settings) or `bad body` (not JSON, no `event` and `place`, an event that is not `enter` or `exit`, a place name over 80 characters) |
+| `presence_rate_limited` | More than 30 pings from one link in an hour |
+| `presence_failed` | An error while handling a valid ping, with the traceback |
+
+```sql
+-- what the phones have said lately
+select m.name, p.name as place, p.kind, e.event, e.occurred_at from presence_events e
+join members m on m.id = e.member_id join places p on p.id = e.place_id order by e.occurred_at desc limit 20;
+-- the last time each nudge went out
+select dedupe_key, sent_at from nudge_log order by sent_at desc limit 20;
+-- what the model has learned, and what it expects to run out
+select i.canonical_name, p.samples, round(p.avg_days_to_finish, 1) as days, p.last_restocked_at, p.predicted_runout_at
+from consumption_profiles p join items i on i.id = p.item_id order by p.predicted_runout_at nulls last;
+```
+
+**Rotating a presence link.** Settings, "Arriving at the shops", "Replace link" next to the
+person. The old link stops working at once; put the new one into each automation on that phone.
+Do this if a link was pasted somewhere it should not have been. A list arriving for a shop nobody
+is in is the sign of a leaked link.
+
+**A shop sends no list.** In order: the place's kind on Settings must be `store` (a name a phone
+sent first shows up as `other`); the `place` in the Shortcut must be that name; something must be
+on the list for that shop; and no list for that shop may have gone to that person in the last two
+hours.
+
 ## Logs
 
 JSON lines via structlog, carrying `household_id` and `message_id` where known and never message
 text. `httpx` request logging is silenced because the Telegram URL contains the bot token. The
 WhatsApp token travels in a header and is never in a URL or an error message.
+
+uvicorn's access log prints each request's path. Presence, login and calendar tokens are part of
+their paths, and the setup token is a query value, so those parts are masked before the line is
+written (`POST /presence/… HTTP/1.1`). An ingress or proxy in front of the api keeps its own
+access log: mask or drop the path there too.
 
 ## Cost tracking
 
@@ -175,6 +215,6 @@ Nothing in the test suite, fixtures or eval results contains a credential.
 
 ## Not covered yet
 
-Helm chart, backups, rotating presence tokens, and the outage runbook for BlueBubbles belong to
-later milestones. The calendar feed token is rotated from the Calendar page, and an
+Helm chart, backups, and the outage runbook for BlueBubbles belong to later milestones. The
+calendar feed token is rotated from the Calendar page, a presence link from Settings, and an
 invite is replaced or revoked on the Family page.

@@ -43,10 +43,12 @@ Add `-k "calendar or reminders"` to run part of the suite.
 | `expect` key | Asserts |
 | --- | --- |
 | `events` | Exactly these inventory events (undo markers excluded). `type` may be a list of accepted types; `quantity` and `location` are checked when given |
-| `shopping_list_active` | Exactly these items are on the list |
+| `shopping_list_active` | Exactly these items are on the list, guesses included |
+| `shopping_list_asked_for` | Exactly these items are on the list as real entries, not as "probably" guesses |
 | `stock` | Per item: `status`, and `qty` and `location` when given |
 | `writes: 0` | No events, no logged actions, and the list is unchanged from the seed |
 | `reply` | The last turn's outcome: `ACK`, `NOOP`, or `text` for any other reply |
+| `reply_mentions` | Each of these texts is in the last reply. The one place wording is checked: a reply that reads the list back has to name what is on it |
 | `calendar` | Exactly these active events, in any order. Each may give `title_contains`, `participants`, `local_start` ("Wed 7 Oct 11:00"), `location_contains`, `rrule_contains`, `repeats: false`, `exdates` |
 | `calendar_cancelled` | How many events are cancelled |
 | `reminders_scheduled` | How many reminder rows are scheduled, for events and standalone |
@@ -59,6 +61,7 @@ Add `-k "calendar or reminders"` to run part of the suite.
 | `staples`, `shops`, `facts`, `facts_mention` | Items flagged as staples; shop names containing each text; a fact by key whose value contains the text; any fact value containing the text |
 | `brief`, `quiet` | The brief time (`"07:00"`); quiet hours per adult (`"22:00-06:30"`) |
 | `invites_sent` | How many invite messages were queued, each to the person who asked |
+| `presence_links` | Exactly these adults were sent a personal presence link and have one |
 
 Item names are normalised the way the resolver does, so `eggs` and `egg` are the same item.
 
@@ -75,14 +78,28 @@ Calendar cases can seed people and events:
     reminders_scheduled: 0
 ```
 
+A case about something the assistant said first seeds that message, and any guessed entries:
+
+```yaml
+- name: only one of the guessed items is wanted
+  seed:
+    items: [{name: milk, stock: {fridge: 1}}, {name: bread, stock: {store: 1}}]
+    guesses: [milk, bread]        # on the list as "probably", as the consumption model leaves them
+    said: [{to: Ada, text: "Probably running low: milk, bread. Add to the list?"}]   # five minutes ago, in her DM
+  turns: [{from: Ada, text: "just the milk, we've got plenty of bread"}]
+  expect:
+    shopping_list_asked_for: [milk]
+```
+
 Seeded events go through the calendar service, so they have their reminders, but leave no undo
 record. The spec's example uses the key `events` for calendar events; that key already meant
 inventory events here, so calendar expectations are under `calendar`.
 
 ## Suite
 
-45 cases: inventory (8), shopping list (5), NOOP (3), undo (4), calendar (7), reminders (4),
-photos (5: three receipts, two fridge or freezer photos) and onboarding, family and settings (9).
+50 cases: inventory (8), shopping list (5), NOOP (3), undo (4), calendar (7), reminders (4),
+photos (5: three receipts, two fridge or freezer photos), onboarding, family and settings (10),
+and presence (4: answers to the low-stock prompt and the "out and about" offer).
 The spec's target is 40. Release bar: 95% overall and 100% on the NOOP and undo cases, on at
 least two providers.
 

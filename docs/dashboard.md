@@ -35,11 +35,24 @@ returns 403.
 | Channels | `/dashboard/channels` | Each channel: whether it is set up, when it last heard from and sent to the family, sends failed in the last day. Each chat: whose it is, the main family chat, and for WhatsApp whether an ordinary message or only the template will be delivered | Create a WhatsApp group, forget one that was never confirmed, show a group's invite link and QR code, choose the main family chat |
 | Activity | `/dashboard/activity` | The last 200 turns and dashboard actions: message, tool calls and results, tokens, latency, send status | Undo an action, retry a failed send |
 | Playground | `/dashboard/playground` | A chat with the agent in the browser | Dry run by default; tick "Apply for real" to keep the result |
-| Settings | `/dashboard/settings` | The morning brief time, each adult's quiet hours, remembered facts | Change the brief time, change or clear quiet hours, add, change or forget a fact |
+| Settings | `/dashboard/settings` | The morning brief time, each adult's quiet hours, whether each adult has a presence link, places and their kinds, remembered facts | Change the brief time, change or clear quiet hours, make or replace a presence link, add a place or change its kind, add, change or forget a fact |
 
 The System page is not built yet. Reminders are added in chat; the Calendar page lists
-and cancels them. Staples are set on an item's page. Presence links join Settings with milestone 5;
-the calendar subscribe link stays on the Calendar page.
+and cancels them. Staples are set on an item's page. The calendar subscribe link stays on the
+Calendar page.
+
+## Presence links and places
+
+"Arriving at the shops" on Settings lists each adult with "has a link" or "no link yet". "Make
+link" or "Replace link" creates a new personal link and shows it once with the phone steps; only
+its hash is stored, so it cannot be shown again, and replacing it stops the old link working.
+Any adult can make a link for any adult, as with invites. The steps for the phone are in
+[presence.md](presence.md#phone-setup-once-per-place).
+
+"Places" lists what the assistant knows by name: the shops said during setup, anything added
+here, and any name a phone has sent. Only a place of kind `store` sends its list on arrival, and
+only `home` counts for "out and about", so a place that appeared as `other` needs its kind set
+here. Changing a kind is logged in Activity and can be undone; making a link is logged and cannot.
 
 ## Inviting the family
 

@@ -57,12 +57,29 @@ what this step asks and how to record it, and the model is offered `onboarding_a
 | `staples` | What do you always need in the house? | `remember` key `staples` |
 | `tour` | Photos of the fridge, freezer and cupboard | `log_inventory`, `adjusted`, source `photo` |
 | `rhythm` | Morning brief at 07:30, quiet 21:30 to 07:00, OK? | `remember` keys `morning_brief`, `quiet_hours` |
+| `presence` | Nothing | Code sends each connected adult a private message with their Shortcut link |
 
 The first question is not a model call: when an adult connects while `family` is open, the
 "you're connected" message asks it. Steps can be skipped or answered out of order, and everything
 they record can be said later in ordinary conversation. After the last step the section and the
-tool disappear. The spec's seventh step, `presence`, joins with milestone 5. See
-[ADR 0017](adr/0017-onboarding-state-and-messages-written-by-code.md).
+tool disappear. See [ADR 0017](adr/0017-onboarding-state-and-messages-written-by-code.md).
+
+The seventh step is done by code. When `onboarding_advance` leaves `presence` as the only step
+open, it sends each connected adult their personal link and the phone steps, marks the step done,
+and tells the model in a `NOTE:` line who was sent one. The model never sees a link.
+`onboarding_advance(presence, skipped=true)` before that sends nothing
+([ADR 0025](adr/0025-the-presence-step-is-done-by-code.md)).
+
+## Messages the assistant starts
+
+Three messages are written by code and answered through the agent, which finds the question in
+the thread history like any other assistant message:
+
+| Sent | Text | A reply |
+| --- | --- | --- |
+| On arriving at a shop | "You're at Tesco Extra. On the list: ..." | "Got everything" ticks off what was asked for, not the "(probably)" entries |
+| On leaving home | "You're out. The list has 9 items, want it?" | "yes" reads the list with `get_shopping_list` |
+| At 17:30 | "Probably running low: milk, bread. Add to the list?" | "yes", or "just the milk", adds with `update_shopping_list`; the guessed entry becomes a real one |
 
 Token usage, tool calls and latency for each turn are stored on the batch's last message in
 `messages.meta` (`usage`, `turn`), and shown on the dashboard Activity page.
@@ -77,7 +94,7 @@ Token usage, tool calls and latency for each turn are stored on the batch's last
 | `log_inventory` | events, stock, list | Per change: resolve location and item, append the event, apply the stock transition, run the side-effect rules |
 | `query_inventory` | none | Filter by item, location, status, expiry; never creates an item |
 | `update_shopping_list` | list, events | `add`, `bought` (logs `restocked`, source `shopping`), `remove` (dismissed), `bought_all` |
-| `get_shopping_list` | none | Explicit, finished and low entries first, then predicted ones marked "(probably)"; optional store filter |
+| `get_shopping_list` | none | Explicit, finished and low entries first, then predicted ones marked "(probably)"; the optional store filter keeps entries naming no shop and those whose shop reads like the one asked for |
 | `schedule_event` | events, reminders | Resolves participants, creates the event and its reminders; a repeat is an RFC 5545 rule |
 | `modify_event` | events, reminders | Finds the event from how it was described; moves, edits or cancels it; scope `this` on a series changes one date |
 | `list_upcoming` | none | Events in the next `days`, repeats expanded, plus standalone reminders; optional person filter |

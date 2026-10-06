@@ -18,7 +18,8 @@ docker compose up --build     # Postgres, migration, api on :8000, worker
 2. Tap the invite it shows (a Telegram deep link, QR code and code). The bot answers "Hi <name>,
    you're connected" and asks its first setup question: who lives here.
 3. Answer in your own words, or say "skip". It asks about routines, shops, staples, photos of the
-   fridge and when to stay quiet, one at a time, then gets out of the way.
+   fridge and when to stay quiet, one at a time, sends each adult a personal link for
+   shop-arrival nudges ([presence.md](presence.md)), then gets out of the way.
 4. Tell it another adult lives there and it sends you an invite to pass on. Send `dashboard` for a
    login link to the web dashboard.
 
@@ -27,14 +28,15 @@ Without Docker: [operations.md](operations.md#running-without-docker).
 
 ## What is built
 
-Milestones 1 to 4 of the six in [spec.md](spec.md#17-deployment-and-build-milestones):
+Milestones 1 to 5 of the six in [spec.md](spec.md#17-deployment-and-build-milestones):
 Telegram, inventory and the shopping list, undo, `/setup`, magic-link login; the calendar tools,
 reminders that respect quiet hours, the daily brief and weekly digest, a read-only ICS feed;
 conversational onboarding, invites, media storage on S3 or ImgBB, receipt and fridge photos, and
 the Family and Settings pages; then WhatsApp with its 24-hour window and reminder template, a
-second try on another channel when a send fails for good, and the Channels page. WhatsApp has
-only been tested against recorded payloads. Each page below says what exists now and what is
-deferred.
+second try on another channel when a send fails for good, and the Channels page; then the
+presence endpoint for iOS Shortcuts with its store-arrival list, the consumption model, and the
+low-stock prompt. WhatsApp has only been tested against recorded payloads, and presence only with
+plain HTTP calls, not from a phone. Each page below says what exists now and what is deferred.
 
 | Doc | Contents |
 | --- | --- |
@@ -43,6 +45,7 @@ deferred.
 | [channels.md](channels.md) | The adapter contract; Telegram and WhatsApp setup, template approval, payload notes, limits |
 | [llm.md](llm.md) | Provider layer, adding an adapter, tested models |
 | [agent-and-tools.md](agent-and-tools.md) | Runtime loop, photos, onboarding, tools, calendar rules, resolution rules, undo |
+| [presence.md](presence.md) | iPhone Shortcut setup, the presence rules, the consumption model, "probably" list entries, the low-stock prompt |
 | [dashboard.md](dashboard.md) | Pages, the login flow, invites, channels and the family group, the calendar feed |
 | [operations.md](operations.md) | Environment variables, running, media storage, worker jobs, WhatsApp template and token trouble, logs |
 | [evals.md](evals.md) | Running the agent evals, adding a case, latest results |
