@@ -198,8 +198,9 @@ Incoming text keeps working throughout, because webhooks are checked with the ap
 ## iMessage
 
 Setup is in [channels.md](channels.md#imessage). The BlueBubbles password travels as a query
-parameter on every call to the Mac, so it is in the Mac's own BlueBubbles log; it is never in
-this service's logs or error messages, and `httpx` request logging is off.
+parameter on every call to the Mac, because BlueBubbles takes it no other way. Treat anything
+between the cluster and the Mac that logs URLs as holding it. It is never in this service's logs
+or error messages, and `httpx` request logging is off.
 
 ### BlueBubbles outage
 
@@ -207,9 +208,13 @@ iMessage depends on one Mac. The worker pings it every five minutes; a failed pi
 `imessage_health_changed` with `healthy: false`, DMs the admin once ("iMessage is not
 reachable..."), and shows "not reachable since" on the Channels page. From then on people are
 reached on their next channel ([what moves and what does not](channels.md#when-bluebubbles-does-not-answer)).
-Messages people send over iMessage in the meantime are not lost if the Mac is merely cut off from
-the cluster: they stay in Messages on the Mac, but BlueBubbles does not send their webhooks again,
-so anything written during the outage has to be said again.
+**BlueBubbles does not retry a webhook.** It posts each one once and only logs a failure
+(`webhookService` in its source). So a message someone sends over iMessage while the Mac cannot
+reach the api, or while the api is down, is never seen by the assistant, although it sits in
+Messages on the Mac. It has to be said again. Telegram and WhatsApp do retry.
+
+This runbook is written from the BlueBubbles server source and from what running a Mac as a
+server usually involves. No outage has happened yet, so none of it has been exercised.
 
 Work through these in order; stop at the first that fixes it.
 

@@ -244,4 +244,6 @@ as every send. What to do about an outage is in
 - Text and iMessage use the same Apple ID; a text message (green bubble) from a member is
   answered over iMessage.
 - Up to five minutes pass before an outage is noticed. Sends in that time fail and are retried.
+- BlueBubbles posts each webhook once and does not retry. A message sent while the api is down
+  or unreachable from the Mac is lost to the assistant and has to be said again.
 - The invite pages show a Telegram link and the raw code. Tell people which Apple ID to message.
