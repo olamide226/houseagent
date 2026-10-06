@@ -447,8 +447,10 @@ async def on_both(conn, preferred="telegram"):
 
 
 async def drain(adapters, now=NOON):
-    while await router.dispatch_due(adapters, now=now):
-        pass
+    for _ in range(50):
+        if not await router.dispatch_due(adapters, now=now):
+            return
+    raise AssertionError("the outbox never drains: sends keep making more sends")
 
 
 async def test_changing_the_preferred_channel_row_is_all_it_takes_to_move_a_members_dms():
