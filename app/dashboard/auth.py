@@ -73,14 +73,17 @@ async def require_csrf(request: Request, session: Session = Depends(current_sess
     return session
 
 
+def qr_svg(link: str) -> str:
+    return str(qrcode.make(link, image_factory=qrcode.image.svg.SvgPathImage, box_size=8)
+               .to_string(encoding="unicode"))
+
+
 def invite_context(name: str, code: str) -> dict[str, str | None]:
     """The three ways into an invite: a Telegram deep link, a QR code of it, and the raw code."""
     settings = get_settings()
     link = invite_link(code, settings.tg_bot_username)
-    qr = None
-    if link:
-        qr = qrcode.make(link, image_factory=qrcode.image.svg.SvgPathImage, box_size=8).to_string(encoding="unicode")
-    return {"name": name, "code": code, "link": link, "qr": qr, "agent": settings.agent_name}
+    return {"name": name, "code": code, "link": link, "qr": qr_svg(link) if link else None,
+            "agent": settings.agent_name}
 
 
 def _setup_allowed(token: str) -> bool:

@@ -16,9 +16,11 @@ from app.agent import actions
 from app.agent.actions import Recorder, record
 from app.agent.base import Ctx, ToolError
 from app.agent.resolve import Ambiguous, resolve_item, resolve_members
+from app.channels.base import ADAPTERS, ChannelError, GroupHost
 from app.config import get_settings
+from app.core.envelope import Channel, GroupUpdate
 from app.core.timeutil import day_bounds, local, parse_clock, to_utc, utcnow
-from app.dashboard.auth import Session, current_session, invite_context, require_csrf, templates
+from app.dashboard.auth import Session, current_session, invite_context, qr_svg, require_csrf, templates
 from app.db import advisory_lock, engine, fetch_all, fetch_one, tx
 from app.pipeline import inbound
 from app.pipeline import router as outbound
@@ -29,6 +31,7 @@ router = APIRouter(prefix="/dashboard", default_response_class=HTMLResponse)
 ACTIVITY_LIMIT = 200
 CALENDAR_DAYS = 30
 REPEATS = {"": None, "daily": "FREQ=DAILY", "weekly": "FREQ=WEEKLY", "monthly": "FREQ=MONTHLY"}
+BUILT_CHANNELS = (Channel.telegram, Channel.whatsapp)   # the channels that have an adapter
 
 
 def _ctx(conn: AsyncConnection, session: Session) -> Ctx:
@@ -367,6 +370,93 @@ async def family_change(request: Request, member_id: str, verb: str, channel: st
 
     error = await _write(session, f"family.{verb}", {"member_id": member_id, "channel": channel}, change)
     return await _family(request, session, error=error, invite=shown if shown and not error else None)
+
+
+# ---------------------------------------------------------------- Channels
+async def _channels(request: Request, session: Session, template: str = "_channels.html",
+                    error: str | None = None, invite: dict[str, str] | None = None) -> Response:
+    now = utcnow()
+    async with tx() as conn:
+        chats = await households.threads(conn, session.household_id)
+        people = await members.identities(conn, session.household_id)
+        failed = await outbound.failed_since(conn, session.household_id, now - timedelta(days=1))
+        last_sent = await outbound.last_sent(conn, session.household_id)
+    owners = {(p["channel"], ADAPTERS[Channel(p["channel"])].dm_thread_id(p["handle"])): p
+              for p in people if Channel(p["channel"]) in ADAPTERS}
+    for chat in chats:
+        adapter = ADAPTERS.get(Channel(chat["channel"]))
+        owner = owners.get((chat["channel"], chat["external_thread_id"]))
+        chat["who"] = owner["name"] if owner else None
+        chat["pending"] = chat["external_thread_id"].startswith(households.PENDING)
+        chat["name"] = chat["external_thread_id"].removeprefix(households.PENDING) if chat["pending"] else None
+        chat["invitable"] = chat["scope"] == "group" and not chat["pending"] and isinstance(adapter, GroupHost)
+        # Where a channel only takes free-form text for some hours after it last heard from someone.
+        hours = adapter.capabilities.proactive_window_hours if adapter else None
+        heard = max(filter(None, [chat["last_in"], owner["verified_at"] if owner else None]), default=None)
+        chat["window"] = hours and {"open_until": heard + timedelta(hours=hours)
+                                    if heard and heard + timedelta(hours=hours) > now else None}
+    health = [{
+        "channel": channel.value, "on": channel in ADAPTERS,
+        "last_in": max((c["last_in"] for c in chats if c["channel"] == channel.value and c["last_in"]), default=None),
+        "last_sent": last_sent.get(channel.value), "failed": failed.get(channel.value, 0),
+        "template": ADAPTERS[channel].capabilities.proactive_template if channel in ADAPTERS else None,
+        "creates_groups": isinstance(ADAPTERS.get(channel), GroupHost),
+    } for channel in BUILT_CHANNELS]
+    return _page(request, template, session, health=health, chats=chats, error=error, invite=invite, local=local)
+
+
+def _group_host(channel: str) -> GroupHost:
+    adapter = ADAPTERS.get(Channel(channel)) if channel in set(Channel) else None
+    if not isinstance(adapter, GroupHost):
+        raise ToolError(f"{channel} cannot create groups or is not set up here")
+    return adapter
+
+
+@router.get("/channels")
+async def channels_page(request: Request, session: Session = Depends(current_session)) -> Response:
+    return await _channels(request, session, "channels.html")
+
+
+@router.post("/channels/threads/{thread_id}/primary")
+async def channels_primary(request: Request, thread_id: str,
+                           session: Session = Depends(require_csrf)) -> Response:
+    async def change(rec: Recorder) -> None:
+        await households.set_primary_thread(rec, thread_id)
+
+    return await _channels(request, session,
+                           error=await _write(session, "channels.primary", {"thread_id": thread_id}, change))
+
+
+@router.post("/channels/threads/{thread_id}/invite")
+async def channels_invite(request: Request, thread_id: str, session: Session = Depends(require_csrf)) -> Response:
+    """Ask the channel for the group's invite link and show it with a QR code. Nothing is stored."""
+    try:
+        async with tx() as conn:
+            thread = await households.group_thread(conn, session.household_id, thread_id)
+        link = await _group_host(thread["channel"]).invite_link(thread["external_thread_id"])
+    except (ToolError, ChannelError) as exc:
+        return await _channels(request, session, error=str(exc))
+    return await _channels(request, session, invite={"link": link, "qr": qr_svg(link)})
+
+
+@router.post("/channels/{channel}/group")
+async def channels_group(request: Request, channel: str, subject: str = Form(...),
+                         session: Session = Depends(require_csrf)) -> Response:
+    """Ask the channel to create the family group. It becomes the primary thread once the
+    channel confirms it, which for WhatsApp arrives by webhook a moment later."""
+    async def create(rec: Recorder) -> None:
+        host = _group_host(channel)
+        name = await households.start_group(rec, channel, subject)
+        try:
+            group_id = await host.create_group(name)
+        except ChannelError as exc:
+            raise ToolError(str(exc)) from None
+        if group_id:
+            await households.finish_group(rec.ctx.conn, GroupUpdate(
+                channel=Channel(channel), subject=name, external_thread_id=group_id))
+
+    args = {"channel": channel, "subject": subject}
+    return await _channels(request, session, error=await _write(session, "channels.group", args, create))
 
 
 # ---------------------------------------------------------------- Settings

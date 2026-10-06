@@ -51,6 +51,22 @@ async def retry(conn: AsyncConnection, household_id: str, outbox_id: str) -> boo
     ))
 
 
+async def failed_since(conn: AsyncConnection, household_id: str, since: datetime) -> dict[str, int]:
+    """Sends that failed for good since `since`, counted by the channel they were tried on."""
+    rows = await fetch_all(
+        conn, "select channel_used, count(*) as n from outbox where household_id = :h and status = 'failed' "
+              "and channel_used is not null and created_at > :since group by channel_used",
+        h=household_id, since=since)
+    return {row["channel_used"]: row["n"] for row in rows}
+
+
+async def last_sent(conn: AsyncConnection, household_id: str) -> dict[str, datetime]:
+    rows = await fetch_all(
+        conn, "select channel_used, max(sent_at) as at from outbox where household_id = :h and status = 'sent' "
+              "group by channel_used", h=household_id)
+    return {row["channel_used"]: row["at"] for row in rows}
+
+
 def split_text(text: str, limit: int) -> list[str]:
     """Split text longer than `limit` on paragraph boundaries, then lines, then hard."""
     chunks: list[str] = []

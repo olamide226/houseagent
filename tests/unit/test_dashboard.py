@@ -1,23 +1,34 @@
 """Dashboard: first-run setup, magic-link login, sessions, CSRF, and writes through the shared services."""
+import json
 import re
 from datetime import time, timedelta
 
+import respx
+
 from app.agent.loop import LoopRuntime
+from app.channels.base import ADAPTERS
+from app.core.envelope import Channel, OutboundMessage
 from app.core.timeutil import local, utcnow
-from app.db import execute, fetch_all, fetch_one, tx
+from app.db import execute, fetch_all, fetch_one, fetch_val, tx
 from app.main import app
+from app.pipeline import router
 from app.services import households, members
 from tests.helpers import (
+    FakeAdapter,
     FakeLLM,
     active_list,
     add_item,
     add_member,
     call,
+    link,
     london,
+    post_whatsapp,
     say,
     seed_home,
     stock_of,
     tg_update,
+    wa_message,
+    wa_webhook,
 )
 
 SETUP = "/setup?token=test-setup-token"
@@ -71,7 +82,8 @@ async def test_pages_need_a_session_and_a_magic_link_works_exactly_once(client):
         home = await seed_home(conn)
         token = await members.create_login_token(conn, home.ola, utcnow())
     for path in ("/dashboard", "/dashboard/shopping", "/dashboard/inventory", "/dashboard/calendar",
-                 "/dashboard/activity", "/dashboard/playground", "/dashboard/family", "/dashboard/settings"):
+                 "/dashboard/activity", "/dashboard/playground", "/dashboard/family", "/dashboard/settings",
+                 "/dashboard/channels"):
         refused = await client.get(path)
         assert refused.status_code == 401 and "login link" in refused.text
 
@@ -112,10 +124,13 @@ async def test_every_post_needs_the_csrf_token(client):
              f"/dashboard/activity/actions/{nothing}/undo", "/dashboard/calendar/add", "/dashboard/calendar/feed",
              f"/dashboard/calendar/events/{nothing}/cancel", f"/dashboard/calendar/reminders/{nothing}/cancel",
              "/dashboard/family/add", f"/dashboard/family/{home.ola}/invite", "/dashboard/settings/brief",
-             f"/dashboard/settings/quiet/{home.ola}", "/dashboard/settings/facts"]
+             f"/dashboard/settings/quiet/{home.ola}", "/dashboard/settings/facts",
+             "/dashboard/channels/whatsapp/group", f"/dashboard/channels/threads/{nothing}/primary",
+             f"/dashboard/channels/threads/{nothing}/invite"]
     for path in posts:
         form = {"item": "eggs", "text": "hi", "title": "GP", "when": "2030-01-01T10:00", "name": "Ada",
-                "at": "05:00", "start": "20:00", "end": "08:00", "key": "milk", "value": "Arla"}
+                "at": "05:00", "start": "20:00", "end": "08:00", "key": "milk", "value": "Arla",
+                "subject": "Adebayo family"}
         assert (await client.post(path, data=form)).status_code == 403
         assert (await client.post(path, data=form, headers={"X-CSRF-Token": "0" * 64})).status_code == 403
     async with tx() as conn:
@@ -126,6 +141,7 @@ async def test_every_post_needs_the_csrf_token(client):
         assert await fetch_all(conn, "select name, invite_code_hash, quiet_start from members") == [
             {"name": "Ola", "invite_code_hash": None, "quiet_start": time(21, 30)}]
         assert await fetch_all(conn, "select 1 from household_facts") == []
+        assert await fetch_all(conn, "select 1 from threads") == []
     # The token also works as a form field, for plain form posts.
     added = await client.post("/dashboard/shopping/add", data={"item": "eggs", "csrf": csrf["X-CSRF-Token"]})
     assert added.status_code == 303
@@ -603,3 +619,211 @@ async def test_family_and_settings_cannot_reach_another_household(client):
         sam = await fetch_one(conn, "select invite_code_hash, quiet_start from members where id = :m", m=stranger)
         assert sam == {"invite_code_hash": None, "quiet_start": time(21, 30)}
         assert await fetch_all(conn, "select 1 from household_facts") == []
+
+
+# ---------------------------------------------------------------- Channels
+GRAPH = "https://graph.facebook.com/v26.0"
+WA_GROUP = "Y2FwaV9ncm91cDo0NDc3MDA5MDAxMDA6MTIwMzYzMDAwMDAwMDAwMDAwZAZD"
+OLA_WA = "GB.1000000000000000000101"
+
+
+async def a_thread(conn, home, channel, external, scope="dm", heard=None):
+    thread_id = await fetch_val(
+        conn, "insert into threads (household_id, channel, external_thread_id, scope) values (:h, :c, :e, :s) "
+              "returning id", h=home.id, c=channel, e=external, s=scope)
+    if heard:
+        await execute(conn, "insert into messages (household_id, thread_id, member_id, direction, text, created_at) "
+                            "values (:h, :t, :m, 'in', 'hello', :at)", h=home.id, t=thread_id, m=home.ola, at=heard)
+    return thread_id
+
+
+def group_created(subject="Adebayo family", **group):
+    return wa_webhook("group_lifecycle_update", groups=[{
+        "timestamp": "1791230900", "group_id": WA_GROUP, "type": "group_create", "request_id": "r1",
+        "subject": subject, "invite_link": "https://chat.whatsapp.com/EXAMPLEinviteLINK01", **group}])
+
+
+async def test_channels_page_shows_each_channel_its_chats_and_what_whatsapp_will_deliver(client):
+    now = utcnow()
+    async with tx() as conn:
+        home = await seed_home(conn)
+        await link(conn, home.ola, OLA_WA, "whatsapp", verified_at=now - timedelta(days=40))
+        ada = await add_member(conn, home, "Ada", whatsapp_id="GB.1000000000000000000102")
+        await a_thread(conn, home, "telegram", "1001", heard=now - timedelta(hours=3))
+        await a_thread(conn, home, "whatsapp", OLA_WA, heard=now - timedelta(days=2))        # window closed
+        await a_thread(conn, home, "whatsapp", "GB.1000000000000000000102", heard=now - timedelta(hours=1))
+        group = await a_thread(conn, home, "telegram", "-100555", scope="group")
+        await execute(conn, "update households set primary_thread_id = :t where id = :h", t=group, h=home.id)
+        await execute(conn, "insert into outbox (household_id, target, member_id, text, status, channel_used) "
+                            "values (:h, 'member', :m, 'x', 'failed', 'whatsapp')", h=home.id, m=ada)
+        other = await seed_home(conn, telegram_id="2001")
+        await a_thread(conn, other, "telegram", "-100999", scope="group")
+    await login(client, home)
+
+    page = re.sub(r"\s+", " ", (await client.get("/dashboard/channels")).text)
+    assert "<strong>telegram</strong> <span class=\"muted\">on, last heard from" in page
+    assert "<strong>whatsapp</strong> <span class=\"muted\">on, last heard from" in page
+    assert "1 failed send in the last day" in page
+    assert page.count("Family group") == 1 and "main family chat" in page         # the other household's is not here
+    assert "<strong>Ola</strong> <span class=\"muted\">telegram" in page
+    assert page.count("template messages only until they next write") == 1          # Ola's WhatsApp DM
+    assert page.count("ordinary messages until") == 1                               # Ada's
+    assert "Create a whatsapp group" in page and "household_reminder" in page
+
+
+async def test_channels_page_without_whatsapp_offers_no_group_and_refuses_the_request(client):
+    async with tx() as conn:
+        home = await seed_home(conn)
+    csrf = await login(client, home)
+    del ADAPTERS[Channel.whatsapp]
+    page = await client.get("/dashboard/channels")
+    assert "Create a whatsapp group" not in page.text and "not set up" in page.text
+    for channel in ("whatsapp", "telegram", "carrier-pigeon"):
+        refused = await client.post(f"/dashboard/channels/{channel}/group", data={"subject": "Family"}, headers=csrf)
+        assert "cannot create groups" in refused.text
+    async with tx() as conn:
+        assert await fetch_all(conn, "select 1 from threads") == []
+
+
+async def test_set_primary_thread_moves_household_sends_and_only_to_this_households_groups(client):
+    async with tx() as conn:
+        home = await seed_home(conn)
+        dm = await a_thread(conn, home, "telegram", "1001")
+        first = await a_thread(conn, home, "telegram", "-100555", scope="group")
+        second = await a_thread(conn, home, "whatsapp", WA_GROUP, scope="group")
+        await execute(conn, "update households set primary_thread_id = :t where id = :h", t=first, h=home.id)
+        other = await seed_home(conn, telegram_id="2001")
+        theirs = await a_thread(conn, other, "telegram", "-100999", scope="group")
+    csrf = await login(client, home)
+
+    async def primary():
+        async with tx() as conn:
+            return await fetch_val(conn, "select primary_thread_id from households where id = :h", h=home.id)
+
+    for refused in (dm, theirs, "00000000-0000-0000-0000-000000000000"):
+        page = await client.post(f"/dashboard/channels/threads/{refused}/primary", headers=csrf)
+        assert "not one of this household" in page.text and await primary() == first
+
+    page = await client.post(f"/dashboard/channels/threads/{second}/primary", headers=csrf)
+    assert page.status_code == 200 and await primary() == second
+    async with tx() as conn:
+        await router.enqueue(conn, OutboundMessage(household_id=home.id, target="household", text="brief",
+                                                   respect_quiet_hours=False))
+        logged = await fetch_all(conn, "select source, tool, member_id from agent_actions")
+    telegram, whatsapp = FakeAdapter(), FakeAdapter(Channel.whatsapp)
+    await router.dispatch_due({Channel.telegram: telegram, Channel.whatsapp: whatsapp})
+    assert whatsapp.sent == [(WA_GROUP, "brief", None)] and telegram.sent == []
+    assert logged == [{"source": "dashboard", "tool": "channels.primary", "member_id": home.ola}]
+
+
+@respx.mock
+async def test_create_whatsapp_group_becomes_the_primary_thread_when_meta_confirms_and_shows_its_invite(client):
+    create = respx.post(f"{GRAPH}/100000000000001/groups").respond(json={"messaging_product": "whatsapp"})
+    async with tx() as conn:
+        home = await seed_home(conn)
+        old = await a_thread(conn, home, "telegram", "-100555", scope="group")
+        await execute(conn, "update households set primary_thread_id = :t where id = :h", t=old, h=home.id)
+    csrf = await login(client, home)
+
+    async def state():
+        async with tx() as conn:
+            return await fetch_one(
+                conn, "select t.external_thread_id, t.scope, t.id = h.primary_thread_id as is_primary "
+                      "from threads t join households h on h.id = t.household_id where t.channel = 'whatsapp'")
+
+    asked = await client.post("/dashboard/channels/whatsapp/group", data={"subject": " Adebayo  family "}, headers=csrf)
+    assert "being created" in asked.text
+    assert json.loads(create.calls.last.request.content) == {"messaging_product": "whatsapp", "subject": "Adebayo family"}
+    assert await state() == {"external_thread_id": "pending:Adebayo family", "scope": "group", "is_primary": False}
+
+    again = await client.post("/dashboard/channels/whatsapp/group", data={"subject": "Adebayo family"}, headers=csrf)
+    assert "already being created" in again.text and create.call_count == 1
+    waiting = await client.post(f"/dashboard/channels/threads/{await thread_id_of()}/invite", headers=csrf)
+    assert "not one of this household" in waiting.text                          # no link until the group exists
+
+    assert (await post_whatsapp(client, group_created(subject="Somebody else's group"))).status_code == 200
+    assert (await state())["external_thread_id"] == "pending:Adebayo family"      # not the one we asked for
+    assert (await post_whatsapp(client, group_created())).status_code == 200
+    assert (await post_whatsapp(client, group_created())).status_code == 200      # Meta repeats itself
+    assert await state() == {"external_thread_id": WA_GROUP, "scope": "group", "is_primary": True}
+
+    link_route = respx.get(f"{GRAPH}/{WA_GROUP}/invite_link").respond(json={
+        "messaging_product": "whatsapp", "invite_link": "https://chat.whatsapp.com/EXAMPLEinviteLINK01"})
+    shown = await client.post(f"/dashboard/channels/threads/{await thread_id_of()}/invite", headers=csrf)
+    assert 'href="https://chat.whatsapp.com/EXAMPLEinviteLINK01"' in shown.text and "<svg" in shown.text
+    assert link_route.call_count == 1
+    assert "EXAMPLEinviteLINK01" not in (await client.get("/dashboard/channels")).text   # never stored
+    async with tx() as conn:
+        logged = await fetch_all(conn, "select source, tool, result from agent_actions")
+    assert logged == [{"source": "dashboard", "tool": "channels.group",
+                       "result": "OK: asked whatsapp for a group called Adebayo family"}]
+
+    # A household send now goes to the new group, through the real adapter.
+    send = respx.post(f"{GRAPH}/100000000000001/messages").respond(json={"messages": [{"id": "wamid.sent0001"}]})
+    async with tx() as conn:
+        await router.enqueue(conn, OutboundMessage(household_id=home.id, target="household", text="Bins tonight",
+                                                   respect_quiet_hours=False))
+    await router.dispatch_due(ADAPTERS)
+    sent = json.loads(send.calls.last.request.content)
+    assert (sent["recipient_type"], sent["to"], sent["type"]) == ("group", WA_GROUP, "template")   # nobody has written there yet
+
+
+async def thread_id_of():
+    async with tx() as conn:
+        return await fetch_val(conn, "select id from threads where channel = 'whatsapp'")
+
+
+@respx.mock
+async def test_a_group_meta_refuses_leaves_nothing_behind(client):
+    async with tx() as conn:
+        home = await seed_home(conn)
+    csrf = await login(client, home)
+
+    respx.post(f"{GRAPH}/100000000000001/groups").respond(400, json={"error": {
+        "message": "Phone number is not eligible for groups", "type": "OAuthException", "code": 131215}})
+    refused = await client.post("/dashboard/channels/whatsapp/group", data={"subject": "Adebayo family"}, headers=csrf)
+    assert "131215 Phone number is not eligible for groups" in refused.text
+    blank = await client.post("/dashboard/channels/whatsapp/group", data={"subject": "x" * 129}, headers=csrf)
+    assert "up to 128 characters" in blank.text
+    async with tx() as conn:
+        assert await fetch_all(conn, "select 1 from threads") == []
+        assert await fetch_all(conn, "select 1 from agent_actions") == []
+
+    # Accepted, then refused later by webhook: the request is dropped and can be made again.
+    respx.post(f"{GRAPH}/100000000000001/groups").respond(json={"messaging_product": "whatsapp"})
+    await client.post("/dashboard/channels/whatsapp/group", data={"subject": "Adebayo family"}, headers=csrf)
+    await post_whatsapp(client, group_created(errors=[{"code": 131215, "title": "Groups not eligible"}]))
+    async with tx() as conn:
+        assert await fetch_all(conn, "select 1 from threads") == []
+        assert await fetch_val(conn, "select primary_thread_id from households where id = :h", h=home.id) is None
+    retried = await client.post("/dashboard/channels/whatsapp/group", data={"subject": "Adebayo family"}, headers=csrf)
+    assert "being created" in retried.text
+
+
+@respx.mock
+async def test_a_group_whose_id_comes_back_at_once_or_was_already_written_in_is_the_primary_thread(client):
+    async with tx() as conn:
+        home = await seed_home(conn)
+        await link(conn, home.ola, OLA_WA, "whatsapp")
+    csrf = await login(client, home)
+
+    async def groups():
+        async with tx() as conn:
+            return await fetch_all(
+                conn, "select t.external_thread_id, t.id = h.primary_thread_id as is_primary "
+                      "from threads t join households h on h.id = t.household_id where t.scope = 'group' "
+                      "order by t.created_at")
+
+    respx.post(f"{GRAPH}/100000000000001/groups").respond(json={"messaging_product": "whatsapp", "id": WA_GROUP})
+    await client.post("/dashboard/channels/whatsapp/group", data={"subject": "Adebayo family"}, headers=csrf)
+    assert await groups() == [{"external_thread_id": WA_GROUP, "is_primary": True}]
+    await post_whatsapp(client, group_created())                                  # the webhook still comes
+    assert await groups() == [{"external_thread_id": WA_GROUP, "is_primary": True}]
+
+    # A second group in which Ola writes before Meta's confirmation arrives.
+    respx.post(f"{GRAPH}/100000000000001/groups").respond(json={"messaging_product": "whatsapp"})
+    await client.post("/dashboard/channels/whatsapp/group", data={"subject": "Holiday"}, headers=csrf)
+    await post_whatsapp(client, wa_message(1, "first!", group_id="Z3JvdXAyZD"))
+    await post_whatsapp(client, group_created(subject="Holiday", group_id="Z3JvdXAyZD"))
+    assert await groups() == [{"external_thread_id": WA_GROUP, "is_primary": False},
+                              {"external_thread_id": "Z3JvdXAyZD", "is_primary": True}]

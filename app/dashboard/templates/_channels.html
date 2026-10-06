@@ -1,0 +1,56 @@
+{% macro when(at) %}{{ local(at, session.timezone).strftime("%a %-d %b %H:%M") if at else "never" }}{% endmacro %}
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if invite %}
+<h2>Group invite</h2>
+<div class="card">
+  <p>Each adult opens this link, or scans the code, to join the family group. Anyone holding the link can join,
+     so pass it on privately.</p>
+  <p><a href="{{ invite.link }}">{{ invite.link }}</a></p>
+  <p class="qr">{{ invite.qr | safe }}</p>
+</div>
+{% endif %}
+<div class="card">
+  <ul class="rows">
+  {% for channel in health %}
+    <li>
+      <span class="grow"><strong>{{ channel.channel }}</strong>
+        {% if channel.on %}
+        <span class="muted">on, last heard from {{ when(channel.last_in) }}, last sent {{ when(channel.last_sent) }}</span>
+        {% else %}<span class="muted">not set up</span>{% endif %}</span>
+      {% if channel.failed %}<span class="out">{{ channel.failed }} failed send{{ "" if channel.failed == 1 else "s" }} in the last day</span>{% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+<h2>Chats</h2>
+<div class="card">
+  <ul class="rows">
+  {% for chat in chats %}
+    <li>
+      <span class="grow"><strong>{% if chat.pending %}{{ chat.name }}{% elif chat.scope == "group" %}Family group{% else %}{{ chat.who or "Unlinked chat" }}{% endif %}</strong>
+        <span class="muted">{{ chat.channel }}{% if chat.pending %}, being created{% else %}, last heard from {{ when(chat.last_in) }}{% endif %}{% if chat.is_primary %}, main family chat{% endif %}</span>
+        {% if chat.window and not chat.pending %}
+        <span class="muted">{% if chat.window.open_until %}ordinary messages until {{ when(chat.window.open_until) }}{% else %}template messages only until they next write{% endif %}</span>
+        {% endif %}</span>
+      {% if chat.invitable %}
+      <button class="quiet" hx-post="/dashboard/channels/threads/{{ chat.id }}/invite" hx-target="#channels">Invite link</button>
+      {% endif %}
+      {% if chat.scope == "group" and not chat.pending and not chat.is_primary %}
+      <button class="quiet" hx-post="/dashboard/channels/threads/{{ chat.id }}/primary" hx-target="#channels">Make main chat</button>
+      {% endif %}
+    </li>
+  {% else %}<li class="muted">No chats yet. They appear once someone connects.</li>{% endfor %}
+  </ul>
+</div>
+<p class="muted">Briefs and reminders for the whole family go to the main family chat, or to each adult while there is none.
+   To use an existing group, add the assistant to it and write something there.</p>
+{% for channel in health if channel.creates_groups %}
+<h2>Create a {{ channel.channel }} group</h2>
+<form class="card" hx-post="/dashboard/channels/{{ channel.channel }}/group" hx-target="#channels">
+  <input type="text" name="subject" value="{{ session.household }} family" maxlength="128" aria-label="Group name" required>
+  <button>Create group</button>
+</form>
+<p class="muted">The group becomes the main family chat as soon as {{ channel.channel }} confirms it; reload this
+   page, then use Invite link to join. Outside 24 hours of someone's last message, {{ channel.channel }} only
+   delivers the approved template{% if channel.template %} ({{ channel.template }}){% endif %}.</p>
+{% endfor %}
