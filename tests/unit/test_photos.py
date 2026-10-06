@@ -9,6 +9,7 @@ from app.core.timeutil import utcnow
 from app.db import execute, fetch_all, tx
 from app.llm.types import ImagePart
 from app.pipeline import inbound
+from app.pipeline import media as media_pipeline
 from app.pipeline.inbound import SORRY
 from app.worker import jobs
 from tests.helpers import (
@@ -156,6 +157,9 @@ async def test_a_voice_note_is_fetched_once_then_stored_and_transcribed(client):
     (message,) = await rows("select id, media from messages")
     assert adapter.fetched == ["V1"]
     assert store.objects == {f"{home.id}/{message['id']}/0.ogg": b"audio-bytes"}
+    # Preparing the same message again fetches and stores nothing.
+    assert not await media_pipeline.prepare(message["media"], home.id, message["id"], adapter, StandInTranscriber(), store)
+    assert adapter.fetched == ["V1"]
     assert message["media"][0]["transcript"] == "we're out of eggs"
     assert text_of(llm) == "[voice note] we're out of eggs" and images(llm) == []
 

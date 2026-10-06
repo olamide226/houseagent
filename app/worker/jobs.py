@@ -270,7 +270,7 @@ async def media_cleanup(store: MediaStore, retention_days: int, now: datetime | 
         for row in rows:
             try:
                 for ref in row["media"]:
-                    if ref.get("storage_backend") == store.backend:
+                    if media_pipeline.is_stored(ref):
                         await store.delete(MediaRef.model_validate(ref))
             except Exception as exc:   # the store is unreachable: keep the refs and try again next run
                 log.warning("media_cleanup_failed", household_id=row["household_id"], message_id=row["id"],
