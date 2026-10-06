@@ -15,7 +15,7 @@
     <li>
       <span class="grow"><strong>{{ channel.channel }}</strong>
         {% if channel.on %}
-        <span class="muted">on, last heard from {{ when(channel.last_in) }}, last sent {{ when(channel.last_sent) }}</span>
+        <span class="muted">on, last heard from {{ when(channel.heard) }}, last sent {{ when(channel.last_sent) }}</span>
         {% else %}<span class="muted">not set up</span>{% endif %}</span>
       {% if channel.failed %}<span class="out">{{ channel.failed }} failed send{{ "" if channel.failed == 1 else "s" }} in the last day</span>{% endif %}
     </li>
@@ -28,7 +28,7 @@
   {% for chat in chats %}
     <li>
       <span class="grow"><strong>{% if chat.pending %}{{ chat.name }}{% elif chat.scope == "group" %}Family group{% else %}{{ chat.who or "Unlinked chat" }}{% endif %}</strong>
-        <span class="muted">{{ chat.channel }}{% if chat.pending %}, being created{% else %}, last heard from {{ when(chat.last_in) }}{% endif %}{% if chat.is_primary %}, main family chat{% endif %}</span>
+        <span class="muted">{{ chat.channel }}{% if chat.pending %}, being created{% else %}, last heard from {{ when(chat.heard) }}{% endif %}{% if chat.is_primary %}, main family chat{% endif %}</span>
         {% if chat.window and not chat.pending %}
         <span class="muted">{% if chat.window.open_until %}ordinary messages until {{ when(chat.window.open_until) }}{% else %}template messages only until they next write{% endif %}</span>
         {% endif %}</span>

@@ -392,12 +392,14 @@ async def _channels(request: Request, session: Session, template: str = "_channe
         chat["invitable"] = chat["scope"] == "group" and not chat["pending"] and isinstance(adapter, GroupHost)
         # Where a channel only takes free-form text for some hours after it last heard from someone.
         hours = adapter.capabilities.proactive_window_hours if adapter else None
-        heard = max(filter(None, [chat["last_in"], owner["verified_at"] if owner else None]), default=None)
+        # Connecting counts as being heard from, as it does for the router's window.
+        heard = chat["heard"] = max(filter(None, [chat["last_in"], owner["verified_at"] if owner else None]),
+                                    default=None)
         chat["window"] = hours and {"open_until": heard + timedelta(hours=hours)
                                     if heard and heard + timedelta(hours=hours) > now else None}
     health = [{
         "channel": channel.value, "on": channel in ADAPTERS,
-        "last_in": max((c["last_in"] for c in chats if c["channel"] == channel.value and c["last_in"]), default=None),
+        "heard": max((c["heard"] for c in chats if c["channel"] == channel.value and c["heard"]), default=None),
         "last_sent": last_sent.get(channel.value), "failed": failed.get(channel.value, 0),
         "template": ADAPTERS[channel].capabilities.proactive_template if channel in ADAPTERS else None,
         "creates_groups": isinstance(ADAPTERS.get(channel), GroupHost),

@@ -671,6 +671,17 @@ async def test_channels_page_shows_each_channel_its_chats_and_what_whatsapp_will
     assert "Create a whatsapp group" in page and "household_reminder" in page
 
 
+async def test_a_chat_that_has_only_just_connected_counts_as_heard_from(client):
+    async with tx() as conn:
+        home = await seed_home(conn, telegram_id=None)
+        await link(conn, home.ola, OLA_WA, "whatsapp")                          # connected a moment ago...
+        await a_thread(conn, home, "whatsapp", OLA_WA)                          # ...and has not written since
+    await login(client, home)
+    page = (await client.get("/dashboard/channels")).text
+    assert "ordinary messages until" in page and "template messages only" not in page
+    assert page.count("last heard from never") == 1                             # Telegram; not Ola's chat
+
+
 async def test_channels_page_without_whatsapp_offers_no_group_and_refuses_the_request(client):
     async with tx() as conn:
         home = await seed_home(conn)
