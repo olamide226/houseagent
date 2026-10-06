@@ -93,6 +93,52 @@ the same path into the model as a stored Telegram photo.
 
 ## Latest results
 
+One run of the whole suite, 6 Oct 2026 (milestone 4), model `deepseek-flash` through both
+adapters. Nothing in `app/agent/` changed since the previous run, and no case was added: the
+agent does not behave differently on WhatsApp, and the suite talks to it without a channel.
+
+| Adapter | Endpoint | Passed | NOOP | Undo | Input tokens (cached) | Output tokens |
+| --- | --- | --- | --- | --- | --- | --- |
+| `openai_compat` | `https://api.deepseek.com/` | **42/45** (93.3%) | 3/3 | **3/4** | 413,495 (393,344) | 12,688 |
+| `anthropic` | `https://api.deepseek.com/anthropic` | **41/45** (91.1%) | 3/3 | **3/4** | 405,192 (385,280) | 11,885 |
+
+| Category | `openai_compat` | `anthropic` |
+| --- | --- | --- |
+| inventory | 7/8 | 7/8 |
+| shopping list | 5/5 | 5/5 |
+| NOOP | 3/3 | 3/3 |
+| undo | 3/4 | 3/4 |
+| calendar | 7/7 | 7/7 |
+| reminders | 4/4 | 4/4 |
+| photos | 4/5 | 4/5 |
+| onboarding | 9/9 | 8/9 |
+
+The release bar (95% overall and 100% on NOOP and undo, on at least two providers) is **not met
+on either endpoint** in this run. The previous run, on the same agent code, scored 44/45 and
+41/45 with undo at 4/4 on both. The difference is the model answering differently, which is what
+one sample per case cannot average out.
+
+Cost: the account balance, shown to the cent, read $4.85 before the run and $4.84 after it.
+
+Failures, from the assertion messages of this run:
+
+| Case | Endpoint | What the rows showed |
+| --- | --- | --- |
+| batch finish with staple | both | Bread was on the shopping list as well as eggs. Bread is not a staple: the model added it itself. Seen in every run so far |
+| undo | `openai_compat` | After "finished the rice" then "undo", rice was still on the shopping list |
+| correction undoes then records what was meant | `anthropic` | After "we're out of milk" then "no wait, I meant we're running low", milk was `low` with quantity 0, not 2: consistent with `low` being logged without the undo first |
+| long receipt ignores totals and savings | `openai_compat` | Seven items logged from the receipt, rice as a new item "basmati rice", then "rice" restocked again with source `shopping`: the double recording described under the previous run |
+| fridge photo adjusts what is visible and finishes nothing | `anthropic` | The five items were logged twice: first with four of them in `store`, then all five in `fridge`. Stock ended right for the fridge, with stray rows in `store` |
+| quiet hours changed later just by talking | `anthropic` | Ada said "don't message me after 8pm" and both adults ended at 20:00 to 07:00. Also failed in the previous run |
+
+The two undo cases were each run once more with tool calls printed, to see whether the undo code
+or the model was at fault. Both passed that time: `undo_last` was called and restored the rows
+exactly ("undo"), and `undo_last` then `log_inventory` low gave quantity 2 ("correction"). So the
+undo machinery does what it should when it is called; in the scored run the model did something
+else. Those two re-runs are not part of the score.
+
+## Previous full run (milestone 3)
+
 One run of the whole suite, 6 Oct 2026, model `deepseek-flash` through both adapters, with all
 eleven everyday tools on offer (twelve in the onboarding cases). No case was re-run.
 
