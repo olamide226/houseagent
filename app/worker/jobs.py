@@ -1,5 +1,5 @@
 """Worker jobs (spec section 10): inbound processing, outbox dispatch, reminders, recurrence,
-the two digests and media retention.
+the two digests, the consumption model with its low-stock prompt, and media retention.
 
 Every job may run twice, or on two replicas at once: rows are claimed with SKIP LOCKED,
 outbox dedupe keys and unique indexes make the inserts idempotent, and the once-a-day jobs
@@ -7,6 +7,7 @@ claim a `job_runs` row first.
 """
 import asyncio
 import contextlib
+import json
 from collections.abc import Awaitable, Callable
 from datetime import datetime, time, timedelta
 from typing import Any
@@ -21,10 +22,11 @@ from app.core.envelope import Channel, MediaRef, OutboundMessage
 from app.core.timeutil import day_bounds, local, next_occurrence, occurrences, utcnow
 from app.db import advisory_lock, engine, execute, fetch_all, jsonb, tx
 from app.llm.stt import SpeechToText
+from app.llm.types import ChatMessage, LLMClient, TextPart
 from app.media.store import MediaStore
 from app.pipeline import inbound, router
 from app.pipeline import media as media_pipeline
-from app.services import calendar, inventory, shopping
+from app.services import calendar, consumption, inventory, shopping
 
 log = structlog.get_logger()
 POLL_SECONDS = 2.0
@@ -33,6 +35,14 @@ RECURRENCE_SECONDS = 3600.0
 DIGEST_POLL_SECONDS = 60.0
 DIGEST_GRACE = timedelta(hours=4)       # a digest missed by more than this is skipped, not sent late
 WEEKLY_DIGEST_AT = time(18, 0)          # on Sundays, household time
+CONSUMPTION_MODEL_AT = time(3, 0)       # nightly; run late rather than not at all, since it sends nothing
+LOW_STOCK_PROMPT_AT = time(17, 30)
+CATEGORIES = ("fruit and veg", "dairy and eggs", "meat and fish", "bakery", "frozen", "cupboard", "drinks",
+              "household", "toiletries", "baby", "other")
+CATEGORISE_PROMPT = (
+    "You sort a household's shopping items into supermarket sections. Reply with one JSON object and nothing "
+    "else, mapping each item name exactly as given to one of: " + ", ".join(CATEGORIES) + ".")
+CATEGORISE_BATCH = 200
 MEDIA_CLEANUP_SECONDS = 3600.0
 LATE_MINUTES = 10                       # a reminder this long after its event began is dropped
 
@@ -161,8 +171,9 @@ async def _once_per_household(job: str, now: datetime,
                               run_key: Callable[[datetime, dict[str, Any]], str | None],
                               build: Callable[[AsyncConnection, dict[str, Any], datetime], Awaitable[str | None]],
                               ) -> int:
-    """Send one household message per `run_key`, claimed in `job_runs` so a restart or a
-    second replica never doubles it. `run_key` returns None while the job is not due."""
+    """Run `build` once per household per `run_key`, claimed in `job_runs` so a restart or a
+    second replica never doubles it, and send the household what it returns, if anything.
+    `run_key` returns None while the job is not due. Returns how many messages were queued."""
     async with tx() as conn:
         households = await fetch_all(conn, "select id, timezone, digest_time from households")
     sent = 0
@@ -229,24 +240,91 @@ async def _weekly_digest(conn: AsyncConnection, household: dict[str, Any], now: 
     low = await inventory.stock_rows(conn, household["id"], statuses=["low", "out"])
     expiring = await inventory.stock_rows(conn, household["id"], expiring_within_days=7,
                                           today=local(now, timezone).date())
-    if not (events or on_list or low or expiring):
+    await consumption.refresh(conn, household["id"], now)
+    probably = await consumption.running_out(conn, household["id"], now, timedelta(days=7))
+    if not (events or on_list or low or expiring or probably):
         return None
     lines = _section("The week ahead:", [o.line(timezone) for o in events]) or ["Nothing booked this week."]
     if on_list:
         lines.append(f"Shopping list: {on_list} item{'' if on_list == 1 else 's'}.")
     if low:
         lines.append("Low or out: " + ", ".join(row["item"] for row in low) + ".")
+    if probably:
+        lines.append("Probably running low this week: " + ", ".join(row["item"] for row in probably) + ".")
     lines += _section("Use this week:", [f"{r['item']} ({r['location']}, {r['expires_on']:%-d %b})" for r in expiring])
     return "\n".join(lines)
 
 
 async def weekly_digest(now: datetime | None = None) -> int:
-    """Sunday 18:00 household time: the week ahead, the list, and what is low or expiring."""
+    """Sunday 18:00 household time: the week ahead, the list, and what is low, likely to run
+    low, or expiring."""
     def run_key(here: datetime, household: dict[str, Any]) -> str | None:
         year, week, _ = here.isocalendar()
         return f"{year}-W{week:02d}" if here.weekday() == 6 and _due(here, WEEKLY_DIGEST_AT) else None
 
     return await _once_per_household("weekly_digest", now or utcnow(), run_key, _weekly_digest)
+
+
+# ---------------------------------------------------------------- consumption model and low-stock prompt
+async def consumption_model(llm: LLMClient | None = None, now: datetime | None = None) -> int:
+    """Nightly from 03:00 household time: relearn how long each item lasts and refresh the
+    list's "probably" entries; then, with a model, give items that have no category one.
+    Returns how many households were done."""
+    refreshed: list[str] = []
+
+    async def refresh(conn: AsyncConnection, household: dict[str, Any], now: datetime) -> None:
+        await consumption.refresh(conn, household["id"], now)
+        refreshed.append(household["id"])
+
+    await _once_per_household(
+        "consumption_model", now or utcnow(),
+        lambda here, household: f"{here:%Y-%m-%d}" if here.time() >= CONSUMPTION_MODEL_AT else None, refresh)
+    if llm is not None:
+        for household_id in refreshed:
+            try:
+                await categorise(llm, household_id)
+            except Exception as exc:   # the items keep no category and are tried again tomorrow night
+                log.warning("categorise_failed", household_id=household_id, error=type(exc).__name__)
+    return len(refreshed)
+
+
+async def categorise(llm: LLMClient, household_id: str) -> int:
+    """Fill null `items.category` for one household in a single model call that answers in JSON.
+    Returns how many items got a category."""
+    async with tx() as conn:
+        names = await inventory.uncategorised(conn, household_id, CATEGORISE_BATCH)
+    if not names:
+        return 0
+    asked = ChatMessage(role="user", content=[TextPart(text=json.dumps(names))])
+    response = await llm.complete(CATEGORISE_PROMPT, [asked], [], max_tokens=4096, temperature=0)
+    answer = response.text or ""
+    try:
+        chosen = json.loads(answer[answer.index("{"):answer.rindex("}") + 1])   # tolerate a code fence around it
+        if not isinstance(chosen, dict):
+            raise ValueError
+    except ValueError:
+        log.warning("categorise_unreadable", household_id=household_id)
+        return 0
+    categories = {name: (category if category in CATEGORIES else "other")
+                  for name, category in chosen.items() if name in names}
+    async with tx() as conn:
+        done = await inventory.set_categories(conn, household_id, categories)
+    log.info("items_categorised", household_id=household_id, items=done)
+    return done
+
+
+async def _low_stock(conn: AsyncConnection, household: dict[str, Any], now: datetime) -> str | None:
+    await consumption.refresh(conn, household["id"], now)
+    names = await consumption.to_ask_about(conn, household["id"], now)
+    return f"Probably running low: {', '.join(names)}. Add to the list?" if names else None
+
+
+async def low_stock_prompt(now: datetime | None = None) -> int:
+    """17:30 household time: ask once about items predicted to run out within two days that are
+    not on the list and were not asked about in the last three. A "yes" is the agent's to handle."""
+    return await _once_per_household(
+        "low_stock_prompt", now or utcnow(),
+        lambda here, household: f"{here:%Y-%m-%d}" if _due(here, LOW_STOCK_PROMPT_AT) else None, _low_stock)
 
 
 # ---------------------------------------------------------------- media retention

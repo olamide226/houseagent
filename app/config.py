@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     llm_base_url: str | None = None
     llm_api_key: str = ""
     llm_model: str
+    llm_fast_model: str | None = None
     llm_supports_images: bool = True
     llm_max_tool_iterations: int = 8
 

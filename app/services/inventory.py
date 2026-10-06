@@ -75,6 +75,22 @@ async def create_item(conn: AsyncConnection, household_id: str, name: str,
     ))
 
 
+async def uncategorised(conn: AsyncConnection, household_id: str, limit: int) -> list[str]:
+    rows = await fetch_all(conn, "select canonical_name from items where household_id = :h and category is null "
+                                 "order by created_at, canonical_name limit :limit", h=household_id, limit=limit)
+    return [row["canonical_name"] for row in rows]
+
+
+async def set_categories(conn: AsyncConnection, household_id: str, categories: dict[str, str]) -> int:
+    """Give items that still have no category the one chosen for them, by name."""
+    done = 0
+    for name, category in categories.items():
+        done += await execute(conn, "update items set category = :category where household_id = :h "
+                                    "and canonical_name = :name and category is null",
+                              category=category, h=household_id, name=name)
+    return done
+
+
 async def add_item_alias(conn: AsyncConnection, item_id: str, alias: str) -> None:
     await execute(conn, "update items set aliases = array_append(aliases, :alias) "
                         "where id = :id and not :alias = any(aliases)", id=item_id, alias=alias)

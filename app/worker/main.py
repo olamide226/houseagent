@@ -26,6 +26,7 @@ SCHEDULED: dict[str, tuple[Callable[[], Awaitable[int]], float]] = {
     "expand_recurrence": (jobs.expand_recurrence, jobs.RECURRENCE_SECONDS),
     "daily_brief": (jobs.daily_brief, jobs.DIGEST_POLL_SECONDS),
     "weekly_digest": (jobs.weekly_digest, jobs.DIGEST_POLL_SECONDS),
+    "low_stock_prompt": (jobs.low_stock_prompt, jobs.DIGEST_POLL_SECONDS),
 }
 
 
@@ -57,6 +58,8 @@ async def main() -> None:
     stt = make_stt(settings)
     outbox_wake = asyncio.Event()
     scheduled = dict(SCHEDULED)
+    scheduled["consumption_model"] = (partial(jobs.consumption_model, make_llm(settings, fast=True)),
+                                      jobs.DIGEST_POLL_SECONDS)
     if media is not None:
         scheduled["media_cleanup"] = (partial(jobs.media_cleanup, media, settings.media_retention_days),
                                       jobs.MEDIA_CLEANUP_SECONDS)
