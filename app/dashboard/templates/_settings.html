@@ -27,12 +27,12 @@
   {% if presence %}
   <p>{{ presence.name }}'s personal link. It is shown only this once, so copy it now and keep it private:</p>
   <p><input type="text" readonly value="{{ presence.url }}" onfocus="this.select()"></p>
-  <p>On {{ presence.name }}'s iPhone, once per place: Shortcuts, Automation, New, <strong>Arrive</strong>,
-    choose the place, set <strong>Run Immediately</strong>, then add the action <strong>Get Contents of URL</strong>
-    with this link, method <strong>POST</strong>, and a <strong>JSON</strong> request body with two text fields:
-    <code class="plain">event</code> = <code class="plain">enter</code> and <code class="plain">place</code> = the
-    place's name exactly as listed under Places. For home, add one more with <strong>Leave</strong> and
-    <code class="plain">event</code> = <code class="plain">exit</code>.</p>
+  <p>In the Shortcuts app on {{ presence.name }}'s iPhone, make an automation for each place: the trigger is
+    <strong>Arrive</strong> at the place, set to run without asking, and its one action is
+    <strong>Get Contents of URL</strong> with this link, method <strong>POST</strong>, and a <strong>JSON</strong>
+    request body with two text fields: <code class="plain">event</code> = <code class="plain">enter</code> and
+    <code class="plain">place</code> = the place's name exactly as listed under Places. For home, add one more with
+    the trigger <strong>Leave</strong> and <code class="plain">event</code> = <code class="plain">exit</code>.</p>
   {% endif %}
   <ul class="rows">
   {% for member in family if member.role == "adult" %}

@@ -126,9 +126,9 @@ def presence_text(url: str, shops: list[str]) -> str:
     return (
         "Optional: your phone can tell me when you reach a shop, and I'll send you the list for that shop.\n\n"
         f"Your personal link, keep it to yourself: {url}\n\n"
-        "On your iPhone, once per shop: Shortcuts, Automation, New, Arrive, choose the shop, set Run Immediately, "
-        "then add the action Get Contents of URL with that link, method POST, and a JSON request body with two "
-        "text fields: event = enter and place = the shop's name.\n"
+        "In the Shortcuts app on your iPhone, make an automation for each shop: the trigger is Arrive at the shop, "
+        "set to run without asking, and its one action is Get Contents of URL with that link, method POST, and a "
+        "JSON request body with two text fields: event = enter and place = the shop's name.\n"
         f"{known}"
         "For home, make two more: Arrive with event = enter and place = Home, and Leave with event = exit and "
         "place = Home."

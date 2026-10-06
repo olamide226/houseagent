@@ -272,7 +272,7 @@ async def test_answering_the_last_question_sends_each_connected_adult_a_personal
     (text,) = {r["text"].replace(links["Ola"][0], "TOKEN") for r in await rows(
         "select text from outbox where member_id = :m", m=home.ola)}
     assert text == households.presence_text("http://testserver/presence/TOKEN", ["Costco", "Tesco Extra"])
-    for wanted in ("Arrive", "Run Immediately", "Get Contents of URL", "POST", "event = enter", "event = exit",
+    for wanted in ("Arrive", "run without asking", "Get Contents of URL", "POST", "event = enter", "event = exit",
                    "place = Home", "Shops I know: Costco, Tesco Extra."):
         assert wanted in text
     # The model is told that links went out, never what they are; only hashes are stored.
