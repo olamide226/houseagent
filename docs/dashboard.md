@@ -32,12 +32,13 @@ returns 403.
 | Inventory | `/dashboard/inventory` | Stock by location, filter by status; per-item history | Set a count, mark finished, edit an item (aliases, staple, threshold, usual place), merge a duplicate |
 | Calendar | `/dashboard/calendar` | The next 30 days with repeats expanded, the repeating series, standalone reminders | Add an event (once, daily, weekly or monthly), edit title, time and place, cancel, skip one date of a series, cancel a reminder, get the subscribe link |
 | Family | `/dashboard/family` | Everyone in the household, each adult's connected channels, open invites | Add an adult or a child, make a new invite (link, QR code and code, shown once), revoke an invite, choose which connected channel an adult is messaged on |
-| Channels | `/dashboard/channels` | Each channel: whether it is set up, when it last heard from and sent to the family, sends failed in the last day. Each chat: whose it is, the main family chat, and for WhatsApp whether an ordinary message or only the template will be delivered | Create a WhatsApp group, forget one that was never confirmed, show a group's invite link and QR code, choose the main family chat |
+| Channels | `/dashboard/channels` | Each channel: whether it is set up, when it last heard from and sent to the family, sends failed in the last day, and for iMessage since when it has been unreachable. Each chat: whose it is, the main family chat, and for WhatsApp whether an ordinary message or only the template will be delivered | Create a WhatsApp group, forget one that was never confirmed, show a group's invite link and QR code, choose the main family chat |
 | Activity | `/dashboard/activity` | The last 200 turns and dashboard actions: message, tool calls and results, tokens, latency, send status | Undo an action, retry a failed send |
 | Playground | `/dashboard/playground` | A chat with the agent in the browser | Dry run by default; tick "Apply for real" to keep the result |
 | Settings | `/dashboard/settings` | The morning brief time, each adult's quiet hours, whether each adult has a presence link, places and their kinds, remembered facts | Change the brief time, change or clear quiet hours, make or replace a presence link, add a place or change its kind, add, change or forget a fact |
+| System (admin only) | `/dashboard/system` | Whether the worker is alive, the newest runs of the once-a-day jobs, the runtime, provider and model, the last eval result, whether stock matches the event log, the version and migration | Rebuild stock from the event log, download everything as JSON |
 
-The System page is not built yet. Reminders are added in chat; the Calendar page lists
+Reminders are added in chat; the Calendar page lists
 and cancels them. Staples are set on an item's page. The calendar subscribe link stays on the
 Calendar page.
 
@@ -87,6 +88,36 @@ To use a group that already exists on Telegram, add the bot to it and write some
 
 Moving someone's DMs to another channel is on the Family page: "Message here" next to a person
 with more than one connected channel. Nothing else needs changing.
+
+## System
+
+Only a member with `is_admin` (whoever ran `/setup`) gets the System link, and the page, the
+export and the rebuild answer 403 to anyone else.
+
+- **Worker.** The worker writes a heartbeat every minute. The page says "Running" with the time
+  of the last one, or that the worker is probably not running once the last is more than three
+  minutes old. Nothing is answered, sent or reminded while the worker is down.
+- **Job runs.** The 30 newest runs of the jobs that happen once a day or week (`daily_brief`,
+  `weekly_digest`, `consumption_model`, `low_stock_prompt`), from `job_runs`. Messages, sends and
+  reminders are handled continuously and leave no row; they show on Activity.
+- **Model.** `AGENT_RUNTIME`, `LLM_PROVIDER`, the endpoint's host, `LLM_MODEL`,
+  `LLM_FAST_MODEL` when set, and whether photos are read. Never a key.
+- **Last eval result.** For each provider, what the eval suite last wrote into
+  `EVAL_RESULTS_DIR` (default `tests/evals/.results`): passed of total, the model, when, and the
+  cases that failed. The suite writes there on the machine where it is run, so a deployed image
+  shows "No eval result on this machine" unless the files are put there.
+- **Stock check.** Replays the inventory event log and compares the result with the `stock` table,
+  row by row: status, quantity and expiry date. They should always agree, because stock is only
+  written with its event. A difference is listed with both sides. "Rebuild stock from the event
+  log" replaces the table with the replay (`POST /dashboard/system/rebuild-stock`, answers 202).
+  A rebuild that changed something is logged in Activity and can be undone there.
+- **Export.** `GET /dashboard/system/export` downloads one JSON file with every table's rows for
+  this household. Token hashes and one-time login links are left out. It contains every message
+  and photo reference, so keep it private.
+- **Version.** The version from `pyproject.toml` and the database's migration.
+
+One known false alarm: changing an item's low threshold changes how its old events replay, so the
+check can show that item as different until the next event or a rebuild.
 
 ## Calendar feed
 

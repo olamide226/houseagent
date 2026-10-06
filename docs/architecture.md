@@ -192,4 +192,4 @@ tests/           unit/ contract/ evals/
 
 ## Not built yet
 
-The Letta runtime and the System page.
+The Letta runtime.

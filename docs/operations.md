@@ -34,6 +34,8 @@ Everything is read by `Settings` in `app/config.py`, from the environment or a l
 | `DEFAULT_TIMEZONE` | no | `Europe/London` | Prefilled on `/setup` |
 | `DEBOUNCE_SECONDS` | no | `4` | How long a batch must be quiet before its turn |
 | `LOG_LEVEL` | no | `INFO` | |
+| `WORKER_HEARTBEAT_FILE` | no | `/tmp/worker-heartbeat` | The file the worker touches every minute, for its liveness probe |
+| `EVAL_RESULTS_DIR` | no | `tests/evals/.results` | Where the System page looks for the last eval result |
 
 Variables for later milestones (iMessage, Letta) are in
 [spec.md section 3](spec.md#3-configuration-and-dependencies) and are not read yet.
@@ -79,7 +81,11 @@ uv run python -m app.worker.main             # worker, in a second terminal
 
 - `GET /healthz`: liveness.
 - `GET /readyz`: 200 when the database is reachable and at migration `0001`, else 503.
-- The worker logs `worker_heartbeat` every minute and restarts a crashed job after 5 seconds.
+- The worker logs `worker_heartbeat` every minute and restarts a crashed job after 5 seconds. Each
+  heartbeat also touches `WORKER_HEARTBEAT_FILE` (default `/tmp/worker-heartbeat`), which is what a
+  liveness probe should watch, and moves a `worker_heartbeat` row in `job_runs`, which is what the
+  dashboard's System page reads. A database outage logs `worker_heartbeat_not_recorded` and does
+  not stop the file being touched.
 
 ## Worker jobs
 
