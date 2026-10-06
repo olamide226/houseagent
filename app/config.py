@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     default_timezone: str = "Europe/London"
     debounce_seconds: float = 4
     log_level: str = "INFO"
+    worker_heartbeat_file: str = "/tmp/worker-heartbeat"   # touched every minute; the worker's liveness probe
+    eval_results_dir: str = "tests/evals/.results"         # where the eval suite leaves its last result
 
     llm_provider: Literal["openai_compat", "anthropic"]
     llm_base_url: str | None = None

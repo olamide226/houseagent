@@ -268,8 +268,10 @@ async def _completed_cycles(conn: AsyncConnection, item_id: str) -> int:
     return cycles
 
 
-async def rebuild_stock(conn: AsyncConnection, household_id: str) -> None:
-    """Regenerate `stock` from scratch by replaying live events in order."""
+async def replayed_stock(conn: AsyncConnection,
+                         household_id: str) -> dict[tuple[str, str], tuple[stock.StockRow, Any]]:
+    """What `stock` should hold: live events replayed in order, per item and location, with
+    when each row's last event happened."""
     events = await fetch_all(
         conn,
         f"""select e.item_id, e.location_id, e.event_type, e.quantity, e.expires_on, e.occurred_at,
@@ -287,6 +289,28 @@ async def rebuild_stock(conn: AsyncConnection, household_id: str) -> None:
                         stock.Item(e["low_threshold"])),
             e["occurred_at"],
         )
+    return rows
+
+
+async def stock_drift(conn: AsyncConnection, household_id: str) -> list[dict[str, Any]]:
+    """Where live `stock` differs from the event log replayed: one entry per item and location,
+    with each side as a `StockRow` or None when that side has no row. Empty when they agree."""
+    replayed = {key: row for key, (row, _) in (await replayed_stock(conn, household_id)).items()}
+    live = {(r["item_id"], r["location_id"]): stock.StockRow(r["qty_estimate"], r["status"], r["expires_on"])
+            for r in await stock_rows(conn, household_id)}
+    names = {(r["item_id"], r["location_id"]): (r["item"], r["location"]) for r in await fetch_all(
+        conn, "select i.id as item_id, l.id as location_id, i.canonical_name as item, l.name as location "
+              "from items i join locations l on l.household_id = i.household_id where i.household_id = :h",
+        h=household_id)}
+    return [{"item_id": key[0], "location_id": key[1], "item": names[key][0], "location": names[key][1],
+             "live": live.get(key), "replayed": replayed.get(key)}
+            for key in sorted(live.keys() | replayed.keys(), key=lambda key: names[key])
+            if live.get(key) != replayed.get(key)]
+
+
+async def rebuild_stock(conn: AsyncConnection, household_id: str) -> None:
+    """Regenerate `stock` from scratch by replaying live events in order."""
+    rows = await replayed_stock(conn, household_id)
     await execute(conn, "delete from stock where item_id in (select id from items where household_id = :h)",
                   h=household_id)
     for (item_id, location_id), (row, at) in rows.items():

@@ -6,16 +6,19 @@ import asyncio
 import signal
 from collections.abc import Awaitable, Callable
 from functools import partial
+from pathlib import Path
 
 import structlog
 
 from app.agent.loop import LoopRuntime
 from app.channels.base import HealthChecked, build_adapters
 from app.config import configure_logging, get_settings
-from app.db import engine
+from app.core.timeutil import utcnow
+from app.db import engine, tx
 from app.llm.base import make_llm
 from app.llm.stt import make_stt
 from app.media.store import make_media_store
+from app.services import households
 from app.worker import jobs
 
 log = structlog.get_logger()
@@ -42,9 +45,17 @@ async def supervise(name: str, job: Callable[[], Awaitable[None]]) -> None:
         await asyncio.sleep(RESTART_SECONDS)
 
 
-async def heartbeat() -> None:
+async def heartbeat(path: Path) -> None:
+    """Every minute: touch the file the liveness probe watches, and tell the database, which is
+    where the dashboard's System page looks. A database that is away must not stop the file."""
     while True:
         log.info("worker_heartbeat")
+        await asyncio.to_thread(path.touch)
+        try:
+            async with tx() as conn:
+                await households.beat(conn, utcnow())
+        except Exception as exc:
+            log.warning("worker_heartbeat_not_recorded", error=type(exc).__name__)
         await asyncio.sleep(HEARTBEAT_SECONDS)
 
 
@@ -73,7 +84,7 @@ async def main() -> None:
         asyncio.create_task(supervise("outbox", lambda: jobs.outbox_job(adapters, outbox_wake))),
         *(asyncio.create_task(supervise(name, partial(jobs.every, seconds, job, outbox_wake)))
           for name, (job, seconds) in scheduled.items()),
-        asyncio.create_task(heartbeat()),
+        asyncio.create_task(heartbeat(Path(settings.worker_heartbeat_file))),
     ]
     log.info("worker_started", channels=[c.value for c in adapters], llm_provider=settings.llm_provider)
     stop = asyncio.Event()

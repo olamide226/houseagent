@@ -195,6 +195,7 @@ async def test_stock_rebuilt_from_events_equals_live_stock_after_random_history(
 
         live = await stock_snapshot(conn, home)
         assert live, "the history should have produced stock"
+        assert await inventory.stock_drift(conn, home.id) == []   # what the System page's stock check reports
         await inventory.rebuild_stock(conn, home.id)
         assert await stock_snapshot(conn, home) == live
         assert len(await fetch_all(conn, "select 1 from inventory_events where source = 'undo'")) > 0

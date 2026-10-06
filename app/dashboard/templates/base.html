@@ -21,6 +21,7 @@
     <a href="/dashboard/activity">Activity</a>
     <a href="/dashboard/playground">Playground</a>
     <a href="/dashboard/settings">Settings</a>
+    {% if session.is_admin %}<a href="/dashboard/system">System</a>{% endif %}
   </nav>
   <form method="post" action="/logout">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">

@@ -389,3 +389,50 @@ async def finish_group(conn: AsyncConnection, update: GroupUpdate) -> None:
     await execute(conn, "update households set primary_thread_id = :t where id = :h",
                   t=(known or pending)["id"], h=pending["household_id"])
     log.info("group_created", household_id=pending["household_id"], channel=update.channel.value)
+
+
+# ---------------------------------------------------------------- export and the worker's heartbeat
+_MEMBERS = "(select id from members where household_id = :h)"
+_ITEMS = "(select id from items where household_id = :h)"
+# Every table that holds a household's data, and how its rows belong to one. `login_tokens` is
+# left out: one-time links that are spent or expire within ten minutes.
+EXPORTED = {
+    "households": "id = :h", "members": "household_id = :h", "channel_identities": f"member_id in {_MEMBERS}",
+    "threads": "household_id = :h", "messages": "household_id = :h", "household_facts": "household_id = :h",
+    "locations": "household_id = :h", "items": "household_id = :h", "inventory_events": "household_id = :h",
+    "stock": f"item_id in {_ITEMS}", "consumption_profiles": f"item_id in {_ITEMS}",
+    "shopping_list_items": "household_id = :h", "events": "household_id = :h", "reminders": "household_id = :h",
+    "places": "household_id = :h", "presence_events": f"member_id in {_MEMBERS}", "nudge_log": "household_id = :h",
+    "agent_actions": "household_id = :h", "outbox": "household_id = :h", "job_runs": "household_id = :h",
+}
+HEARTBEAT = "worker_heartbeat"   # a job_runs row per household that the worker keeps moving forward
+
+
+async def export(conn: AsyncConnection, household_id: str) -> dict[str, list[dict[str, Any]]]:
+    """Everything the household has stored, table by table. Token hashes are left out: they
+    are no use to their owner and only a risk in a file."""
+    tables: dict[str, list[dict[str, Any]]] = {}
+    for table, mine in EXPORTED.items():
+        rows = await fetch_all(conn, f"select to_jsonb(t) as row from {table} t where {mine} order by 1",
+                               h=household_id)
+        tables[table] = [{k: v for k, v in r["row"].items() if not k.endswith("_hash")} for r in rows]
+    return tables
+
+
+async def beat(conn: AsyncConnection, now: datetime) -> None:
+    """The worker says it is alive, in every household's `job_runs`, where the System page reads it."""
+    await execute(
+        conn, "insert into job_runs (job, household_id, run_key, ran_at) "
+              "select :job, id, 'latest', :now from households "
+              "on conflict (job, household_id, run_key) do update set ran_at = excluded.ran_at", job=HEARTBEAT, now=now)
+
+
+async def job_runs(conn: AsyncConnection, household_id: str,
+                   limit: int = 30) -> tuple[datetime | None, list[dict[str, Any]]]:
+    """When the worker last said it was alive, and the newest runs of the once-a-day jobs."""
+    seen: datetime | None = await fetch_val(
+        conn, "select ran_at from job_runs where household_id = :h and job = :job", h=household_id, job=HEARTBEAT)
+    runs = await fetch_all(
+        conn, "select job, run_key, ran_at from job_runs where household_id = :h and job <> :job "
+              "order by ran_at desc, job limit :limit", h=household_id, job=HEARTBEAT, limit=limit)
+    return seen, runs

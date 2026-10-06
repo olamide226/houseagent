@@ -3,13 +3,18 @@
 Pages read through app/services and write through the same service functions the agent
 tools use, logged in agent_actions with source 'dashboard'.
 """
+import json
+import tomllib
 from collections.abc import Awaitable, Callable
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.agent import actions
@@ -21,7 +26,7 @@ from app.config import get_settings
 from app.core.envelope import Channel, GroupUpdate
 from app.core.timeutil import day_bounds, local, parse_clock, to_utc, utcnow
 from app.dashboard.auth import Session, current_session, invite_context, qr_svg, require_csrf, templates
-from app.db import advisory_lock, engine, fetch_all, fetch_one, tx
+from app.db import advisory_lock, engine, fetch_all, fetch_one, fetch_val, tx
 from app.pipeline import inbound
 from app.pipeline import router as outbound
 from app.services import calendar, households, inventory, members, shopping
@@ -31,6 +36,7 @@ router = APIRouter(prefix="/dashboard", default_response_class=HTMLResponse)
 ACTIVITY_LIMIT = 200
 CALENDAR_DAYS = 30
 REPEATS = {"": None, "daily": "FREQ=DAILY", "weekly": "FREQ=WEEKLY", "monthly": "FREQ=MONTHLY"}
+HEARTBEAT_LATE = timedelta(minutes=3)   # the worker reports every minute
 
 
 def _ctx(conn: AsyncConnection, session: Session) -> Ctx:
@@ -554,6 +560,96 @@ async def settings_place(request: Request, name: str = Form(...), kind: str = Fo
 
     error = await _write(session, "settings.place", {"name": name, "kind": kind}, change)
     return await _settings(request, session, error=error)
+
+
+# ---------------------------------------------------------------- System (admins only)
+def _admin(session: Session) -> Session:
+    if not session.is_admin:
+        raise HTTPException(status_code=403, detail="admins only")
+    return session
+
+
+@lru_cache
+def _version() -> str:
+    """The version in pyproject.toml, which sits beside `app/` in the repository and in the image."""
+    try:
+        return str(tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text())["project"]["version"])
+    except (OSError, KeyError, ValueError):
+        return "unknown"
+
+
+def _eval_results(directory: str) -> list[dict[str, Any]]:
+    """What the eval suite last wrote for each provider (docs/evals.md), newest first."""
+    results = []
+    for path in Path(directory).glob("*.json"):
+        try:
+            result = json.loads(path.read_text())
+            results.append({
+                "provider": result["provider"], "model": result["model"], "passed": int(result["passed"]),
+                "total": int(result["total"]), "at": datetime.fromtimestamp(path.stat().st_mtime, UTC),
+                "failed": sorted(name for name, outcome in result["cases"].items() if outcome != "passed"),
+            })
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            continue   # not a result file
+    return sorted(results, key=lambda result: result["at"], reverse=True)
+
+
+async def _system(request: Request, session: Session, template: str = "_system.html", error: str | None = None,
+                  notice: str | None = None, status_code: int = 200) -> Response:
+    now, settings = utcnow(), get_settings()
+    async with tx() as conn:
+        seen, runs = await households.job_runs(conn, session.household_id)
+        context = {
+            "seen": seen, "late": seen is not None and now - seen > HEARTBEAT_LATE, "runs": runs,
+            "drift": await inventory.stock_drift(conn, session.household_id),
+            "stock_rows": len(await inventory.stock_rows(conn, session.household_id)),
+            "migration": await fetch_val(conn, "select version_num from alembic_version"),
+        }
+    llm = {"runtime": settings.agent_runtime, "provider": settings.llm_provider, "model": settings.llm_model,
+           "fast_model": settings.llm_fast_model, "images": settings.llm_supports_images,
+           "endpoint": urlsplit(settings.llm_base_url).netloc if settings.llm_base_url else None}
+    return templates.TemplateResponse(request, template, {
+        "session": session, "error": error, "notice": notice, "llm": llm, "version": _version(), "local": local,
+        "evals": _eval_results(settings.eval_results_dir), "quantity_text": inventory.quantity_text, **context,
+    }, status_code=status_code)
+
+
+@router.get("/system")
+async def system_page(request: Request, session: Session = Depends(current_session)) -> Response:
+    return await _system(request, _admin(session), "system.html")
+
+
+@router.get("/system/export", response_class=JSONResponse)
+async def system_export(session: Session = Depends(current_session)) -> Response:
+    """Everything stored for this household, as one JSON file."""
+    _admin(session)
+    async with tx() as conn:
+        tables = await households.export(conn, session.household_id)
+    return JSONResponse(
+        {"exported_at": utcnow().isoformat(), "version": _version(), "household": session.household, "tables": tables},
+        headers={"Content-Disposition": 'attachment; filename="household-export.json"'})
+
+
+@router.post("/system/rebuild-stock")
+async def system_rebuild_stock(request: Request, session: Session = Depends(require_csrf)) -> Response:
+    """Replace `stock` with the event log replayed. Answers 202 with the page's new state."""
+    _admin(session)
+    changed: list[dict[str, Any]] = []
+
+    async def rebuild(rec: Recorder) -> None:
+        conn = rec.ctx.conn
+        await advisory_lock(conn, session.household_id)   # no turn may write stock while it is replaced
+        changed.extend(await inventory.stock_drift(conn, session.household_id))
+        for row in changed:
+            await rec.before("stock", item_id=row["item_id"], location_id=row["location_id"])
+        await inventory.rebuild_stock(conn, session.household_id)
+        if changed:
+            rec.lines.append(f"OK: stock rebuilt from the event log, {len(changed)} changed")
+
+    error = await _write(session, "system.rebuild_stock", {}, rebuild)
+    rows = f"{len(changed)} row{'' if len(changed) == 1 else 's'}"
+    notice = None if error else f"Stock rebuilt from the event log: {rows} changed."
+    return await _system(request, session, error=error, notice=notice, status_code=202)
 
 
 # ---------------------------------------------------------------- Activity

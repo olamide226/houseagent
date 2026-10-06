@@ -1,0 +1,72 @@
+{% macro when(at) %}{{ local(at, session.timezone).strftime("%a %-d %b %H:%M") }}{% endmacro %}
+{% macro side(row) %}{% if row %}{{ row.status.replace("_", " ") }}{% if row.qty is not none %}, {{ quantity_text(row.qty, none) }}{% endif %}{% if row.expires_on %}, expires {{ row.expires_on.strftime("%-d %b") }}{% endif %}{% else %}no row{% endif %}{% endmacro %}
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if notice %}<p class="card">{{ notice }}</p>{% endif %}
+<h2>Worker</h2>
+<div class="card">
+  {% if not seen %}
+  <p class="out">The worker has not reported yet. Nothing is answered, sent or reminded until it runs.</p>
+  {% elif late %}
+  <p class="out">The worker last reported {{ when(seen) }}. It reports every minute, so it is probably not running.</p>
+  {% else %}
+  <p>Running. Last reported {{ when(seen) }}.</p>
+  {% endif %}
+</div>
+<h2>Job runs</h2>
+<div class="card">
+  <ul class="rows">
+  {% for run in runs %}
+    <li><span class="grow">{{ run.job }} <span class="muted">{{ run.run_key }}</span></span>
+        <span class="muted">{{ when(run.ran_at) }}</span></li>
+  {% else %}<li class="muted">No daily job has run yet.</li>{% endfor %}
+  </ul>
+  <p class="muted">The once-a-day jobs, newest first. Messages, sends and reminders are handled all the time and
+     leave no row here; they show on Activity.</p>
+</div>
+<h2>Model</h2>
+<div class="card">
+  <ul class="rows">
+    <li><span class="grow">Runtime</span><span>{{ llm.runtime }}</span></li>
+    <li><span class="grow">Provider</span><span>{{ llm.provider }}{% if llm.endpoint %} <span class="muted">at {{ llm.endpoint }}</span>{% endif %}</span></li>
+    <li><span class="grow">Model</span><span>{{ llm.model }}</span></li>
+    {% if llm.fast_model %}<li><span class="grow">Model for sorting items</span><span>{{ llm.fast_model }}</span></li>{% endif %}
+    <li><span class="grow">Reads photos</span><span>{{ "yes" if llm.images else "no" }}</span></li>
+  </ul>
+</div>
+<h2>Last eval result</h2>
+<div class="card">
+  <ul class="rows">
+  {% for result in evals %}
+    <li><span class="grow">{{ result.provider }} <span class="muted">{{ result.model }}, {{ when(result.at) }}</span></span>
+        <span{% if result.passed < result.total %} class="low"{% endif %}>{{ result.passed }} of {{ result.total }} passed</span>
+        {% if result.failed %}<pre>{{ result.failed | join("\n") }}</pre>{% endif %}</li>
+  {% else %}<li class="muted">No eval result on this machine. The suite writes one where it is run.</li>{% endfor %}
+  </ul>
+</div>
+<h2>Stock check</h2>
+<div class="card">
+  {% if drift %}
+  <p class="out">Stock differs from the event log in {{ drift | length }} place{{ "" if drift | length == 1 else "s" }}.</p>
+  <ul class="rows">
+  {% for row in drift %}
+    <li><span class="grow">{{ row.item }} <span class="muted">{{ row.location }}</span></span>
+        <span>shown as {{ side(row.live) }}; the log says {{ side(row.replayed) }}</span></li>
+  {% endfor %}
+  </ul>
+  {% else %}
+  <p>Stock matches the event log: {{ stock_rows }} row{{ "" if stock_rows == 1 else "s" }} checked.</p>
+  {% endif %}
+  <form hx-post="/dashboard/system/rebuild-stock" hx-target="#system">
+    <button class="quiet">Rebuild stock from the event log</button>
+  </form>
+  <p class="muted">Replays every inventory event in order and replaces the stock table with the result. Nothing in
+     the log changes, and a rebuild that changed something can be undone from Activity.</p>
+</div>
+<h2>Export</h2>
+<div class="card">
+  <p><a href="/dashboard/system/export" download="household-export.json">Download everything as JSON</a></p>
+  <p class="muted">Every table for this household: messages, stock, events, reminders, the lot. Login, invite,
+     presence and calendar tokens are left out. Keep the file private.</p>
+</div>
+<h2>Version</h2>
+<div class="card"><p>{{ version }} <span class="muted">database at migration {{ migration }}</span></p></div>
