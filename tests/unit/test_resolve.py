@@ -10,6 +10,7 @@ from app.agent.resolve import (
     normalise,
     resolve_item,
     resolve_location,
+    variety_of,
 )
 from app.db import fetch_one, tx
 from tests.helpers import add_item, location_id_of, seed_home
@@ -143,3 +144,25 @@ async def test_locations_resolve_by_name_alias_and_spelling_then_get_created():
         assert (await resolve_location(conn, home.id, "frezer")).id == ids["freezer"]
         garage = await resolve_location(conn, home.id, "garage")
         assert isinstance(garage, Match) and garage.created and garage.id not in ids.values()
+
+
+async def test_variety_of_names_the_household_item_a_new_name_ends_with():
+    async with tx() as conn:
+        home = await seed_home(conn)
+        await add_item(conn, home, "milk", location="fridge")
+        await add_item(conn, home, "egg", location="fridge")
+        await add_item(conn, home, "rice")
+        await add_item(conn, home, "toilet roll", aliases=["loo roll"])
+        await add_item(conn, home, "Bell pepper", location="fridge")
+
+        async def of(raw):
+            return await variety_of(conn, home.id, raw)
+
+        assert await of("Semi Skimmed Milk") == ["milk (fridge)"]
+        assert await of("a dozen free range eggs") == ["egg (fridge)"]      # normalised like any other name
+        assert await of("quilted loo roll") == ["toilet roll (store)"]      # an alias counts
+        assert await of("egg fried rice") == ["rice (store)"]               # the end of the name, not the start
+        # Not a variety: the item itself, a spelling of it, a word that only contains it, the name in front.
+        for raw in ("milk", "eggs", "bell peper", "price", "ice", "milkshake", "rice cake", "milk chocolate", "yam"):
+            assert await of(raw) == [], raw
+        assert await fetch_one(conn, "select 1 from items where canonical_name ilike '%skimmed%'") is None

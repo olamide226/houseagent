@@ -93,6 +93,32 @@ async def test_new_item_is_reported_and_goes_to_the_stated_location():
         assert await stock_of(conn, home) == {("Scotch bonnet", "freezer"): (None, "in_stock")}
 
 
+async def test_a_name_ending_in_one_the_household_has_is_not_recorded_until_the_model_says_which_it_is():
+    async with tx() as conn:
+        home = await seed_home(conn)
+        await add_item(conn, home, "milk", location="fridge", staple=True, qty=0, status="out")
+        ctx = ctx_for(conn, home)
+        await run_tool("update_shopping_list", {"add": [{"item": "milk"}]}, ctx)
+        result = await log(ctx, change("semi skimmed milk", "restocked", quantity=2), change("coconut milk", "restocked"),
+                           change("bleach", "restocked"), source="receipt")
+        ask = ("ERROR: '{}' not recorded. The household already has milk (fridge). Decide which this is without "
+               "asking: the same thing, then log it again under that name; a different product, then log it "
+               "again with new_item true")
+        assert result.splitlines() == [ask.format("semi skimmed milk"), ask.format("coconut milk"),
+                                       "NEW: bleach", "OK: bleach restocked (store)"]
+        assert [e[0] for e in await events_of(conn, home)] == ["bleach"]
+        assert await active_list(conn, home) == {"milk": "explicit"}
+
+        # The model answers: one is the household's milk, the other is something else.
+        result = await log(ctx, change("milk", "restocked", quantity=2),
+                           change("coconut milk", "restocked", new_item=True), source="receipt")
+        assert "NEW: coconut milk" in result and "ERROR" not in result
+        assert await stock_of(conn, home) == {("bleach", "store"): (None, "in_stock"), ("milk", "fridge"): (D(2), "in_stock"),
+                                              ("coconut milk", "store"): (None, "in_stock")}
+        assert await active_list(conn, home) == {}
+        assert "ERROR" not in await log(ctx, change("coconut milk", "finished"))     # known from now on
+
+
 async def test_ambiguous_name_is_skipped_while_other_changes_apply():
     async with tx() as conn:
         home = await seed_home(conn)

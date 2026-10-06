@@ -119,6 +119,25 @@ async def match_location(conn: AsyncConnection, household_id: str, raw: str) -> 
     return decide(await _candidates(conn, _LOCATIONS, household_id, " ".join(raw.lower().split())))
 
 
+_ENDS_WITH = """
+select i.canonical_name as name, l.name as detail
+from items i left join locations l on l.id = i.default_location_id
+where i.household_id = :household
+  and (right(:key, length(i.canonical_name) + 1) = ' ' || lower(i.canonical_name)
+       or exists (select 1 from unnest(i.aliases) a where right(:key, length(a) + 1) = ' ' || a))
+order by length(i.canonical_name) desc, i.canonical_name limit 3"""
+
+
+async def variety_of(conn: AsyncConnection, household_id: str, raw: str) -> list[str]:
+    """For a name that matches nothing: the household's items it ends with, "rice" for "basmati
+    rice". Code cannot tell a variety ("semi skimmed milk") from another product ("coconut milk"),
+    so the caller asks the model before a second item is created beside the first."""
+    if await match_item(conn, household_id, raw) is not None:
+        return []
+    rows = await fetch_all(conn, _ENDS_WITH, household=household_id, key=normalise(raw).lower())
+    return [f"{row['name']} ({row['detail']})" if row["detail"] else row["name"] for row in rows]
+
+
 async def resolve_item(
     conn: AsyncConnection, household_id: str, raw: str, location_id: str | None = None
 ) -> Match | Ambiguous:

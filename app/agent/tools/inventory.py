@@ -7,7 +7,14 @@ from pydantic import BaseModel, Field
 
 from app.agent.actions import record
 from app.agent.base import Ctx
-from app.agent.resolve import Ambiguous, match_item, match_location, resolve_item, resolve_location
+from app.agent.resolve import (
+    Ambiguous,
+    match_item,
+    match_location,
+    resolve_item,
+    resolve_location,
+    variety_of,
+)
 from app.services import inventory
 
 
@@ -22,6 +29,9 @@ class InventoryChange(BaseModel):
     location: str | None = Field(
         None, description="fridge, freezer, store, or a custom location. Omit for usual place.")
     expires_on: date | None = None
+    new_item: bool = Field(False, description=(
+        "Leave false. True only after a result asked whether this is an item the household already has, "
+        "and it is a different product"))
 
 
 class LogInventory(BaseModel):
@@ -48,6 +58,12 @@ async def log_inventory(ctx: Ctx, args: LogInventory) -> str:
                                      f"{', '.join(location.options)}. Nothing recorded for {change.item}.")
                     continue
                 location_id = location.id
+            if not change.new_item and (known := await variety_of(ctx.conn, ctx.household_id, change.item)):
+                rec.lines.append(
+                    f"ERROR: '{change.item}' not recorded. The household already has {', '.join(known)}. Decide "
+                    "which this is without asking: the same thing, then log it again under that name; a "
+                    "different product, then log it again with new_item true")
+                continue
             item = await resolve_item(ctx.conn, ctx.household_id, change.item, location_id)
             if isinstance(item, Ambiguous):
                 rec.lines.append(f"AMBIGUOUS: '{change.item}' could be {', '.join(item.options)}")
