@@ -120,7 +120,8 @@ def anthropic_client(provider):
 
 async def test_anthropic_request_translation():
     provider = Provider(anthropic_reply([{"type": "text", "text": "ACK"}]))
-    history = [ChatMessage(role="assistant", content=[TextPart(text="stale greeting")]), *conversation()]
+    history = [ChatMessage(role="assistant", content=[TextPart(text="Probably running low: milk. Add it?")]),
+               *conversation()]
     await anthropic_client(provider).complete(SYSTEM, history, TOOLS, max_tokens=256)
     sent = provider.sent()
     assert str(provider.requests[0].url) == "http://llm.test/v1/messages"
@@ -130,7 +131,10 @@ async def test_anthropic_request_translation():
                               {"type": "text", "text": "Now: Monday"}]
     assert sent["tools"] == [{"name": "log_inventory", "description": "Record stock",
                               "input_schema": {"type": "object", "properties": {}}}]
-    user, assistant, results = sent["messages"]          # the leading assistant turn is dropped
+    # A user turn must lead. What we said first is kept, behind a placeholder: the reply answers it.
+    placeholder, said, user, assistant, results = sent["messages"]
+    assert placeholder == {"role": "user", "content": [{"type": "text", "text": "[earlier messages not shown]"}]}
+    assert said == {"role": "assistant", "content": [{"type": "text", "text": "Probably running low: milk. Add it?"}]}
     assert user == {"role": "user", "content": [
         {"type": "text", "text": "Ola: out of eggs"},
         {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": "aGVsbG8="}}]}

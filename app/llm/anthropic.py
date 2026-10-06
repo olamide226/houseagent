@@ -15,6 +15,9 @@ from app.llm.types import (
 )
 
 _STOP = {"end_turn": "end", "stop_sequence": "end", "tool_use": "tool_calls", "max_tokens": "length"}
+# The API wants a user turn first. A thread can begin with something we said (a reminder, a
+# prompt), and the answer to it makes no sense without it, so it is kept behind this placeholder.
+EARLIER = "[earlier messages not shown]"
 
 
 def _blocks(m: ChatMessage) -> list[Any]:
@@ -39,8 +42,10 @@ def _messages(messages: list[ChatMessage]) -> list[dict[str, Any]]:
     for m in messages:
         role = "assistant" if m.role == "assistant" else "user"
         blocks = _blocks(m)
-        if not blocks or (not wire and role == "assistant"):
+        if not blocks:
             continue
+        if not wire and role == "assistant":
+            wire.append({"role": "user", "content": [{"type": "text", "text": EARLIER}]})
         if wire and wire[-1]["role"] == role:
             wire[-1]["content"] += blocks
         else:
