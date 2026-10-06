@@ -12,7 +12,9 @@ from app.services import inventory
 
 
 class InventoryChange(BaseModel):
-    item: str = Field(description="Natural name, e.g. 'eggs', 'Indomie', 'chicken thighs'")
+    item: str = Field(description=(
+        "Natural name, e.g. 'eggs', 'Indomie', 'chicken thighs'. From a receipt line or a pack label, "
+        "the everyday name the family would say: 'milk' for 'SEMI SKIMMED MILK 2 PINTS'"))
     action: Literal["added", "used", "low", "finished", "restocked", "adjusted", "discarded"] = Field(
         description="low = running low; finished = none left; adjusted = absolute count seen (photos)")
     quantity: float | None = Field(None, description="Only if stated or clearly visible. Never guess.")
