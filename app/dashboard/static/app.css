@@ -38,3 +38,4 @@ pre { white-space: pre-wrap; margin: .35rem 0 0; font-size: .85rem; color: var(-
 .stat { font-size: 1.6rem; font-weight: 600; }
 .qr svg { width: 12rem; height: 12rem; background: #fff; border-radius: .4rem; }
 code { font-size: 1.1rem; letter-spacing: .08em; }
+code.plain { font-size: inherit; letter-spacing: 0; }

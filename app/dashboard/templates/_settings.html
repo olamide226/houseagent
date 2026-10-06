@@ -22,6 +22,57 @@
   </ul>
   <p class="muted">Reminders wait until quiet hours end, unless urgent. Clear both times to turn them off.</p>
 </div>
+<h2>Arriving at the shops</h2>
+<div class="card">
+  {% if presence %}
+  <p>{{ presence.name }}'s personal link. It is shown only this once, so copy it now and keep it private:</p>
+  <p><input type="text" readonly value="{{ presence.url }}" onfocus="this.select()"></p>
+  <p>On {{ presence.name }}'s iPhone, once per place: Shortcuts, Automation, New, <strong>Arrive</strong>,
+    choose the place, set <strong>Run Immediately</strong>, then add the action <strong>Get Contents of URL</strong>
+    with this link, method <strong>POST</strong>, and a <strong>JSON</strong> request body with two text fields:
+    <code class="plain">event</code> = <code class="plain">enter</code> and <code class="plain">place</code> = the
+    place's name exactly as listed under Places. For home, add one more with <strong>Leave</strong> and
+    <code class="plain">event</code> = <code class="plain">exit</code>.</p>
+  {% endif %}
+  <ul class="rows">
+  {% for member in family if member.role == "adult" %}
+    <li>
+      <span class="grow">{{ member.name }}
+        <span class="muted">{{ "has a link" if member.has_presence_link else "no link yet" }}</span></span>
+      <button class="quiet" hx-post="/dashboard/settings/presence/{{ member.id }}" hx-target="#settings">
+        {{ "Replace link" if member.has_presence_link else "Make link" }}</button>
+    </li>
+  {% endfor %}
+  </ul>
+  <p class="muted">A phone automation calls a person's link when they reach a shop, and they are sent the list
+    for that shop. Replacing a link stops the old one working, so the phone's automations need the new one.</p>
+</div>
+<h2>Places</h2>
+<div class="card">
+  <ul class="rows">
+  {% for place in places %}
+    <li>
+      <span class="grow">{{ place.name }}</span>
+      <form hx-post="/dashboard/settings/places" hx-target="#settings">
+        <input type="hidden" name="name" value="{{ place.name }}">
+        <select name="kind" aria-label="Kind of place">
+          {% for kind in kinds %}<option value="{{ kind }}"{% if kind == place.kind %} selected{% endif %}>{{ kind }}</option>{% endfor %}
+        </select>
+        <button class="quiet">Save</button>
+      </form>
+    </li>
+  {% else %}<li class="muted">No places yet. Tell the assistant where you shop, or add a place here.</li>{% endfor %}
+  </ul>
+  <form hx-post="/dashboard/settings/places" hx-target="#settings">
+    <input type="text" name="name" placeholder="Place, e.g. Tesco Extra" required>
+    <select name="kind" aria-label="Kind of place">
+      {% for kind in kinds %}<option value="{{ kind }}"{% if kind == "store" %} selected{% endif %}>{{ kind }}</option>{% endfor %}
+    </select>
+    <button>Add</button>
+  </form>
+  <p class="muted">A phone names a place exactly as it is written here. Only a <em>store</em> sends its list on
+    arrival; a name a phone sends that is not here yet appears as <em>other</em>.</p>
+</div>
 <h2>Facts</h2>
 <div class="card">
   <ul class="rows">

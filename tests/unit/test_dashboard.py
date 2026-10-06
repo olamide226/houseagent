@@ -125,12 +125,13 @@ async def test_every_post_needs_the_csrf_token(client):
              f"/dashboard/calendar/events/{nothing}/cancel", f"/dashboard/calendar/reminders/{nothing}/cancel",
              "/dashboard/family/add", f"/dashboard/family/{home.ola}/invite", "/dashboard/settings/brief",
              f"/dashboard/settings/quiet/{home.ola}", "/dashboard/settings/facts",
+             f"/dashboard/settings/presence/{home.ola}", "/dashboard/settings/places",
              "/dashboard/channels/whatsapp/group", f"/dashboard/channels/threads/{nothing}/primary",
              f"/dashboard/channels/threads/{nothing}/invite", f"/dashboard/channels/threads/{nothing}/forget"]
     for path in posts:
         form = {"item": "eggs", "text": "hi", "title": "GP", "when": "2030-01-01T10:00", "name": "Ada",
                 "at": "05:00", "start": "20:00", "end": "08:00", "key": "milk", "value": "Arla",
-                "subject": "Adebayo family"}
+                "subject": "Adebayo family", "kind": "store"}
         assert (await client.post(path, data=form)).status_code == 403
         assert (await client.post(path, data=form, headers={"X-CSRF-Token": "0" * 64})).status_code == 403
     async with tx() as conn:
@@ -138,9 +139,10 @@ async def test_every_post_needs_the_csrf_token(client):
         assert await fetch_all(conn, "select 1 from events") == []
         assert await fetch_one(conn, "select calendar_token_hash, digest_time from households") == {
             "calendar_token_hash": None, "digest_time": time(7, 30)}
-        assert await fetch_all(conn, "select name, invite_code_hash, quiet_start from members") == [
-            {"name": "Ola", "invite_code_hash": None, "quiet_start": time(21, 30)}]
+        assert await fetch_all(conn, "select name, invite_code_hash, quiet_start, presence_token_hash from members") == [
+            {"name": "Ola", "invite_code_hash": None, "quiet_start": time(21, 30), "presence_token_hash": None}]
         assert await fetch_all(conn, "select 1 from household_facts") == []
+        assert await fetch_all(conn, "select 1 from places") == []
         assert await fetch_all(conn, "select 1 from threads") == []
     # The token also works as a form field, for plain form posts.
     added = await client.post("/dashboard/shopping/add", data={"item": "eggs", "csrf": csrf["X-CSRF-Token"]})
@@ -611,14 +613,112 @@ async def test_family_and_settings_cannot_reach_another_household(client):
     for path, form in ((f"/dashboard/family/{stranger}/invite", {}),
                        (f"/dashboard/family/{stranger}/revoke", {}),
                        (f"/dashboard/settings/quiet/{stranger}", {"start": "10:00", "end": "11:00"}),
+                       (f"/dashboard/settings/presence/{stranger}", {}),
                        ("/dashboard/settings/facts", {"key": "note", "value": "x", "member_id": stranger})):
-        assert 'class="error"' in (await client.post(path, data=form, headers=csrf)).text
+        response = (await client.post(path, data=form, headers=csrf)).text
+        assert 'class="error"' in response and "testserver/presence/" not in response
     page = (await client.get("/dashboard/family")).text + (await client.get("/dashboard/settings")).text
     assert "Sam" not in page
     async with tx() as conn:
-        sam = await fetch_one(conn, "select invite_code_hash, quiet_start from members where id = :m", m=stranger)
-        assert sam == {"invite_code_hash": None, "quiet_start": time(21, 30)}
+        sam = await fetch_one(conn, "select invite_code_hash, quiet_start, presence_token_hash from members "
+                                    "where id = :m", m=stranger)
+        assert sam == {"invite_code_hash": None, "quiet_start": time(21, 30), "presence_token_hash": None}
         assert await fetch_all(conn, "select 1 from household_facts") == []
+
+
+async def test_settings_makes_and_replaces_a_presence_link_that_is_shown_once_and_works(client):
+    async with tx() as conn:
+        home = await seed_home(conn)
+        ada = await add_member(conn, home, "Ada", telegram_id="1002")
+        tobi = await add_member(conn, home, "Tobi", role="child")
+        await execute(conn, "insert into places (household_id, name, kind) values (:h, 'Tesco Extra', 'store')", h=home.id)
+        await add_item(conn, home, "egg")
+        await execute(conn, "insert into shopping_list_items (household_id, item_id, reason) "
+                            "select household_id, id, 'explicit' from items")
+    csrf = await login(client, home)
+    link = re.compile(r'value="(http://testserver/presence/([\w-]{43}))"')
+    page = (await client.get("/dashboard/settings")).text
+    assert page.count("no link yet") == 2 and "Make link" in page and "testserver/presence/" not in page and "Tobi" not in \
+        page.split("Arriving at the shops")[1].split("<h2>Places")[0]
+
+    made = (await client.post(f"/dashboard/settings/presence/{ada}", headers=csrf)).text
+    (url, token), = link.findall(made)
+    assert "Ada's personal link" in made and "Run Immediately" in made and "Replace link" in made
+    assert "testserver/presence/" not in (await client.get("/dashboard/settings")).text        # shown that once only
+    async with tx() as conn:
+        stored = await fetch_val(conn, "select presence_token_hash from members where id = :m", m=ada)
+        (action,) = await fetch_all(conn, "select source, tool, args, result, inverse from agent_actions")
+    assert stored and token not in stored and token not in json.dumps(action)
+    assert (action["source"], action["tool"], action["inverse"]) == ("dashboard", "settings.presence", [])
+
+    # The link is Ada's: her phone calling it at the shop queues the list for her.
+    assert (await client.post(url.removeprefix("http://testserver"),
+                              json={"event": "enter", "place": "Tesco Extra"})).status_code == 204
+    async with tx() as conn:
+        assert await fetch_all(conn, "select member_id, urgency from outbox") == [{"member_id": ada, "urgency": "high"}]
+
+    # Replacing it stops the old link working at once.
+    replaced = (await client.post(f"/dashboard/settings/presence/{ada}", headers=csrf)).text
+    (new_url, _), = link.findall(replaced)
+    async with tx() as conn:
+        await execute(conn, "delete from nudge_log")
+    await client.post(url.removeprefix("http://testserver"), json={"event": "enter", "place": "Tesco Extra"})
+    async with tx() as conn:
+        assert len(await fetch_all(conn, "select 1 from outbox")) == 1
+    await client.post(new_url.removeprefix("http://testserver"), json={"event": "enter", "place": "Tesco Extra"})
+    async with tx() as conn:
+        assert len(await fetch_all(conn, "select 1 from outbox")) == 2
+
+    refused = (await client.post(f"/dashboard/settings/presence/{tobi}", headers=csrf)).text
+    assert 'class="error"' in refused and "testserver/presence/" not in refused
+    async with tx() as conn:
+        assert await fetch_val(conn, "select presence_token_hash from members where id = :m", m=tobi) is None
+
+
+async def test_settings_adds_places_and_a_place_a_phone_named_sends_its_list_once_it_is_made_a_store(client):
+    async with tx() as conn:
+        home = await seed_home(conn)
+        token = await members.new_presence_token(conn, home.ola)
+        await add_item(conn, home, "egg")
+        await execute(conn, "insert into shopping_list_items (household_id, item_id, reason) "
+                            "select household_id, id, 'explicit' from items")
+        other, _ = await households.create_household(conn, "Other", "Europe/London", "Sam")
+        await execute(conn, "insert into places (household_id, name, kind) values (:h, 'Their gym', 'other')", h=other)
+    csrf = await login(client, home)
+
+    async def places():
+        async with tx() as conn:
+            return {r["name"]: r["kind"] for r in await fetch_all(
+                conn, "select name, kind from places where household_id = :h", h=home.id)}
+
+    arrive = {"event": "enter", "place": "Corner shop"}
+    await client.post(f"/presence/{token}", json=arrive)                 # the phone names a place nobody added
+    page = (await client.get("/dashboard/settings")).text
+    assert await places() == {"Corner shop": "other"} and "Corner shop" in page and "Their gym" not in page
+    async with tx() as conn:
+        assert await fetch_all(conn, "select 1 from outbox") == []
+
+    await client.post("/dashboard/settings/places", data={"name": "corner shop", "kind": "store"}, headers=csrf)
+    await client.post("/dashboard/settings/places", data={"name": " Home ", "kind": "home"}, headers=csrf)
+    await client.post("/dashboard/settings/places", data={"name": "Their gym", "kind": "clinic"}, headers=csrf)
+    assert await places() == {"Corner shop": "store", "Home": "home", "Their gym": "clinic"}
+    await client.post(f"/presence/{token}", json=arrive)
+    async with tx() as conn:
+        assert [r["text"] for r in await fetch_all(conn, "select text from outbox")] == [
+            "You're at Corner shop. On the list:\n- egg"]
+        assert await fetch_val(conn, "select kind from places where household_id = :h", h=other) == "other"
+
+    for form in ({"name": "Lidl", "kind": "supermarket"}, {"name": "  ", "kind": "store"}):
+        assert 'class="error"' in (await client.post("/dashboard/settings/places", data=form, headers=csrf)).text
+    assert "Lidl" not in await places()
+
+    # Logged as dashboard actions, and undo puts the kind back.
+    async with tx() as conn:
+        logged = await fetch_all(conn, "select id, source, tool, result from agent_actions order by created_at")
+    assert [(a["source"], a["tool"]) for a in logged] == [("dashboard", "settings.place")] * 3
+    assert logged[0]["result"] == "OK: corner shop is a place of kind store"
+    await client.post(f"/dashboard/activity/actions/{logged[0]['id']}/undo", headers=csrf)
+    assert (await places())["Corner shop"] == "other"
 
 
 # ---------------------------------------------------------------- Channels

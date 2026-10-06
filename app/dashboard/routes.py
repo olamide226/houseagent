@@ -472,14 +472,16 @@ async def channels_group(request: Request, channel: str, subject: str = Form(...
 
 # ---------------------------------------------------------------- Settings
 async def _settings(request: Request, session: Session, template: str = "_settings.html",
-                    error: str | None = None) -> Response:
+                    error: str | None = None, presence: dict[str, str] | None = None) -> Response:
     async with tx() as conn:
         context = {
             "family": await members.family(conn, session.household_id, utcnow()),
             "facts": await households.facts(conn, session.household_id),
             "digest_time": await households.digest_time(conn, session.household_id),
+            "places": await households.places(conn, session.household_id),
         }
-    return _page(request, template, session, error=error, **context)
+    return _page(request, template, session, error=error, presence=presence, kinds=households.PLACE_KINDS,
+                 **context)
 
 
 def _clock(value: str) -> time | None:
@@ -524,6 +526,32 @@ async def settings_fact(request: Request, key: str = Form(...), value: str = For
 
     args = {"key": key, "value": value, "member_id": member_id}
     return await _settings(request, session, error=await _write(session, "settings.fact", args, change))
+
+
+@router.post("/settings/presence/{member_id}")
+async def settings_presence(request: Request, member_id: str, session: Session = Depends(require_csrf)) -> Response:
+    """A new personal presence link for an adult. Only the token's hash is kept, so the link is
+    shown this once and the adult's earlier link stops working."""
+    shown: dict[str, str] = {}
+
+    async def change(rec: Recorder) -> None:
+        token = await members.presence_link(rec, member_id)
+        shown.update(name=await members.name_of(rec.ctx.conn, member_id), url=households.presence_url(token))
+
+    error = await _write(session, "settings.presence", {"member_id": member_id}, change)
+    return await _settings(request, session, error=error, presence=shown if shown and not error else None)
+
+
+@router.post("/settings/places")
+async def settings_place(request: Request, name: str = Form(...), kind: str = Form(...),
+                         session: Session = Depends(require_csrf)) -> Response:
+    """Add a place, or say what kind of place one is: a shop only sends its list once it is a `store`."""
+    async def change(rec: Recorder) -> None:
+        await households.set_place(rec, name, kind)
+        rec.lines.append(f"OK: {' '.join(name.split())} is a place of kind {kind}")
+
+    error = await _write(session, "settings.place", {"name": name, "kind": kind}, change)
+    return await _settings(request, session, error=error)
 
 
 # ---------------------------------------------------------------- Activity
