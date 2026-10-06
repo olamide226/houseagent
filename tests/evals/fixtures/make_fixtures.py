@@ -62,6 +62,10 @@ if __name__ == "__main__":
         ("TOMATOES X6", "0.95"), ("ONIONS 1KG", "1.10"), ("BLEACH 750ML", "0.85"), ("TOILET ROLL 9PK", "4.25"),
         ("CARRIER BAG", "0.30"),
     ], [("LOYALTY SAVING", "-1.00"), ("TOTAL", "22.69"), ("CARD", "22.69")])
+    receipt("receipt_corner_shop.png", "HILLTOP GROCERS", [
+        ("ORGANIC UNSALTED BUTTER 250G", "2.40"), ("LONG GRAIN RICE 2KG", "3.15"), ("LARGE WHITE ONIONS 1KG", "1.05"),
+        ("COCONUT MILK 400ML", "1.10"), ("KITCHEN FOIL 10M", "1.75"),
+    ], [("MEMBER DISCOUNT", "-0.50"), ("TOTAL", "8.95"), ("CONTACTLESS", "8.95")])
     shelves("fridge.png", "FRIDGE", [
         [("MILK", (245, 245, 250)), ("MILK", (245, 245, 250)), ("ORANGE\nJUICE", (255, 190, 90))],
         [("EGGS\n6", (235, 215, 180)), ("BUTTER", (250, 235, 150)), ("CHEDDAR\nCHEESE", (245, 200, 110))],

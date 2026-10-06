@@ -75,3 +75,18 @@
   turns: [{from: Ada, text: "Please don't message me after 8pm, or before 7 in the morning"}]
   expect:
     quiet: {Ada: "20:00-07:00", Ola: "21:30-07:00"}
+
+- name: quiet hours for the speaker alone, said another way
+  turns: [{from: Ola, text: "I don't want any messages between 9pm and 6am"}]
+  expect:
+    quiet: {Ola: "21:00-06:00", Ada: "21:30-07:00"}
+
+- name: quiet hours for the other adult by name
+  turns: [{from: Ola, text: "Ada doesn't want to be messaged after 7pm or before 8 in the morning"}]
+  expect:
+    quiet: {Ada: "19:00-08:00", Ola: "21:30-07:00"}
+
+- name: quiet hours for both adults when both are meant
+  turns: [{from: Ada, text: "From now on keep quiet for the two of us from 10:30pm until 6:45am"}]
+  expect:
+    quiet: {Ola: "22:30-06:45", Ada: "22:30-06:45"}

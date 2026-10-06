@@ -49,3 +49,34 @@
   seed: {items: [{name: Bell pepper, stock: {fridge: 2}}, {name: Black pepper, stock: {store: 1}}]}
   turns: [{from: Ola, text: "we're out of pepper"}]
   expect: {events: [], shopping_list_active: [], reply: text}
+
+- name: a finished item that is not a staple stays off the list
+  seed: {items: [{name: ketchup, stock: {store: 1}}]}
+  turns: [{from: Ola, text: "we've finished the ketchup"}]
+  expect:
+    events: [{item: ketchup, type: finished}]
+    stock: {ketchup: {status: out}}
+    shopping_list_active: []
+
+- name: a finished item that is not a staple is listed when the person asks
+  seed: {items: [{name: bread, stock: {store: 1}}]}
+  turns: [{from: Ola, text: "we're out of bread, stick it on the list"}]
+  expect:
+    events: [{item: bread, type: finished}]
+    shopping_list_active: [bread]
+
+- name: two things run out in the group and only the staple is listed
+  seed: {items: [{name: oats, staple: true, stock: {store: 1}}, {name: honey, stock: {store: 1}}]}
+  turns: [{from: Ada, scope: group, text: "No more oats, and the honey's gone too"}]
+  expect:
+    events: [{item: oats, type: finished}, {item: honey, type: finished}]
+    shopping_list_active: [oats]
+
+- name: a purchase described at length is the household's own item, restocked once
+  seed: {items: [{name: egg, staple: true, stock: {fridge: 0}}], list: [egg]}
+  turns: [{from: Ola, text: "picked up a box of large free range eggs on the way home"}]
+  expect:
+    events: [{item: egg, type: [restocked, added]}]
+    new_items_max: 0
+    stock: {egg: {status: in_stock}}
+    shopping_list_active: []

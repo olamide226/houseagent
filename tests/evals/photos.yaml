@@ -72,3 +72,22 @@
     events_all: {type: adjusted, source: photo, location: freezer}
     events_max: 4
     stock: {prawn: {status: in_stock, qty: 1}}
+
+- name: receipt lines land on the household's own items and a different product stays separate
+  seed:
+    items:
+      - {name: butter, staple: true, stock: {fridge: 0}}
+      - {name: rice, staple: true, stock: {store: 0}}
+      - {name: onion, stock: {store: 1}}
+      - {name: milk, staple: true, stock: {fridge: 0}}
+    list: [butter, rice, milk]
+  turns: [{from: Ada, text: "today's shop", photos: [receipt_corner_shop.png]}]
+  expect:
+    events_include:
+      - {item_contains: coconut, type: [restocked, added]}
+      - {item_contains: foil, type: [restocked, added]}
+    events_all: {type: [restocked, added], source: receipt}
+    events_max: 5
+    new_items_max: 2          # coconut milk and foil; butter, rice and onions are already the household's
+    stock: {butter: {status: in_stock}, rice: {status: in_stock}, milk: {status: out}}
+    shopping_list_active: [milk]     # coconut milk is not the milk that was asked for

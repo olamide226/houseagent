@@ -47,6 +47,8 @@ RESULTS = HERE / ".results"
 API_KEY = os.environ.get("EVAL_API_KEY") or os.environ.get("DEEPSEEK_API_KEY", "")
 MODEL = os.environ.get("EVAL_MODEL", "deepseek-flash")
 NOW = "2026-10-05 12:00"
+SAMPLES = int(os.environ.get("EVAL_SAMPLES", "1"))   # runs of each case; one run says little about a flaky one
+TRACE = os.environ.get("EVAL_TRACE") == "1"          # print each turn's tool calls and reply (run pytest with -s)
 ENDPOINTS = {
     "openai_compat": os.environ.get("EVAL_OPENAI_BASE_URL") or os.environ.get("DEEPSEEK_OPENAI_BASE_URL"),
     "anthropic": os.environ.get("EVAL_ANTHROPIC_BASE_URL") or os.environ.get("DEEPSEEK_ANTHROPIC_BASE_URL"),
@@ -178,17 +180,20 @@ async def observed(home: Any) -> dict[str, Any]:
         staples = await fetch_all(
             conn, "select lower(canonical_name) as item from items where household_id = :h and is_staple", h=home.id)
         sends = await fetch_all(conn, "select text, target, member_id from outbox where household_id = :h", h=home.id)
+        items = await fetch_all(conn, "select canonical_name from items where household_id = :h", h=home.id)
     return {"events": events, "stock": stock, "active": sorted(row["item"] for row in active), "actions": actions,
             "asked_for": sorted(row["item"] for row in active if row["reason"] != "predicted"),
             "calendar": booked, "reminders": reminders, "family": family, "household": household, "facts": facts,
-            "shops": [row["name"] for row in shops], "staples": [row["item"] for row in staples], "sends": sends}
+            "shops": [row["name"] for row in shops], "staples": [row["item"] for row in staples], "sends": sends,
+            "items": [row["canonical_name"] for row in items]}
 
 
 def key(name: str) -> str:
     return normalise(name).lower()
 
 
-def check(expect: dict[str, Any], seen: dict[str, Any], seeded_list: list[str], last_reply: str) -> None:
+def check(expect: dict[str, Any], seen: dict[str, Any], seed: dict[str, Any], last_reply: str) -> None:
+    seeded_list = seed.get("list", [])
     if "events" in expect:
         assert len(seen["events"]) == len(expect["events"]), f"events: {seen['events']}"
         remaining = list(seen["events"])
@@ -210,6 +215,8 @@ def check(expect: dict[str, Any], seen: dict[str, Any], seeded_list: list[str], 
         assert all(e[name] in allowed for e in seen["events"]), f"{name} not in {allowed}: {seen['events']}"
     if "events_max" in expect:
         assert len(seen["events"]) <= expect["events_max"], f"too many events: {seen['events']}"
+    if "new_items_max" in expect:   # a purchase logged under a new name beside the household's own item
+        assert len(seen["items"]) - len(seed.get("items", [])) <= expect["new_items_max"], f"items: {seen['items']}"
     if "shopping_list_active" in expect:
         assert seen["active"] == sorted(key(name) for name in expect["shopping_list_active"])
     for name, wanted in expect.get("stock", {}).items():
@@ -339,16 +346,20 @@ async def _bridge():
     await task
 
 
+@pytest.mark.parametrize("sample", range(1, SAMPLES + 1), ids=lambda sample: f"run{sample}")
 @pytest.mark.parametrize("provider", PROVIDERS)
 @pytest.mark.parametrize("suite,case", CASES, ids=[f"{suite}:{case['name']}" for suite, case in CASES])
-async def test_case(provider: str, suite: str, case: dict[str, Any]) -> None:
+async def test_case(provider: str, suite: str, case: dict[str, Any], sample: int) -> None:
     if not LETTA and not (API_KEY and ENDPOINTS[provider]):
         pytest.skip(f"no credentials for {provider}")
     now = london(case.get("now", NOW))
     home = await seed(case, now)
     runtime = make_runtime(provider)
     reply = ""
-    outcomes.setdefault(provider, {})[f"{suite}:{case['name']}"] = "failed"
+    name = f"{suite}:{case['name']}" + (f" #{sample}" if SAMPLES > 1 else "")
+    outcomes.setdefault(provider, {})[name] = "failed"
+    if TRACE:
+        print(f"\n=== {name} on {provider}")
     for minutes, turn in enumerate(case["turns"]):
         async with tx() as conn:
             result = await simulate_turn(conn, runtime, home.id, home.members[turn["from"]], turn.get("text"),
@@ -356,10 +367,15 @@ async def test_case(provider: str, suite: str, case: dict[str, Any]) -> None:
                                          photos=[photo(name) for name in turn.get("photos", [])])
         usage_by_provider[provider] = usage_by_provider.get(provider, Usage()) + result.usage
         reply = "ACK" if result.ack_only else "NOOP" if result.noop else (result.reply or "")
+        if TRACE:
+            print(f"turn: {turn.get('text')!r} {turn.get('photos', '')}")
+            for call in result.tool_calls:
+                print(f"  tool {call.name} {call.args} -> {call.result!r}")
+            print(f"  reply: {reply!r}")
     seen = await observed(home)
-    check(case["expect"], seen, case.get("seed", {}).get("list", []), reply)
+    check(case["expect"], seen, case.get("seed", {}), reply)
     check_family(case["expect"], seen, home)
-    outcomes[provider][f"{suite}:{case['name']}"] = "passed"
+    outcomes[provider][name] = "passed"
 
 
 @pytest.fixture(scope="module", autouse=True)

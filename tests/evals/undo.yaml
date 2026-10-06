@@ -20,3 +20,22 @@
 - name: undo an appointment
   turns: [{from: Ola, text: "book the dentist for Friday at 2pm"}, {from: Ola, text: "undo that"}]
   expect: {calendar: [], calendar_cancelled: 0, reminders_scheduled: 0}
+
+- name: taking back a run-out, said another way
+  seed: {items: [{name: sugar, staple: true, stock: {store: 2}}]}
+  turns: [{from: Ada, text: "we've run out of sugar"}, {from: Ada, text: "oops, ignore that, I was wrong"}]
+  expect: {stock: {sugar: {status: in_stock, qty: 2}}, shopping_list_active: []}
+
+- name: taking back a list add, said another way
+  seed: {items: [{name: rice}], list: [rice]}
+  turns: [{from: Ada, text: "put kitchen foil on the shopping list"}, {from: Ada, text: "scrap that"}]
+  expect: {shopping_list_active: [rice]}
+
+- name: gone corrected to getting low
+  seed: {items: [{name: rice, staple: true, stock: {store: 3}}]}
+  turns:
+    - {from: Ada, text: "the rice is all gone"}
+    - {from: Ada, text: "sorry, not gone, it's just getting low"}
+  expect:
+    stock: {rice: {status: low, qty: 3}}
+    shopping_list_active: [rice]
