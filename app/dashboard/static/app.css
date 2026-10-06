@@ -32,6 +32,7 @@ form.stack { flex-direction: column; align-items: stretch; max-width: 24rem; }
 input, select, textarea, button { font: inherit; padding: .45rem .6rem; border: 1px solid var(--line);
                                   border-radius: .45rem; background: var(--card); color: var(--text); }
 input[type=text], textarea { flex: 1 1 9rem; min-width: 0; }
+input[readonly] { width: 100%; }   /* a link to copy: show as much of it as fits */
 button { cursor: pointer; background: var(--accent); border-color: var(--accent); color: var(--bg); }
 button.quiet { background: transparent; color: var(--accent); border-color: var(--line); }
 pre { white-space: pre-wrap; margin: .35rem 0 0; font-size: .85rem; color: var(--muted); }
