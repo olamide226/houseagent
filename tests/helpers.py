@@ -31,7 +31,7 @@ async def seed_home(conn: AsyncConnection, *, telegram_id: str | None = "1001", 
 
 
 async def add_member(conn: AsyncConnection, home: Home, name: str, *, role: str = "adult",
-                     telegram_id: str | None = None) -> str:
+                     telegram_id: str | None = None, whatsapp_id: str | None = None) -> str:
     member_id = str(await fetch_val(
         conn, "insert into members (household_id, name, role) values (:h, :name, :role) returning id",
         h=home.id, name=name, role=role,
@@ -39,13 +39,19 @@ async def add_member(conn: AsyncConnection, home: Home, name: str, *, role: str 
     home.members[name] = member_id
     if telegram_id:
         await link(conn, member_id, telegram_id)
+    if whatsapp_id:
+        await link(conn, member_id, whatsapp_id, "whatsapp")
     return member_id
 
 
-async def link(conn: AsyncConnection, member_id: str, telegram_id: str) -> None:
-    await execute(conn, "insert into channel_identities (member_id, channel, handle) "
-                        "values (:m, 'telegram', :handle)", m=member_id, handle=telegram_id)
-    await execute(conn, "update members set preferred_channel = 'telegram' where id = :m", m=member_id)
+async def link(conn: AsyncConnection, member_id: str, handle: str, channel: str = "telegram",
+               verified_at: Any = None) -> None:
+    """Connect a handle. The first channel linked becomes the preferred one, as when an invite is redeemed."""
+    await execute(conn, "insert into channel_identities (member_id, channel, handle, verified_at) "
+                        "values (:m, :channel, :handle, coalesce(cast(:at as timestamptz), now()))",
+                  m=member_id, channel=channel, handle=handle, at=verified_at)
+    await execute(conn, "update members set preferred_channel = coalesce(preferred_channel, :channel) "
+                        "where id = :m", m=member_id, channel=channel)
 
 
 async def add_item(conn: AsyncConnection, home: Home, name: str, *, location: str = "store",
@@ -149,15 +155,18 @@ class FakeLLM:
 class FakeAdapter:
     """A channel that records sends instead of making them."""
 
-    def __init__(self, channel: Any = None, *, reactions: bool = True, fail: Exception | None = None) -> None:
+    def __init__(self, channel: Any = None, *, reactions: bool = True, fail: Exception | None = None,
+                 window_hours: int | None = None, template: str | None = None) -> None:
         from app.core.envelope import Capabilities, Channel
 
         self.channel = channel or Channel.telegram
         self.capabilities = Capabilities(
             groups=True, reactions=reactions, ack_emoji="\U0001F44D", voice_in=True, images_in=True,
-            threaded_replies=True, proactive_window_hours=None, max_text_len=4096, formatting="plain")
+            threaded_replies=True, proactive_window_hours=window_hours, proactive_template=template,
+            max_text_len=4096, formatting="plain")
         self.fail = fail
         self.sent: list[tuple[str, str, str | None]] = []       # (chat, text, reply_to)
+        self.templates: list[tuple[str, str, list[str]]] = []   # (chat, template, params)
         self.reactions: list[tuple[str, str, str]] = []         # (chat, message, emoji)
         self.fetched: list[str] = []                            # external ids downloaded
 
@@ -168,6 +177,14 @@ class FakeAdapter:
             raise self.fail
         self.sent.append((external_thread_id, text, reply_to_external_id))
         return SendResult(external_id=f"out-{len(self.sent)}")
+
+    async def send_template(self, external_thread_id: str, name: str, params: list[str]) -> Any:
+        from app.core.envelope import SendResult
+
+        if self.fail:
+            raise self.fail
+        self.templates.append((external_thread_id, name, params))
+        return SendResult(external_id=f"template-{len(self.templates)}")
 
     async def react(self, external_thread_id: str, external_message_id: str, emoji: str) -> None:
         from app.channels.base import NotSupported
@@ -234,6 +251,43 @@ def tg_update(update_id: int, text: str | None = None, *, user_id: int = 1001, n
     if text is not None:
         body["text"] = text
     return {"update_id": update_id, "message": body}
+
+
+WA_SECRET = "test-app-secret"
+WA_BUSINESS = "447700900100"
+
+
+def wa_message(n: int, text: str | None = None, *, user_id: str = "GB.1000000000000000000101",
+               phone: str | None = "447700900101", name: str = "Ola", group_id: str | None = None,
+               **message: Any) -> dict[str, Any]:
+    """A WhatsApp `messages` webhook carrying one text (or other) message."""
+    body: dict[str, Any] = {"from_user_id": user_id, "id": f"wamid.test{n:04d}", "timestamp": "1791230400",
+                            "type": "text", **message}
+    contact: dict[str, Any] = {"profile": {"name": name}, "user_id": user_id}
+    if phone:
+        body["from"] = contact["wa_id"] = phone
+    if group_id:
+        body["group_id"] = group_id
+    if text is not None:
+        body["text"] = {"body": text}
+    return wa_webhook("messages", contacts=[contact], messages=[body])
+
+
+def wa_webhook(field: str, **value: Any) -> dict[str, Any]:
+    metadata = {"display_phone_number": WA_BUSINESS, "phone_number_id": "100000000000001"}
+    return {"object": "whatsapp_business_account", "entry": [{"id": "200000000000002", "changes": [
+        {"value": {"messaging_product": "whatsapp", "metadata": metadata, **value}, "field": field}]}]}
+
+
+async def post_whatsapp(client: Any, payload: dict[str, Any]) -> Any:
+    """Post a webhook the way Meta does: the raw body signed with the app secret."""
+    import hashlib
+    import hmac
+    import json
+
+    body = json.dumps(payload).encode()
+    signature = "sha256=" + hmac.new(WA_SECRET.encode(), body, hashlib.sha256).hexdigest()
+    return await client.post("/webhooks/whatsapp", content=body, headers={"X-Hub-Signature-256": signature})
 
 
 def london(text: str) -> Any:

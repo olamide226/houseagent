@@ -10,8 +10,8 @@ from typing import Any
 import structlog
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from app.channels.base import ChannelAdapter, NotSupported
-from app.core.envelope import Channel, OutboundMessage
+from app.channels.base import ChannelAdapter, NotSupported, PermanentError
+from app.core.envelope import Channel, DeliveryStatus, OutboundMessage
 from app.core.timeutil import utcnow
 from app.db import execute, fetch_all, fetch_one, fetch_val, jsonb, tx
 from app.services import members
@@ -20,6 +20,8 @@ log = structlog.get_logger()
 
 BACKOFF_SECONDS = [10, 30, 120, 600, 1800]
 CHANNEL_ORDER = [Channel.telegram, Channel.whatsapp, Channel.imessage]
+TEMPLATE_TEXT_MAX = 900   # what fits in the template's one parameter
+FALLBACK = "fallback:"    # dedupe-key prefix of a send that is itself a second try on another channel
 
 
 async def enqueue(conn: AsyncConnection, message: OutboundMessage, *, status: str = "pending",
@@ -90,6 +92,7 @@ async def dispatch_due(adapters: dict[Channel, ChannelAdapter], *, now: datetime
 
 async def _dispatch(conn: AsyncConnection, adapters: dict[Channel, ChannelAdapter],
                     row: dict[str, Any], now: datetime) -> None:
+    destination = None
     try:
         if row["target"] == "household" and await _fan_out(conn, row, now):
             return
@@ -103,7 +106,7 @@ async def _dispatch(conn: AsyncConnection, adapters: dict[Channel, ChannelAdapte
                 log.info("outbox_held_for_quiet_hours", household_id=row["household_id"], outbox_id=row["id"])
                 return
         adapter = adapters[destination.channel]
-        external_id, sent_text, meta = await _send(conn, adapter, destination, row)
+        external_id, sent_text, meta = await _send(conn, adapter, destination, row, now)
     except Undeliverable as exc:
         await execute(conn, "update outbox set status = 'failed', last_error = :error where id = :id",
                       error=str(exc), id=row["id"])
@@ -111,17 +114,19 @@ async def _dispatch(conn: AsyncConnection, adapters: dict[Channel, ChannelAdapte
         return
     except Exception as exc:
         attempts = row["attempts"] + 1
-        exhausted = attempts > len(BACKOFF_SECONDS)
+        gave_up = isinstance(exc, PermanentError) or attempts > len(BACKOFF_SECONDS)
         await execute(
             conn,
             """update outbox set attempts = :attempts, last_error = :error, status = :status,
-                                 send_after = :send_after where id = :id""",
-            attempts=attempts, error=str(exc)[:500], status="failed" if exhausted else "pending",
-            send_after=now if exhausted else now + timedelta(seconds=BACKOFF_SECONDS[attempts - 1]),
-            id=row["id"],
+                                 send_after = :send_after, channel_used = :channel where id = :id""",
+            attempts=attempts, error=str(exc)[:500], status="failed" if gave_up else "pending",
+            send_after=now if gave_up else now + timedelta(seconds=BACKOFF_SECONDS[attempts - 1]),
+            channel=destination.channel.value if destination else None, id=row["id"],
         )
         log.warning("outbox_send_failed", household_id=row["household_id"], outbox_id=row["id"],
                     attempts=attempts, error=type(exc).__name__)
+        if gave_up and destination:
+            await _fall_back(conn, adapters, row, destination.channel, destination.member_id, now)
         return
 
     await execute(
@@ -133,6 +138,55 @@ async def _dispatch(conn: AsyncConnection, adapters: dict[Channel, ChannelAdapte
     await record_outbound(conn, row["household_id"], destination.thread_id, sent_text, meta, external_id)
     log.info("outbox_sent", household_id=row["household_id"], outbox_id=row["id"],
              channel=destination.channel.value)
+
+
+async def delivery_failed(conn: AsyncConnection, adapters: dict[Channel, ChannelAdapter],
+                          status: DeliveryStatus, now: datetime | None = None) -> bool:
+    """A channel accepted a send and later reported that it never arrived (a WhatsApp status).
+    The send is marked failed and tried once on the member's next channel. False if it is not ours."""
+    row = await fetch_one(
+        conn, "select * from outbox where channel_used = :channel and external_id = :external "
+              "and status = 'sent' for update",
+        channel=status.channel.value, external=status.external_message_id,
+    )
+    if row is None:
+        return False   # not one of our sends, or a repeat of a failure already handled
+    await execute(conn, "update outbox set status = 'failed', last_error = :error where id = :id",
+                  error=(status.error or "the channel reported the send failed")[:500], id=row["id"])
+    log.warning("outbox_delivery_failed", household_id=row["household_id"], outbox_id=row["id"],
+                channel=status.channel.value)
+    try:
+        member_id = (await _destination(conn, adapters, row)).member_id   # whose DM it was, if anyone's
+    except Undeliverable:
+        return True
+    await _fall_back(conn, adapters, row, status.channel, member_id, now or utcnow())
+    return True
+
+
+async def _fall_back(conn: AsyncConnection, adapters: dict[Channel, ChannelAdapter], row: dict[str, Any],
+                     failed: Channel, member_id: str | None, now: datetime) -> None:
+    """After a send to `member_id` has failed for good on `failed`, try their next connected
+    channel, once (spec 7.3 step 6). Only a text to one person moves: an ack means nothing in
+    another chat, and a group has no next channel."""
+    if member_id is None or not row["text"] or (row["dedupe_key"] or "").startswith(FALLBACK):
+        return
+    identities = await fetch_all(
+        conn, "select channel, handle from channel_identities where member_id = :m", m=member_id)
+    others = sorted(
+        (i for i in identities if Channel(i["channel"]) in adapters and i["channel"] != failed.value),
+        key=lambda i: CHANNEL_ORDER.index(Channel(i["channel"])),
+    )
+    if not others:
+        return
+    channel = Channel(others[0]["channel"])
+    thread_id = await _dm_thread(conn, row["household_id"], channel,
+                                 adapters[channel].dm_thread_id(others[0]["handle"]))
+    await enqueue(conn, OutboundMessage(
+        household_id=row["household_id"], target="thread", thread_id=thread_id, text=row["text"],
+        urgency=row["urgency"], respect_quiet_hours=row["respect_quiet_hours"],
+        dedupe_key=f"{FALLBACK}{row['id']}",
+    ), send_after=now)
+    log.info("outbox_fallback_queued", household_id=row["household_id"], outbox_id=row["id"], channel=channel.value)
 
 
 async def record_outbound(conn: AsyncConnection, household_id: str, thread_id: str, text: str | None,
@@ -150,7 +204,7 @@ async def record_outbound(conn: AsyncConnection, household_id: str, thread_id: s
 
 
 async def _send(conn: AsyncConnection, adapter: ChannelAdapter, destination: Destination,
-                row: dict[str, Any]) -> tuple[str | None, str | None, dict[str, Any]]:
+                row: dict[str, Any], now: datetime) -> tuple[str | None, str | None, dict[str, Any]]:
     reply_to = None
     if row["reply_to_message_id"]:
         reply_to = await fetch_val(
@@ -167,12 +221,45 @@ async def _send(conn: AsyncConnection, adapter: ChannelAdapter, destination: Des
         except NotSupported:
             sent = await adapter.send_text(destination.external_thread_id, emoji)
             return sent.external_id, emoji, {}
+    template = adapter.capabilities.proactive_template
+    if template and not await _window_open(conn, adapter, destination, now):
+        # Free-form text would be refused: it goes inside the approved template instead.
+        text = row["text"] if len(row["text"]) <= TEMPLATE_TEXT_MAX else row["text"][:TEMPLATE_TEXT_MAX - 1] + "…"
+        try:
+            sent = await adapter.send_template(destination.external_thread_id, template, [text])
+            return sent.external_id, row["text"], {"template": template}
+        except NotSupported:
+            pass
     external_id = None
     for index, chunk in enumerate(split_text(row["text"], adapter.capabilities.max_text_len)):
         sent = await adapter.send_text(destination.external_thread_id, adapter.format(chunk),
                                        reply_to if index == 0 else None)
         external_id = external_id or sent.external_id
     return external_id, row["text"], {}
+
+
+async def last_heard(conn: AsyncConnection, destination: Destination) -> datetime | None:
+    """When the other side last wrote in this thread; connecting with an invite code counts,
+    though the code itself is never stored as a message."""
+    heard: datetime | None = await fetch_val(
+        conn,
+        """select greatest((select max(created_at) from messages where thread_id = :thread and direction = 'in'),
+                           (select verified_at from channel_identities
+                            where member_id = cast(:member as uuid) and channel = :channel))""",
+        thread=destination.thread_id, member=destination.member_id, channel=destination.channel.value,
+    )
+    return heard
+
+
+async def _window_open(conn: AsyncConnection, adapter: ChannelAdapter, destination: Destination,
+                       now: datetime) -> bool:
+    """Whether free-form text may be sent now: always, unless the channel only allows it for a
+    number of hours after the other side last wrote (WhatsApp: 24)."""
+    hours = adapter.capabilities.proactive_window_hours
+    if hours is None:
+        return True
+    heard = await last_heard(conn, destination)
+    return heard is not None and now - heard < timedelta(hours=hours)
 
 
 async def _fan_out(conn: AsyncConnection, row: dict[str, Any], now: datetime) -> bool:
@@ -215,15 +302,8 @@ async def _destination(conn: AsyncConnection, adapters: dict[Channel, ChannelAda
             raise Undeliverable("member has no connected channel")
         channel = Channel(mine[0]["channel"])
         external = adapters[channel].dm_thread_id(mine[0]["handle"])
-        thread_id = await fetch_val(
-            conn,
-            """insert into threads (household_id, channel, external_thread_id, scope)
-               values (:h, :channel, :external, 'dm')
-               on conflict (channel, external_thread_id) do update set scope = threads.scope
-               returning id""",
-            h=household_id, channel=channel.value, external=external,
-        )
-        return Destination(channel, external, str(thread_id), row["member_id"])
+        return Destination(channel, external, await _dm_thread(conn, household_id, channel, external),
+                           row["member_id"])
 
     thread = await fetch_one(
         conn, "select id, channel, external_thread_id, scope from threads where id = :id and household_id = :h",
@@ -239,3 +319,14 @@ async def _destination(conn: AsyncConnection, adapters: dict[Channel, ChannelAda
     if owner is None:
         raise Undeliverable("thread does not belong to a verified member")
     return Destination(channel, thread["external_thread_id"], thread["id"], owner)
+
+
+async def _dm_thread(conn: AsyncConnection, household_id: str, channel: Channel, external: str) -> str:
+    return str(await fetch_val(
+        conn,
+        """insert into threads (household_id, channel, external_thread_id, scope)
+           values (:h, :channel, :external, 'dm')
+           on conflict (channel, external_thread_id) do update set scope = threads.scope
+           returning id""",
+        h=household_id, channel=channel.value, external=external,
+    ))
