@@ -32,6 +32,9 @@
         {% if chat.window and not chat.pending %}
         <span class="muted">{% if chat.window.open_until %}ordinary messages until {{ when(chat.window.open_until) }}{% else %}template messages only until they next write{% endif %}</span>
         {% endif %}</span>
+      {% if chat.pending %}
+      <button class="quiet" hx-post="/dashboard/channels/threads/{{ chat.id }}/forget" hx-target="#channels">Forget</button>
+      {% endif %}
       {% if chat.invitable %}
       <button class="quiet" hx-post="/dashboard/channels/threads/{{ chat.id }}/invite" hx-target="#channels">Invite link</button>
       {% endif %}
@@ -51,6 +54,6 @@
   <button>Create group</button>
 </form>
 <p class="muted">The group becomes the main family chat as soon as {{ channel.channel }} confirms it; reload this
-   page, then use Invite link to join. Outside 24 hours of someone's last message, {{ channel.channel }} only
+   page, then use Invite link to join. If it never does, Forget the request and ask again. Outside 24 hours of someone's last message, {{ channel.channel }} only
    delivers the approved template{% if channel.template %} ({{ channel.template }}){% endif %}.</p>
 {% endfor %}

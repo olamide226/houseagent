@@ -229,6 +229,18 @@ async def start_group(rec: Recorder, channel: str, subject: str) -> str:
     return subject
 
 
+async def forget_group(rec: Recorder, thread_id: str) -> None:
+    """Drop a group that was asked for and never confirmed, so it can be asked for again."""
+    deleted = await fetch_val(
+        rec.ctx.conn, "delete from threads where id = :id and household_id = :h and scope = 'group' "
+                      "and external_thread_id like :pending returning external_thread_id",
+        id=thread_id, h=rec.ctx.household_id, pending=PENDING + "%")
+    if deleted is None:
+        raise ToolError("that is not a group waiting to be created")
+    rec.appended("threads", thread_id)
+    rec.lines.append(f"OK: no longer waiting for the group {deleted.removeprefix(PENDING)}")
+
+
 async def finish_group(conn: AsyncConnection, update: GroupUpdate) -> None:
     """The channel's answer about a group we asked for: it becomes the household's primary
     thread, or on failure the request is dropped. A repeat, or a group nobody asked for, does nothing."""

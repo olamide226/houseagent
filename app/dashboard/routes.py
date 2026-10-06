@@ -429,6 +429,15 @@ async def channels_primary(request: Request, thread_id: str,
                            error=await _write(session, "channels.primary", {"thread_id": thread_id}, change))
 
 
+@router.post("/channels/threads/{thread_id}/forget")
+async def channels_forget(request: Request, thread_id: str, session: Session = Depends(require_csrf)) -> Response:
+    async def change(rec: Recorder) -> None:
+        await households.forget_group(rec, thread_id)
+
+    return await _channels(request, session,
+                           error=await _write(session, "channels.forget", {"thread_id": thread_id}, change))
+
+
 @router.post("/channels/threads/{thread_id}/invite")
 async def channels_invite(request: Request, thread_id: str, session: Session = Depends(require_csrf)) -> Response:
     """Ask the channel for the group's invite link and show it with a QR code. Nothing is stored."""

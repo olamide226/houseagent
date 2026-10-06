@@ -32,7 +32,7 @@ returns 403.
 | Inventory | `/dashboard/inventory` | Stock by location, filter by status; per-item history | Set a count, mark finished, edit an item (aliases, staple, threshold, usual place), merge a duplicate |
 | Calendar | `/dashboard/calendar` | The next 30 days with repeats expanded, the repeating series, standalone reminders | Add an event (once, daily, weekly or monthly), edit title, time and place, cancel, skip one date of a series, cancel a reminder, get the subscribe link |
 | Family | `/dashboard/family` | Everyone in the household, each adult's connected channels, open invites | Add an adult or a child, make a new invite (link, QR code and code, shown once), revoke an invite, choose which connected channel an adult is messaged on |
-| Channels | `/dashboard/channels` | Each channel: whether it is set up, when it last heard from and sent to the family, sends failed in the last day. Each chat: whose it is, the main family chat, and for WhatsApp whether an ordinary message or only the template will be delivered | Create a WhatsApp group, show a group's invite link and QR code, choose the main family chat |
+| Channels | `/dashboard/channels` | Each channel: whether it is set up, when it last heard from and sent to the family, sends failed in the last day. Each chat: whose it is, the main family chat, and for WhatsApp whether an ordinary message or only the template will be delivered | Create a WhatsApp group, forget one that was never confirmed, show a group's invite link and QR code, choose the main family chat |
 | Activity | `/dashboard/activity` | The last 200 turns and dashboard actions: message, tool calls and results, tokens, latency, send status | Undo an action, retry a failed send |
 | Playground | `/dashboard/playground` | A chat with the agent in the browser | Dry run by default; tick "Apply for real" to keep the result |
 | Settings | `/dashboard/settings` | The morning brief time, each adult's quiet hours, remembered facts | Change the brief time, change or clear quiet hours, add, change or forget a fact |
@@ -64,7 +64,8 @@ goes to the main family chat: the first group a connected member writes in, or t
 
 "Create group" asks WhatsApp for a group with the given name. WhatsApp creates it a moment later
 and tells the api by webhook; until then the page shows it as "being created", and once it exists
-it is the main family chat. "Invite link" then asks WhatsApp for the group's link and shows it
+it is the main family chat. If the confirmation never comes, "Forget" drops the request so it can
+be made again. "Invite link" then asks WhatsApp for the group's link and shows it
 with a QR code. The link is fetched each time and never stored. Each adult opens it to join, since
 WhatsApp does not let a business add people to a group. Anyone holding the link can join, so pass
 it on privately ([ADR 0021](adr/0021-whatsapp-groups-are-created-asynchronously.md)).

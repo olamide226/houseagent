@@ -126,7 +126,7 @@ async def test_every_post_needs_the_csrf_token(client):
              "/dashboard/family/add", f"/dashboard/family/{home.ola}/invite", "/dashboard/settings/brief",
              f"/dashboard/settings/quiet/{home.ola}", "/dashboard/settings/facts",
              "/dashboard/channels/whatsapp/group", f"/dashboard/channels/threads/{nothing}/primary",
-             f"/dashboard/channels/threads/{nothing}/invite"]
+             f"/dashboard/channels/threads/{nothing}/invite", f"/dashboard/channels/threads/{nothing}/forget"]
     for path in posts:
         form = {"item": "eggs", "text": "hi", "title": "GP", "when": "2030-01-01T10:00", "name": "Ada",
                 "at": "05:00", "start": "20:00", "end": "08:00", "key": "milk", "value": "Arla",
@@ -779,9 +779,10 @@ async def test_create_whatsapp_group_becomes_the_primary_thread_when_meta_confir
     assert (sent["recipient_type"], sent["to"], sent["type"]) == ("group", WA_GROUP, "template")   # nobody has written there yet
 
 
-async def thread_id_of():
+async def thread_id_of(home=None):
     async with tx() as conn:
-        return await fetch_val(conn, "select id from threads where channel = 'whatsapp'")
+        return await fetch_val(conn, "select id from threads where channel = 'whatsapp' "
+                                     "and (cast(:h as uuid) is null or household_id = :h)", h=home and home.id)
 
 
 @respx.mock
@@ -809,6 +810,22 @@ async def test_a_group_meta_refuses_leaves_nothing_behind(client):
         assert await fetch_val(conn, "select primary_thread_id from households where id = :h", h=home.id) is None
     retried = await client.post("/dashboard/channels/whatsapp/group", data={"subject": "Adebayo family"}, headers=csrf)
     assert "being created" in retried.text
+
+    # Meta never answers: the request can be forgotten and made again, but only a pending one, and only ours.
+    async with tx() as conn:
+        real = await a_thread(conn, home, "telegram", "-100555", scope="group")
+        other = await seed_home(conn, telegram_id="2001")
+        theirs = await a_thread(conn, other, "whatsapp", "pending:Theirs", scope="group")
+    for refused in (real, theirs):
+        page = await client.post(f"/dashboard/channels/threads/{refused}/forget", headers=csrf)
+        assert "not a group waiting to be created" in page.text
+    forgotten = await client.post(f"/dashboard/channels/threads/{await thread_id_of(home)}/forget", headers=csrf)
+    assert "being created" not in forgotten.text
+    async with tx() as conn:
+        left = await fetch_all(conn, "select external_thread_id from threads order by external_thread_id")
+    assert [row["external_thread_id"] for row in left] == ["-100555", "pending:Theirs"]
+    again = await client.post("/dashboard/channels/whatsapp/group", data={"subject": "Adebayo family"}, headers=csrf)
+    assert "being created" in again.text
 
 
 @respx.mock

@@ -27,7 +27,8 @@ and allows eight participants.
 ## Consequences
 
 - The page shows "being created" until the webhook arrives; the app must be subscribed to the
-  `group_lifecycle_update` field or it never will.
+  `group_lifecycle_update` field or it never will. "Forget" on the page drops a request that was
+  never answered. If Meta did create that group, it then exists with nobody in it.
 - A refusal that arrives by webhook is only logged (`group_not_created`); the page just stops
   showing the pending group.
 - Someone who is not in the family but has the link can join and read what the agent says there.
