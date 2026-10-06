@@ -1,8 +1,8 @@
-"""Household bootstrap (spec section 12.1), onboarding state, the brief time, facts, shops,
-the calendar feed token, and the household's chats and primary group."""
+"""Household bootstrap (spec section 12.1), onboarding state, the brief time, facts, places,
+presence links, the calendar feed token, and the household's chats and primary group."""
 import re
 import secrets
-from datetime import time
+from datetime import datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -11,14 +11,18 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.agent.actions import Recorder
 from app.agent.base import ToolError
-from app.core.envelope import GroupUpdate
+from app.config import get_settings
+from app.core.envelope import GroupUpdate, OutboundMessage
 from app.core.identity import hash_token
 from app.db import execute, fetch_all, fetch_one, fetch_val, jsonb
-from app.services import inventory
+from app.pipeline.router import enqueue
+from app.services import inventory, members
 
 log = structlog.get_logger()
-# Spec section 12.2, in order. `presence` joins the list with the Shortcut endpoint (milestone 5).
+# Spec section 12.2, in order. `presence` joins the list once the links can be sent.
+PRESENCE = "presence"
 ONBOARDING_STEPS = ("family", "routines", "shops", "staples", "tour", "rhythm")
+PLACE_KINDS = ("home", "store", "school", "clinic", "other")
 SETTING_KEYS = ("staples", "morning_brief", "quiet_hours")   # said like facts, stored as settings (ADR 0016)
 STORE_KEYS = ("shops", "main_supermarket")                   # facts whose values are also `places`
 PENDING = "pending:"   # a group asked for but not yet created: its thread is `pending:{subject}` until then
@@ -92,6 +96,14 @@ async def advance_onboarding(rec: Recorder, step: str, skipped: bool = False) ->
         raise ToolError("setup is already complete")
     done = [*state.get("done", []), *([] if step in state.get("done", []) else [step])]
     was_skipped = [*state.get("skipped", []), *([step] if skipped else [])]
+    notes = []
+    if (step == PRESENCE and not skipped) or [name for name in ONBOARDING_STEPS if name not in done] == [PRESENCE]:
+        # Nothing to ask for presence: when it is asked for, or is all that is left, the links go out.
+        done += [] if PRESENCE in done else [PRESENCE]
+        sent = await send_presence_links(conn, household_id, speaker=rec.ctx.member_id)
+        if sent:
+            notes.append(f"NOTE: {', '.join(sent)} got a private message with a personal link for "
+                         "shop-arrival nudges and the phone steps; setting it up is optional")
     remaining = [name for name in ONBOARDING_STEPS if name not in done]
     await rec.before("households", id=household_id)
     await execute(
@@ -100,6 +112,73 @@ async def advance_onboarding(rec: Recorder, step: str, skipped: bool = False) ->
     )
     rec.lines.append(f"OK: {step} {'skipped' if skipped else 'done'}. "
                      + (f"Next step: {remaining[0]}" if remaining else "Setup is complete"))
+    rec.lines += notes
+
+
+# ---------------------------------------------------------------- presence links
+def presence_url(token: str) -> str:
+    return f"{get_settings().public_base_url}/presence/{token}"
+
+
+def presence_text(url: str, shops: list[str]) -> str:
+    """What an adult is sent with their personal link (spec section 11, phone setup)."""
+    known = f"Shops I know: {', '.join(shops)}. Use those exact names.\n" if shops else ""
+    return (
+        "Optional: your phone can tell me when you reach a shop, and I'll send you the list for that shop.\n\n"
+        f"Your personal link, keep it to yourself: {url}\n\n"
+        "On your iPhone, once per shop: Shortcuts, Automation, New, Arrive, choose the shop, set Run Immediately, "
+        "then add the action Get Contents of URL with that link, method POST, and a JSON request body with two "
+        "text fields: event = enter and place = the shop's name.\n"
+        f"{known}"
+        "For home, make two more: Arrive with event = enter and place = Home, and Leave with event = exit and "
+        "place = Home."
+    )
+
+
+async def presence_offered(conn: AsyncConnection, household_id: str) -> bool:
+    """Whether setup sent the presence links (and did not skip them): later adults then get theirs too."""
+    state = await fetch_val(conn, "select onboarding_state from households where id = :h", h=household_id)
+    return PRESENCE in state.get("done", []) and PRESENCE not in state.get("skipped", [])
+
+
+async def send_presence_links(conn: AsyncConnection, household_id: str, *, member_id: str | None = None,
+                              speaker: str | None = None) -> list[str]:
+    """DM each connected adult who has no presence link yet their personal URL and the phone
+    steps; `member_id` limits it to one person. Returns the names. Someone who already has a
+    link is left alone: a new one would break the automations on their phone."""
+    adults = await fetch_all(
+        conn,
+        """select m.id, m.name from members m
+           where m.household_id = :h and m.role = 'adult' and m.presence_token_hash is null
+             and (cast(:member as uuid) is null or m.id = :member)
+             and exists (select 1 from channel_identities ci where ci.member_id = m.id)
+           order by m.created_at, m.name""",
+        h=household_id, member=member_id,
+    )
+    shops = [place["name"] for place in await places(conn, household_id) if place["kind"] == "store"]
+    for adult in adults:
+        token = await members.new_presence_token(conn, adult["id"])
+        await enqueue(conn, OutboundMessage(
+            household_id=household_id, target="member", member_id=adult["id"],
+            text=presence_text(presence_url(token), shops),
+            respect_quiet_hours=adult["id"] != speaker,   # whoever is talking to us now is awake
+        ))
+    return [adult["name"] for adult in adults]
+
+
+async def claim_nudge(conn: AsyncConnection, household_id: str, key: str, now: datetime, *,
+                      again_after: timedelta | None = None) -> bool:
+    """Whether a proactive nudge may go out under `key`: the first time, and again once
+    `again_after` has passed since the last. One atomic statement, so of two callers at the
+    same moment exactly one is told yes."""
+    return bool(await fetch_val(
+        conn,
+        """insert into nudge_log (household_id, dedupe_key, sent_at) values (:h, :key, :now)
+           on conflict (household_id, dedupe_key) do update set sent_at = excluded.sent_at
+             where nudge_log.sent_at <= cast(:before as timestamptz)
+           returning 1""",
+        h=household_id, key=key, now=now, before=now - again_after if again_after else None,
+    ))
 
 
 # ---------------------------------------------------------------- settings and facts
@@ -161,20 +240,49 @@ async def set_fact(rec: Recorder, key: str, value: str | None, member_id: str | 
 
 
 async def add_stores(rec: Recorder, names: list[str]) -> None:
-    """Shops the family uses, as `places` of kind store (matched by store-arrival nudges later)."""
+    """Shops the family uses, as `places` of kind store: what a store-arrival Shortcut names."""
     for name in names:
-        place = await fetch_one(
-            rec.ctx.conn, "select id, kind from places where household_id = :h and lower(name) = lower(:name)",
-            h=rec.ctx.household_id, name=name)
-        if place is None:
-            place_id = await fetch_val(
-                rec.ctx.conn, "insert into places (household_id, name, kind) values (:h, :name, 'store') "
-                              "returning id", h=rec.ctx.household_id, name=name)
-            rec.created("places", str(place_id))
+        if await set_place(rec, name, "store"):
             rec.lines.append(f"NEW: {name} (shop)")
-        elif place["kind"] != "store":
-            await rec.before("places", id=place["id"])
-            await execute(rec.ctx.conn, "update places set kind = 'store' where id = :id", id=place["id"])
+
+
+# ---------------------------------------------------------------- places
+async def places(conn: AsyncConnection, household_id: str) -> list[dict[str, Any]]:
+    return await fetch_all(conn, "select id, name, kind from places where household_id = :h order by kind, name",
+                           h=household_id)
+
+
+async def set_place(rec: Recorder, name: str, kind: str) -> bool:
+    """Add a place, or change what kind of place it is. True if it was new."""
+    name = " ".join(name.split())
+    if not name or kind not in PLACE_KINDS:
+        raise ToolError(f"a place needs a name and a kind: {', '.join(PLACE_KINDS)}")
+    place = await fetch_one(
+        rec.ctx.conn, "select id, kind from places where household_id = :h and lower(name) = lower(:name)",
+        h=rec.ctx.household_id, name=name)
+    if place is None:
+        place_id = await fetch_val(
+            rec.ctx.conn, "insert into places (household_id, name, kind) values (:h, :name, :kind) returning id",
+            h=rec.ctx.household_id, name=name, kind=kind)
+        rec.created("places", str(place_id))
+    elif place["kind"] != kind:
+        await rec.before("places", id=place["id"])
+        await execute(rec.ctx.conn, "update places set kind = :kind where id = :id", kind=kind, id=place["id"])
+    return place is None
+
+
+async def place_named(conn: AsyncConnection, household_id: str, name: str) -> dict[str, Any]:
+    """The place a Shortcut names. An unknown name becomes a new place: `home` if it is called
+    Home, otherwise `other`, to be given its kind on the Settings page."""
+    found = "select id, name, kind from places where household_id = :h and lower(name) = lower(:name) limit 1"
+    place = await fetch_one(conn, found, h=household_id, name=name)
+    if place is None:
+        await execute(
+            conn, "insert into places (household_id, name, kind) values (:h, :name, :kind) on conflict do nothing",
+            h=household_id, name=name, kind="home" if name.lower() == "home" else "other")
+        place = await fetch_one(conn, found, h=household_id, name=name)
+    assert place is not None
+    return place
 
 
 # ---------------------------------------------------------------- chats and the primary group

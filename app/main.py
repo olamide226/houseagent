@@ -23,6 +23,7 @@ from app.ics import routes as ics
 from app.llm.base import make_llm
 from app.media.store import make_media_store
 from app.pipeline import inbound
+from app.presence import routes as presence
 
 log = structlog.get_logger()
 MIGRATION_HEAD = "0001"
@@ -46,6 +47,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(routes.router)
     app.include_router(ics.router)
+    app.include_router(presence.router)
 
     @app.exception_handler(auth.LoginRequired)
     async def login_required(request: Request, exc: auth.LoginRequired) -> Response:

@@ -304,3 +304,29 @@ def wall(moment: Any) -> str:
     from app.core.timeutil import local
 
     return f"{local(moment, 'Europe/London'):%a %-d %b %H:%M}"
+
+
+async def history(conn: AsyncConnection, home: Home, item_id: str, *events: tuple[str, Any]) -> None:
+    """Inventory events at given instants, or London wall-clock times such as ("restocked", "2026-09-14 09:00").
+    Stock is not touched."""
+    for kind, at in events:
+        await execute(
+            conn,
+            """insert into inventory_events (household_id, item_id, location_id, event_type, source, occurred_at)
+               values (:h, :item, (select default_location_id from items where id = :item), :kind, 'message', :at)""",
+            h=home.id, item=item_id, kind=kind, at=london(at) if isinstance(at, str) else at)
+
+
+async def bought_every(conn: AsyncConnection, home: Home, name: str, days: int, last: str, *,
+                       staple: bool = False) -> str:
+    """An item with two full cycles of `days` days behind it, last restocked at `last` (London time) and not
+    yet run out: the model predicts it runs out `days` days after `last`."""
+    from datetime import timedelta
+
+    item_id = await add_item(conn, home, name, staple=staple)
+    start = london(last) - timedelta(days=2 * days + 2)
+    await history(conn, home, item_id, *(
+        (kind, start + timedelta(days=offset)) for kind, offset in
+        (("restocked", 0), ("finished", days), ("restocked", days + 1), ("finished", 2 * days + 1))),
+        ("restocked", last))
+    return item_id

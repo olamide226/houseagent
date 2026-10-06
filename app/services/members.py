@@ -31,6 +31,7 @@ async def family(conn: AsyncConnection, household_id: str, now: datetime) -> lis
     return await fetch_all(
         conn,
         """select m.id, m.name, m.role, m.is_admin, m.preferred_channel, m.quiet_start, m.quiet_end,
+                  m.presence_token_hash is not null as has_presence_link,
                   case when m.invite_expires_at > :now then m.invite_expires_at end as invite_open_until,
                   coalesce((select array_agg(ci.channel order by ci.channel) from channel_identities ci
                             where ci.member_id = m.id), '{}') as channels
@@ -106,6 +107,33 @@ async def revoke_invite(rec: Recorder, member_id: str) -> None:
                                 "where id = :id", id=member_id)
     rec.appended("members", member_id)
     rec.lines.append(f"OK: invite for {member['name']} revoked")
+
+
+async def new_presence_token(conn: AsyncConnection, member_id: str) -> str:
+    """A fresh presence token (32 random bytes, URL-safe), replacing any earlier one. Only its
+    hash is stored, so the link is shown or sent once."""
+    token = secrets.token_urlsafe(32)
+    await execute(conn, "update members set presence_token_hash = :hash where id = :id",
+                  hash=hash_token(token), id=member_id)
+    return token
+
+
+async def presence_link(rec: Recorder, member_id: str) -> str:
+    """A new presence token for an adult, from the dashboard; their earlier link stops working."""
+    member = await _member(rec, member_id, adult=True)
+    token = await new_presence_token(rec.ctx.conn, member_id)
+    rec.appended("members", member_id)
+    rec.lines.append(f"OK: new shop-arrival link for {member['name']}; any earlier link has stopped working")
+    return token
+
+
+async def for_presence_token(conn: AsyncConnection, token: str) -> dict[str, Any] | None:
+    return await fetch_one(
+        conn,
+        """select m.id, m.household_id, m.name, h.timezone from members m join households h on h.id = m.household_id
+           where m.presence_token_hash = :hash and m.role = 'adult'""",
+        hash=hash_token(token),
+    )
 
 
 async def record_connection(conn: AsyncConnection, member: dict[str, Any], channel: str) -> None:

@@ -9,6 +9,8 @@ from app.agent.base import ToolError
 from app.db import execute, fetch_all, fetch_one, fetch_val
 from app.services import inventory
 
+SAME_SHOP = 0.6   # word similarity from which a shop named on an entry is the shop being asked about
+
 
 async def add_entry(rec: Recorder, item_id: str, reason: str, *, quantity: Decimal | None = None,
                     unit: str | None = None, store_hint: str | None = None) -> bool:
@@ -24,9 +26,21 @@ async def add_entry(rec: Recorder, item_id: str, reason: str, *, quantity: Decim
         h=ctx.household_id, item=item_id, quantity=quantity, unit=unit, reason=reason, hint=store_hint,
         member=ctx.member_id,
     )
-    if entry_id is None:
+    if entry_id is not None:
+        rec.created("shopping_list_items", str(entry_id))
+        return True
+    # It is there already. A guess ("probably") becomes a real entry; anything else stays as it was.
+    guess = None if reason == "predicted" else await fetch_val(
+        ctx.conn, "select id from shopping_list_items where household_id = :h and item_id = :item "
+                  "and status = 'needed' and reason = 'predicted' for update", h=ctx.household_id, item=item_id)
+    if guess is None:
         return False
-    rec.created("shopping_list_items", str(entry_id))
+    await rec.before("shopping_list_items", id=str(guess))
+    await execute(
+        ctx.conn,
+        """update shopping_list_items set reason = :reason, quantity = :quantity, unit = :unit, store_hint = :hint,
+                                          added_by = :member, added_at = clock_timestamp() where id = :id""",
+        reason=reason, quantity=quantity, unit=unit, hint=store_hint, member=ctx.member_id, id=guess)
     return True
 
 
@@ -81,7 +95,8 @@ async def remove(rec: Recorder, item_id: str, name: str) -> None:
 
 
 async def bought_all(rec: Recorder) -> None:
-    entries = await active_entries(rec.ctx.conn, rec.ctx.household_id)
+    # "Got everything" is about what was asked for, not what was only guessed to be running low.
+    entries = await active_entries(rec.ctx.conn, rec.ctx.household_id, include_predicted=False)
     if not entries:
         raise ToolError("the shopping list is empty")
     for entry in entries:
@@ -105,7 +120,8 @@ async def set_store_hint(rec: Recorder, entry_id: str, store_hint: str | None) -
 # ---------------------------------------------------------------- reads
 async def active_entries(conn: AsyncConnection, household_id: str, *, store: str | None = None,
                          include_predicted: bool = True) -> list[dict[str, Any]]:
-    """Explicit, finished and low entries first, then predicted; grouped by category."""
+    """Explicit, finished and low entries first, then predicted; grouped by category. `store`
+    keeps entries with no shop named and those whose shop reads like it ("Tesco" for "Tesco Extra")."""
     return await fetch_all(
         conn,
         """select s.id, s.item_id, i.canonical_name as item, coalesce(i.category, 'other') as category,
@@ -113,9 +129,10 @@ async def active_entries(conn: AsyncConnection, household_id: str, *, store: str
            from shopping_list_items s join items i on i.id = s.item_id
            where s.household_id = :h and s.status = 'needed'
              and (:predicted or s.reason <> 'predicted')
-             and (cast(:store as text) is null or s.store_hint is null or s.store_hint ilike :store)
+             and (cast(:store as text) is null or s.store_hint is null
+                  or greatest(word_similarity(s.store_hint, :store), word_similarity(:store, s.store_hint)) >= :alike)
            order by (s.reason = 'predicted'), category, i.canonical_name""",
-        h=household_id, predicted=include_predicted, store=store,
+        h=household_id, predicted=include_predicted, store=store, alike=SAME_SHOP,
     )
 
 
