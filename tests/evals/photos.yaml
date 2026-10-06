@@ -1,0 +1,74 @@
+# Photo cases: three receipts and two fridge or freezer photos. The images in fixtures/ are
+# drawn by fixtures/make_fixtures.py; none is a real photo.
+- name: receipt restocks what was bought
+  seed:
+    items: [{name: milk, staple: true, stock: {fridge: 0}}, {name: egg, staple: true, stock: {fridge: 2}}]
+    list: [milk]
+  turns: [{from: Ola, photos: [receipt_supermarket.png]}]
+  expect:
+    events_include:
+      - {item_contains: milk, type: [restocked, added]}
+      - {item_contains: egg, type: [restocked, added]}
+      - {item_contains: bread, type: [restocked, added]}
+    events_all: {type: [restocked, added], source: receipt}
+    events_max: 3
+    shopping_list_active: []
+    stock: {milk: {status: in_stock}}
+
+- name: receipt with a caption and new items
+  turns: [{from: Ada, text: "from the market today", photos: [receipt_market.png]}]
+  expect:
+    events_include:
+      - {item_contains: plantain, type: [restocked, added]}
+      - {item_contains: yam, type: [restocked, added]}
+      - {item_contains: palm oil, type: [restocked, added]}
+      - {item_contains: scotch bonnet, type: [restocked, added]}
+    events_all: {type: [restocked, added], source: receipt}
+    events_max: 4
+
+- name: long receipt ignores totals and savings
+  seed:
+    items: [{name: rice, staple: true, stock: {store: 0}}]
+    list: [rice]
+  turns: [{from: Ola, photos: [receipt_big_shop.png]}]
+  expect:
+    events_include:
+      - {item_contains: rice, type: [restocked, added]}
+      - {item_contains: chicken, type: [restocked, added]}
+      - {item_contains: butter, type: [restocked, added]}
+      - {item_contains: tomato, type: [restocked, added]}
+      - {item_contains: onion, type: [restocked, added]}
+      - {item_contains: bleach, type: [restocked, added]}
+      - {item_contains: toilet, type: [restocked, added]}
+    events_all: {type: [restocked, added], source: receipt}
+    events_max: 8          # the carrier bag may or may not be logged; totals and savings never
+    shopping_list_active: []
+
+- name: fridge photo adjusts what is visible and finishes nothing
+  seed:
+    items: [{name: yoghurt, stock: {fridge: 4}}, {name: butter, stock: {fridge: 1}}]
+  turns: [{from: Ola, text: "here's the fridge", photos: [fridge.png]}]
+  expect:
+    events_include:
+      - {item_contains: milk, type: adjusted}
+      - {item_contains: egg, type: adjusted}
+      - {item_contains: butter, type: adjusted}
+      - {item_contains: juice, type: adjusted}
+      - {item_contains: chee, type: adjusted}
+    events_all: {type: adjusted, source: photo, location: fridge}
+    events_max: 5
+    stock: {yoghurt: {status: in_stock, qty: 4}}     # not in the photo: untouched, never finished
+
+- name: freezer photo logs to the freezer
+  seed:
+    items: [{name: prawn, location: freezer, stock: {freezer: 1}}]
+  turns: [{from: Ada, text: "freezer", photos: [freezer.png]}]
+  expect:
+    events_include:
+      - {item_contains: chicken, type: adjusted}
+      - {item_contains: pea, type: adjusted}
+      - {item_contains: fish finger, type: adjusted}
+      - {item_contains: ice cream, type: adjusted}
+    events_all: {type: adjusted, source: photo, location: freezer}
+    events_max: 4
+    stock: {prawn: {status: in_stock, qty: 1}}

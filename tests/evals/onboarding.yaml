@@ -1,0 +1,66 @@
+# Onboarding and family cases. `seed.onboarding` is the setup step the household has reached;
+# without it setup is already complete. Ola and Ada are always there.
+- name: family step adds the children
+  seed: {onboarding: family}
+  turns: [{from: Ola, text: "It's me and Ada, and our two kids Tobi and Zara"}]
+  expect:
+    members_added: [{name: Tobi, role: child}, {name: Zara, role: child}]
+    onboarding_done: [family]
+    onboarding_step: routines
+    invites_sent: 0
+
+- name: another adult added in chat gets an invite
+  turns: [{from: Ola, text: "My mum Grace has moved in with us, please add her as an adult"}]
+  expect:
+    members_added: [{name: Grace, role: adult}]
+    invites_sent: 1
+
+- name: skip moves to the next step and records nothing else
+  seed: {onboarding: routines}
+  turns: [{from: Ola, text: "skip"}]
+  expect:
+    onboarding_done: [family, routines]
+    onboarding_step: shops
+    calendar: []
+    events: []
+
+- name: routines step books a weekly activity
+  seed: {onboarding: routines, members: [{name: Tobi, role: child}]}
+  turns: [{from: Ola, text: "Tobi has Chatterbox every Tuesday at 9am"}]
+  expect:
+    calendar: [{title_contains: Chatterbox, participants: [Tobi], local_start: "Tue 6 Oct 09:00", rrule_contains: [WEEKLY, TU]}]
+
+- name: shops step saves the supermarket and the specialist shop
+  seed: {onboarding: shops}
+  turns: [{from: Ola, text: "Mostly Tesco Extra, and the African shop on Rye Lane for yam and plantain"}]
+  expect:
+    facts: {main_supermarket: tesco}
+    shops: [tesco, rye lane]
+
+- name: staples step marks what is always kept in
+  seed: {onboarding: staples, items: [{name: rice, stock: {store: 2}}]}
+  turns: [{from: Ola, text: "We always need rice, eggs, milk and bread"}]
+  expect:
+    staples: [rice, egg, milk, bread]
+    onboarding_done: [staples]
+    events: []
+
+- name: rhythm step changes the brief and quiet hours and finishes setup
+  seed: {onboarding: rhythm}
+  turns: [{from: Ola, text: "Make the morning brief 7 o'clock, and quiet from 10pm to 6:30 for both of us"}]
+  expect:
+    brief: "07:00"
+    quiet: {Ola: "22:00-06:30", Ada: "22:00-06:30"}
+    onboarding_done: [rhythm]
+    onboarding_step: null
+
+- name: a preference is remembered
+  turns: [{from: Ada, text: "Remember that we only ever buy Cravendale milk"}]
+  expect:
+    facts_mention: [cravendale]
+    events: []
+
+- name: quiet hours changed later just by talking
+  turns: [{from: Ada, text: "Please don't message me after 8pm, or before 7 in the morning"}]
+  expect:
+    quiet: {Ada: "20:00-07:00", Ola: "21:30-07:00"}
