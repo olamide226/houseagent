@@ -5,6 +5,7 @@ One container image runs as two processes that talk only through Postgres.
 ```mermaid
 flowchart LR
     TG[Telegram] -- webhook --> API
+    WA[WhatsApp] -- "webhook, statuses" --> API
     Browser -- dashboard --> API
     Cal[Phone calendar] -- "ICS feed" --> API
     subgraph image[one image, two processes]
@@ -16,6 +17,7 @@ flowchart LR
     W -- "tool writes, outbox rows" --> PG
     W -- tool-calling loop --> LLM[LLM provider]
     W -- "replies, reminders, digests" --> TG
+    W -- "replies, templates" --> WA
 ```
 
 (The same diagram lives in [diagrams/architecture.mmd](diagrams/architecture.mmd).)
@@ -55,6 +57,10 @@ thread becomes the household's primary thread, and the message is inserted with
 `ON CONFLICT (thread_id, external_id) DO NOTHING`, then `NOTIFY inbound`. A bad payload is logged
 and answered 200; a database error returns 503 so the provider retries.
 
+A webhook can also carry things that are not messages (`adapter.parse_updates`). A WhatsApp
+`failed` delivery status marks the send it names as failed, and the outcome of a group creation
+finishes or drops the request made on the Channels page. Both are handled in the api process.
+
 **Processing (worker, `inbound.process_household`).** A household is ready when its newest
 unprocessed message is older than `DEBOUNCE_SECONDS`, which batches "out of eggs", "and bread",
 "oh and milk" into one turn. The worker then, in one transaction:
@@ -76,7 +82,8 @@ savepoint, so a failing tool does not undo an earlier one. See [ADR 0009](adr/00
 **Sending (worker, `app/pipeline/router.py`).** Every send is an `outbox` row inserted in the
 writer's transaction, so a rolled-back turn sends nothing. The dispatcher takes due rows with
 `FOR UPDATE SKIP LOCKED`, resolves the destination, sends, stores an `out` row in `messages`, and
-on failure backs off 10 s, 30 s, 2 min, 10 min, 30 min before marking the row `failed`.
+on failure backs off 10 s, 30 s, 2 min, 10 min, 30 min before marking the row `failed`. A failure
+that cannot succeed on a retry (`PermanentError`) is marked `failed` at once.
 
 Destinations come only from the database:
 
@@ -87,6 +94,19 @@ Destinations come only from the database:
 | `household` | The primary thread if set, else one send per adult |
 
 A row with no allowed destination is marked `failed` and never sent.
+
+**The WhatsApp window.** WhatsApp takes free-form text only within 24 hours of the other side's
+last message. Before a text send on a channel with `proactive_window_hours`, the dispatcher looks
+up when that thread was last heard from: its newest inbound message, or for a DM the moment the
+member connected, whichever is later. If that is 24 hours ago or more, the text goes out inside
+the approved template instead, flattened to one line of at most 900 characters. Reactions are
+never wrapped. See [ADR 0020](adr/0020-whatsapp-window-and-template.md).
+
+**The next channel.** When a text to one person has failed for good (refused outright, out of
+retries, or reported undelivered by a later WhatsApp status), the dispatcher queues it once more,
+to that member's DM on their next connected channel in the order Telegram, WhatsApp, iMessage. The
+second try never falls back again. Group sends and reactions do not move. See
+[ADR 0022](adr/0022-permanent-failures-and-the-next-channel.md).
 
 **Quiet hours.** Each member has a quiet window, 21:30 to 07:00 by default; a window whose start
 is later than its end crosses midnight. Before a send, the dispatcher asks whether the recipient
@@ -136,7 +156,7 @@ app/
   core/          envelope types, identity and invite codes, time, quiet hours, recurrence
   llm/           neutral types, OpenAI-compatible and Anthropic adapters, speech-to-text
   media/         MediaStore protocol and factory, S3 and ImgBB backends
-  channels/      ChannelAdapter protocol, registry, Telegram
+  channels/      ChannelAdapter protocol, registry, Telegram, WhatsApp
   pipeline/      inbound (persist, debounce, turn, simulate_turn), media (fetch, store, transcribe), router
   agent/         runtime interface, loop, prompt, resolve, actions (undo), stock, tools/
   services/      the one write path, shared by tools and dashboard
@@ -148,7 +168,7 @@ tests/           unit/ contract/ evals/
 
 ## Not built yet
 
-The WhatsApp 24-hour window and falling back to a member's next channel after a failed send
-arrive with the milestones that need them (WhatsApp, iMessage). The jobs `consumption_model`,
-`low_stock_prompt` and `imessage_health` are later milestones too, so the weekly digest lists low
-and out items but not predicted ones. Presence, and with it the last onboarding step, is milestone 5.
+iMessage, and with it the adapter health check that would move sends away from a channel that is
+down before they fail. The jobs `consumption_model`, `low_stock_prompt` and `imessage_health` are
+later milestones, so the weekly digest lists low and out items but not predicted ones. Presence,
+and with it the last onboarding step, is milestone 5.

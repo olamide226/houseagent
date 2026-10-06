@@ -2,7 +2,7 @@
 
 The full DDL is [`schema.sql`](../schema.sql), applied verbatim by Alembic migration `0001`.
 Table-by-table purpose is in [spec.md section 4](spec.md#4-data-model). This page covers what
-milestones 1 to 3 use and the rules the code enforces.
+milestones 1 to 4 use and the rules the code enforces.
 
 ## Tables in use
 
@@ -15,7 +15,8 @@ milestones 1 to 3 use and the rules the code enforces.
 | `places` | shops named in `remember` (kind `store`) |
 | `channel_identities` | invite redemption (`core/identity.py`) |
 | `login_tokens` | the `dashboard` keyword (`services/members.py`) |
-| `threads`, `messages` | inbound pipeline; the router adds `out` rows |
+| `threads`, `messages` | inbound pipeline; the router adds `out` rows; the Channels page adds a group's thread |
+| `households.primary_thread_id` | the first group message, a created group once confirmed, the Channels page |
 | `items` | resolution (new items, learned aliases), dashboard item edits |
 | `inventory_events`, `stock` | `services/inventory.py` only |
 | `shopping_list_items` | `services/shopping.py`, and the inventory side-effect rules |
@@ -39,6 +40,16 @@ the rest, including a voice note's `transcript`.
 `threads.channel` is free text. Besides real channels it holds `playground`: the threads the
 dashboard Playground and the eval suite talk on. Their outbox rows have status `simulated` and
 are never sent.
+
+`channel_identities.handle` is a Telegram user id, or for WhatsApp the business-scoped user id
+(`GB.13491208655302741918`), with the phone number in E.164 only for a payload that has no user
+id ([ADR 0019](adr/0019-whatsapp-members-are-identified-by-user-id.md)). A DM thread's
+`external_thread_id` is that handle. A WhatsApp group that has been asked for but not yet
+confirmed is a thread `pending:{subject}`.
+
+`outbox.channel_used` is the channel a row was sent on, or tried on if it failed. A row whose
+`dedupe_key` is `fallback:{outbox id}` is the second try, on another channel, of the send with
+that id. An `out` message sent as a WhatsApp template has `meta.template`.
 
 ## Stock transitions
 

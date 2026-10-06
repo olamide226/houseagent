@@ -1,5 +1,6 @@
 flowchart LR
     TG[Telegram] -- webhook --> API
+    WA[WhatsApp] -- "webhook, statuses" --> API
     Browser -- dashboard --> API
     Cal[Phone calendar] -- "ICS feed" --> API
     subgraph image[one image, two processes]
@@ -11,3 +12,4 @@ flowchart LR
     W -- "tool writes, outbox rows" --> PG
     W -- tool-calling loop --> LLM[LLM provider]
     W -- "replies, reminders, digests" --> TG
+    W -- "replies, templates" --> WA

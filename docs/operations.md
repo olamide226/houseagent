@@ -24,12 +24,15 @@ Everything is read by `Settings` in `app/config.py`, from the environment or a l
 | `IMGBB_API_KEY` | for `imgbb` | | Image hosting; images only |
 | `MEDIA_RETENTION_DAYS` | no | `90` | Stored media is deleted after this; ImgBB caps it at 180 |
 | `TG_BOT_TOKEN`, `TG_BOT_USERNAME`, `TG_WEBHOOK_SECRET` | for Telegram | | Bot API; the username builds invite links |
+| `WA_PHONE_NUMBER_ID`, `WA_ACCESS_TOKEN`, `WA_APP_SECRET`, `WA_VERIFY_TOKEN` | for WhatsApp | | Cloud API. The app secret checks webhook signatures; the verify token answers Meta's subscription check |
+| `WA_API_VERSION` | no | `v26.0` | Graph API version in every WhatsApp call. Meta retires a version about two years after release |
+| `WA_REMINDER_TEMPLATE` | no | `household_reminder` | The approved utility template that carries a message outside the 24-hour window |
 | `AGENT_NAME` | no | `Home` | Name used in the prompt and pages |
 | `DEFAULT_TIMEZONE` | no | `Europe/London` | Prefilled on `/setup` |
 | `DEBOUNCE_SECONDS` | no | `4` | How long a batch must be quiet before its turn |
 | `LOG_LEVEL` | no | `INFO` | |
 
-Variables for later milestones (WhatsApp, iMessage, Letta) are in
+Variables for later milestones (iMessage, Letta) are in
 [spec.md section 3](spec.md#3-configuration-and-dependencies) and are not read yet.
 
 ## Running with Docker
@@ -83,7 +86,8 @@ media backend is configured, `media_cleanup` (hourly). What each
 does and why running it twice is harmless is in
 [architecture.md](architecture.md#scheduled-jobs). Log events worth watching:
 `reminder_queued`, `digest_queued`, `outbox_sent`, `outbox_held_for_quiet_hours`,
-`outbox_send_failed`, `media_failed`, `photo_unreadable`, `media_cleaned`, `media_cleanup_failed`,
+`outbox_send_failed`, `outbox_delivery_failed`, `outbox_fallback_queued`, `group_created`,
+`group_not_created`, `media_failed`, `photo_unreadable`, `media_cleaned`, `media_cleanup_failed`,
 `invite_redeemed`, `job_crashed`.
 
 ```sql
@@ -93,7 +97,42 @@ select id, text, fire_at from reminders where status = 'scheduled' and fire_at <
 select job, run_key, ran_at from job_runs order by ran_at desc limit 20;
 -- sends waiting for quiet hours to end
 select id, target, send_after from outbox where status = 'pending' and send_after > now();
+-- sends that failed for good, the channel tried, and whether a second channel took them
+select o.created_at, o.channel_used, o.last_error, f.status as fallback, f.channel_used as fallback_channel
+from outbox o left join outbox f on f.dedupe_key = 'fallback:' || o.id
+where o.status = 'failed' order by o.created_at desc limit 20;
 ```
+
+## WhatsApp
+
+Setup and the template are in [channels.md](channels.md#whatsapp). The Channels page shows, per
+chat, whether WhatsApp will take an ordinary message or only the template, and how many sends
+failed in the last day.
+
+### WhatsApp template rejected or paused
+
+Outside 24 hours of someone's last message, every text is sent inside `WA_REMINDER_TEMPLATE`.
+While that template is not approved, those sends fail with a Graph error such as
+`132001 Template name does not exist in the translation` and move to the member's next channel;
+a member with only WhatsApp gets nothing until they write again. Replies are not affected,
+because a reply is always inside the window.
+
+1. In WhatsApp Manager, Message templates, read the status and the rejection reason.
+2. Rejected: the usual causes are a body that starts or ends with the variable, a category other
+   than Utility, or wording that reads as marketing. Edit and resubmit, or create a new template
+   and set `WA_REMINDER_TEMPLATE` to its name, then restart the worker.
+3. Paused or disabled for low quality: Meta lifts a pause by itself after some hours; a disabled
+   template has to be replaced.
+4. Language must be English (UK): the adapter sends `en_GB`.
+5. Failed sends are on the Activity page with "Retry". A retry within 24 hours of the person
+   writing goes out as an ordinary message.
+
+### An expired or revoked WhatsApp token
+
+Every WhatsApp call fails with Graph error `190`. Sends fail at once and move to each member's
+next channel, incoming photos and voice notes cannot be downloaded (the turn still runs and says
+so), and group creation shows the error. Set a new `WA_ACCESS_TOKEN` and restart both processes.
+Incoming text keeps working throughout, because webhooks are checked with the app secret.
 
 The brief time is `households.digest_time` and quiet hours are `members.quiet_start` and
 `quiet_end`, all in household time. Change them on the dashboard Settings page or by telling the
@@ -102,7 +141,8 @@ assistant ("make the morning brief 7", "don't message me after 9pm").
 ## Logs
 
 JSON lines via structlog, carrying `household_id` and `message_id` where known and never message
-text. `httpx` request logging is silenced because the Telegram URL contains the bot token.
+text. `httpx` request logging is silenced because the Telegram URL contains the bot token. The
+WhatsApp token travels in a header and is never in a URL or an error message.
 
 ## Cost tracking
 
@@ -135,6 +175,6 @@ Nothing in the test suite, fixtures or eval results contains a credential.
 
 ## Not covered yet
 
-Helm chart, backups, rotating presence tokens, and outage runbooks for WhatsApp and BlueBubbles
-belong to later milestones. The calendar feed token is rotated from the Calendar page, and an
+Helm chart, backups, rotating presence tokens, and the outage runbook for BlueBubbles belong to
+later milestones. The calendar feed token is rotated from the Calendar page, and an
 invite is replaced or revoked on the Family page.
