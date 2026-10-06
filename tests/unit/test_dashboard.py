@@ -481,6 +481,8 @@ async def test_family_page_adds_an_adult_whose_invite_connects_them_without_anyo
                                        "from agent_actions order by created_at")
     assert linked == {"name": "Ada", "preferred_channel": "telegram"}
     assert page.count("telegram") == 2 and "not connected" not in page       # both adults show their channel
+    activity = (await client.get("/dashboard/activity")).text
+    assert "invite.redeem" in activity and "family.add" in activity          # connecting shows up beside the add
     assert [(a["source"], a["tool"], a["undoable"]) for a in logged] == [
         ("dashboard", "family.add", True), ("dashboard", "family.add", True), ("agent", "invite.redeem", False)]
     # And Ada, now an adult with a chat, can log in herself.
