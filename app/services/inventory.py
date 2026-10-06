@@ -11,9 +11,9 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.agent import stock
-from app.agent.actions import Recorder
+from app.agent.actions import UNDO_WINDOW_HOURS, Recorder, undo_action
 from app.agent.base import ToolError
-from app.db import execute, fetch_all, fetch_one, fetch_val
+from app.db import execute, fetch_all, fetch_one, fetch_val, jsonb
 from app.services import shopping
 
 DEFAULT_LOCATIONS = {
@@ -181,6 +181,8 @@ async def apply_change(rec: Recorder, change: Change, source: str) -> None:
     if location is None:
         raise ToolError("unknown location")
 
+    if change.action == "low":
+        await _take_back_finished(rec, change.item_id, location_id, name)
     await rec.before("stock", item_id=change.item_id, location_id=location_id)
     current = await fetch_one(
         conn, "select qty_estimate, status, expires_on from stock where item_id = :i and location_id = :l",
@@ -236,6 +238,32 @@ async def apply_change(rec: Recorder, change: Change, source: str) -> None:
             rec.lines.append(f"NOTE: {name} is now a staple")
             staple = True
         rec.lines.append(await _list_note(rec, change.item_id, name, "finished" if staple else None))
+
+
+async def _take_back_finished(rec: Recorder, item_id: str, location_id: str, name: str) -> None:
+    """"Running low" on something just logged as finished says the "finished" was a mistake. Models
+    often log the low without undoing first, which leaves a quantity of zero: undo it here, when
+    that one change is all the earlier action was and nothing has touched the item since."""
+    ctx = rec.ctx
+    action = await fetch_val(
+        ctx.conn,
+        """select id from agent_actions
+           where household_id = :h and undone_at is null and tool = 'log_inventory'
+             and created_at > clock_timestamp() - make_interval(hours => :hours)
+             and touched @> cast(:row as jsonb)
+             and jsonb_array_length(args->'changes') = 1 and args->'changes'->0->>'action' = 'finished'
+           order by created_at desc limit 1""",
+        h=ctx.household_id, hours=UNDO_WINDOW_HOURS,
+        row=jsonb([{"table": "stock", "id": f"{item_id}:{location_id}"}]),
+    )
+    if action is None:
+        return
+    try:
+        async with ctx.conn.begin_nested():
+            await undo_action(ctx, action)
+    except ToolError:
+        return   # something later changed the same rows: leave history alone
+    rec.lines.append(f"NOTE: {name} was not finished after all: that was undone")
 
 
 async def _list_note(rec: Recorder, item_id: str, name: str, reason: str | None) -> str:

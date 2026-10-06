@@ -15,6 +15,7 @@ from tests.helpers import (
     list_snapshot,
     location_id_of,
     seed_home,
+    stock_of,
     stock_snapshot,
 )
 
@@ -180,6 +181,61 @@ async def test_the_call_an_undo_just_reverted_is_not_run_again_in_the_same_turn(
 
         await run_tool("update_shopping_list", add, ctx_for(conn, home))                 # and so does a later turn
         assert await active_list(conn, home) == {"bin bag": "explicit", "kitchen foil": "explicit"}
+
+
+async def test_running_low_right_after_finished_takes_the_finished_back():
+    """Seen with live models: a correction ("not gone, just low") logged as low with no undo first."""
+    async with tx() as conn:
+        home = await seed_home(conn)
+        await add_item(conn, home, "rice", staple=True)
+        ctx = ctx_for(conn, home)
+        await log(ctx, "rice", "adjusted", quantity=3)
+        await log(ctx, "rice", "finished")
+        result, _ = await run_tool("log_inventory", {"changes": [{"item": "rice", "action": "low"}]}, ctx)
+
+        assert result.splitlines() == ["NOTE: rice was not finished after all: that was undone",
+                                       "OK: rice low (store)", "NOTE: rice added to shopping list"]
+        assert [(row["qty_estimate"], row["status"]) for row in await stock_snapshot(conn, home)] == [(D(3), "low")]
+        assert await active_list(conn, home) == {"rice": "low"}
+        undone = await fetch_all(conn, "select undone_at is not null as undone from agent_actions order by created_at")
+        assert [row["undone"] for row in undone] == [False, True, False]
+        assert await inventory.stock_drift(conn, home.id) == []          # the event log still replays to this
+
+        await undo(ctx)                                                   # undoing the low: as before either message
+        assert [(row["qty_estimate"], row["status"]) for row in await stock_snapshot(conn, home)] == [(D(3), "in_stock")]
+        assert await active_list(conn, home) == {}
+
+
+async def test_running_low_leaves_a_finished_alone_when_it_was_not_the_whole_action_or_not_the_last_word():
+    async with tx() as conn:
+        home = await seed_home(conn)
+        for name in ("egg", "milk", "rice", "oats", "yam", "salt", "sugar"):
+            await add_item(conn, home, name, qty=4)
+        ctx = ctx_for(conn, home)
+        # One action, two changes: taking it back would un-finish the eggs too.
+        await run_tool("log_inventory", {"changes": [{"item": "egg", "action": "finished"},
+                                                     {"item": "milk", "action": "finished"}]}, ctx)
+        await log(ctx, "milk", "low")
+        # Used up, not logged as finished.
+        await log(ctx, "rice", "used", quantity=4)
+        await log(ctx, "rice", "low")
+        # Finished, then touched again by a later action: that one is the last word.
+        await log(ctx, "oats", "finished")
+        await log(ctx, "oats", "adjusted", quantity=0)
+        await log(ctx, "oats", "low")
+        # Finished more than a day ago: too old to be a slip of the tongue, as for undo itself.
+        await log(ctx, "yam", "finished")
+        await execute(conn, "update agent_actions set created_at = created_at - interval '25 hours' "
+                            "where args->'changes'->0->>'item' = 'yam'")
+        await log(ctx, "yam", "low")
+        # Another item's finished is none of this one's business.
+        await log(ctx, "salt", "finished")
+        await log(ctx, "sugar", "low")
+
+        stock = {item: (qty, status) for (item, _), (qty, status) in (await stock_of(conn, home)).items()}
+        assert stock == {"egg": (D(0), "out"), "milk": (D(0), "low"), "rice": (D(0), "low"), "oats": (D(0), "low"),
+                         "yam": (D(0), "low"), "salt": (D(0), "out"), "sugar": (D(4), "low")}
+        assert await fetch_all(conn, "select 1 from agent_actions where undone_at is not null") == []
 
 
 async def test_dashboard_actions_are_logged_with_their_source_and_can_be_undone():
