@@ -9,7 +9,7 @@
 {% for entry in feed %}
 <div class="card">
   <div class="muted">{{ entry.at.strftime("%-d %b %H:%M") }} UTC &middot; {{ entry.member or "system" }}
-    &middot; {% if entry.kind == "turn" %}{{ entry.channel }} {{ entry.scope }}{% else %}dashboard{% endif %}</div>
+    &middot; {% if entry.kind == "turn" %}{{ entry.channel }} {{ entry.scope }}{% else %}{{ "dashboard" if entry.source == "dashboard" else "chat" }}{% endif %}</div>
   {% if entry.kind == "turn" %}
   {% set turn = entry.meta.get("turn") %}
   <div>{{ entry.text or "" }}{% for media in entry.media %} <span class="muted">[{{ media.kind }}]</span>{% endfor %}
