@@ -2,13 +2,17 @@
 
 The full DDL is [`schema.sql`](../schema.sql), applied verbatim by Alembic migration `0001`.
 Table-by-table purpose is in [spec.md section 4](spec.md#4-data-model). This page covers what
-milestones 1 and 2 use and the rules the code enforces.
+milestones 1 to 3 use and the rules the code enforces.
 
 ## Tables in use
 
 | Table | Written by |
 | --- | --- |
-| `households`, `members`, `locations` | `/setup` (`services/households.py`) |
+| `households`, `members`, `locations` | `/setup` (`services/households.py`); later members by `add_family_member` and the Family page (`services/members.py`) |
+| `households.onboarding_state`, `households.digest_time` | `onboarding_advance`, `remember`, the Settings page |
+| `members.quiet_start`, `quiet_end`, `preferred_channel`, the invite hash | `remember`, the Settings and Family pages |
+| `household_facts` | `remember`, the Settings page (`services/households.py`) |
+| `places` | shops named in `remember` (kind `store`) |
 | `channel_identities` | invite redemption (`core/identity.py`) |
 | `login_tokens` | the `dashboard` keyword (`services/members.py`) |
 | `threads`, `messages` | inbound pipeline; the router adds `out` rows |
@@ -17,11 +21,20 @@ milestones 1 and 2 use and the rules the code enforces.
 | `shopping_list_items` | `services/shopping.py`, and the inventory side-effect rules |
 | `events`, `reminders` | `services/calendar.py` only; the recurrence job adds reminder rows, the reminders job updates their status |
 | `households.calendar_token_hash` | the Calendar page's "New subscribe link" |
-| `agent_actions` | every tool call or dashboard action that wrote something |
-| `outbox` | turns, invite welcomes, login links, reminders, digests |
+| `agent_actions` | every tool call or dashboard action that wrote something, and each invite redemption |
+| `outbox` | turns, invites and welcomes, login links, reminders, digests |
 | `job_runs` | the daily brief and weekly digest, one row per household and run |
 
-Not written yet: `household_facts`, `consumption_profiles`, `places`, `presence_events`, `nudge_log`.
+Not written yet: `consumption_profiles`, `presence_events`, `nudge_log`.
+
+`households.onboarding_state` is `{"step": "shops", "done": ["family", "routines"], "skipped":
+["routines"]}`. `step` is the first of `family`, `routines`, `shops`, `staples`, `tour`, `rhythm`
+not yet done, and `null` when setup is complete.
+
+`messages.media` is a list of `MediaRef`. A stored attachment has `storage_backend` and
+`storage_key` (S3: `{household}/{message_id}/{n}.{ext}`; ImgBB: the image id, plus `storage_url`
+and `delete_url`). Retention removes those four fields after `MEDIA_RETENTION_DAYS` and leaves
+the rest, including a voice note's `transcript`.
 
 `threads.channel` is free text. Besides real channels it holds `playground`: the threads the
 dashboard Playground and the eval suite talk on. Their outbox rows have status `simulated` and

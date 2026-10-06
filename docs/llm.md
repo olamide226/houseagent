@@ -27,6 +27,9 @@ change gated by the eval suite.
   the assistant `ChatMessage` and never reads it. Only the adapter that produced it does.
 - **Anthropic wire shape.** Tool results for one assistant turn are merged into a single user
   turn, adjacent same-role turns merge, and a leading assistant turn (from thread history) is dropped.
+- **Images.** The loop loads a turn's photos through `MediaStore` and sends them as `ImagePart`s
+  (base64, with the stored mime type) after the turn's text. `LLM_SUPPORTS_IMAGES=false` makes it
+  send a note instead: `[photo received; this model can't read photos]`.
 - **Temperature** is not sent on the Anthropic path: current Claude models reject sampling parameters.
 - `stop_reason: refusal` and unknown stop reasons map to `stop = "error"`, which fails the turn.
 

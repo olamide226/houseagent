@@ -15,28 +15,33 @@ docker compose up --build     # Postgres, migration, api on :8000, worker
 ```
 
 1. Open `http://localhost:8000/setup?token=<SETUP_TOKEN>` and create the household.
-2. Tap the invite it shows (a Telegram deep link, QR code and code). The bot answers "Hi <name>, you're connected."
-3. Tell the bot what you have or what ran out. Send `dashboard` for a login link to the web dashboard.
+2. Tap the invite it shows (a Telegram deep link, QR code and code). The bot answers "Hi <name>,
+   you're connected" and asks its first setup question: who lives here.
+3. Answer in your own words, or say "skip". It asks about routines, shops, staples, photos of the
+   fridge and when to stay quiet, one at a time, then gets out of the way.
+4. Tell it another adult lives there and it sends you an invite to pass on. Send `dashboard` for a
+   login link to the web dashboard.
 
 Telegram must reach the api over HTTPS to deliver webhooks; see [channels.md](channels.md).
 Without Docker: [operations.md](operations.md#running-without-docker).
 
 ## What is built
 
-Milestones 1 and 2 of the six in [spec.md](spec.md#17-deployment-and-build-milestones):
-Telegram, inventory and the shopping list, undo, `/setup`, magic-link login; then the calendar
-tools, reminders that respect quiet hours, the daily brief and weekly digest, a read-only ICS
-feed, and the Calendar dashboard page. Each page below says what exists now and what is deferred.
+Milestones 1 to 3 of the six in [spec.md](spec.md#17-deployment-and-build-milestones):
+Telegram, inventory and the shopping list, undo, `/setup`, magic-link login; the calendar tools,
+reminders that respect quiet hours, the daily brief and weekly digest, a read-only ICS feed; then
+conversational onboarding, invites, media storage on S3 or ImgBB, receipt and fridge photos, and
+the Family and Settings pages. Each page below says what exists now and what is deferred.
 
 | Doc | Contents |
 | --- | --- |
-| [architecture.md](architecture.md) | Processes, message flow, quiet hours, scheduled jobs, repo layout |
+| [architecture.md](architecture.md) | Processes, message flow, media, quiet hours, scheduled jobs, repo layout |
 | [data-model.md](data-model.md) | Tables, stock transitions, calendar rows, invariants |
 | [channels.md](channels.md) | Telegram setup and payload notes; the adapter contract |
 | [llm.md](llm.md) | Provider layer, adding an adapter, tested models |
-| [agent-and-tools.md](agent-and-tools.md) | Runtime loop, tools, calendar rules, resolution rules, undo |
-| [dashboard.md](dashboard.md) | Pages, the login flow, the calendar feed |
-| [operations.md](operations.md) | Environment variables, running, worker jobs, logs |
+| [agent-and-tools.md](agent-and-tools.md) | Runtime loop, photos, onboarding, tools, calendar rules, resolution rules, undo |
+| [dashboard.md](dashboard.md) | Pages, the login flow, invites, the calendar feed |
+| [operations.md](operations.md) | Environment variables, running, media storage, worker jobs, logs |
 | [evals.md](evals.md) | Running the agent evals, adding a case, latest results |
 | [adr/](adr/) | One decision per file |
 | [spec.md](spec.md) | The v1 implementation spec: the baseline for behaviour, names and layout |

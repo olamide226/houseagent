@@ -15,22 +15,50 @@ Everything is read by `Settings` in `app/config.py`, from the environment or a l
 | `LLM_BASE_URL` | for `openai_compat` | | Endpoint; optional override for `anthropic` |
 | `LLM_API_KEY` | yes (except local models) | | Provider key |
 | `LLM_MODEL` | yes | | Must support tool calling |
-| `LLM_SUPPORTS_IMAGES` | no | `true` | Recorded on the client; photos are not read yet |
+| `LLM_SUPPORTS_IMAGES` | no | `true` | `false`: photos are not sent to the model and the agent says it cannot read them |
 | `LLM_MAX_TOOL_ITERATIONS` | no | `8` | Loop guard |
 | `STT_PROVIDER`, `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL` | no | | Voice-note transcription (`openai_compat`) |
+| `MEDIA_BACKEND` | no | `s3` | `s3` or `imgbb`. The backend is used only once its variables are set |
+| `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | for `s3` | | Any S3-compatible bucket. Leave `S3_ENDPOINT` unset for AWS |
+| `S3_REGION` | no | `us-east-1` | Signing region; MinIO accepts any |
+| `IMGBB_API_KEY` | for `imgbb` | | Image hosting; images only |
+| `MEDIA_RETENTION_DAYS` | no | `90` | Stored media is deleted after this; ImgBB caps it at 180 |
 | `TG_BOT_TOKEN`, `TG_BOT_USERNAME`, `TG_WEBHOOK_SECRET` | for Telegram | | Bot API; the username builds invite links |
 | `AGENT_NAME` | no | `Home` | Name used in the prompt and pages |
 | `DEFAULT_TIMEZONE` | no | `Europe/London` | Prefilled on `/setup` |
 | `DEBOUNCE_SECONDS` | no | `4` | How long a batch must be quiet before its turn |
 | `LOG_LEVEL` | no | `INFO` | |
 
-Variables for later milestones (media storage, WhatsApp, iMessage, Letta) are in
+Variables for later milestones (WhatsApp, iMessage, Letta) are in
 [spec.md section 3](spec.md#3-configuration-and-dependencies) and are not read yet.
 
 ## Running with Docker
 
 `docker compose up --build` runs Postgres 16, `alembic upgrade head`, the api on port 8000 and the
-worker. The image is `python:3.12-slim` with `ffmpeg` and runs as `nobody`.
+worker. The image is `python:3.12-slim` with `ffmpeg` and runs as `nobody`. Compose does not run an
+object store: point `S3_*` in `.env` at a bucket you have, or leave them unset and photos are not
+read.
+
+## Media storage
+
+Photos and voice notes are kept through `MediaStore`
+([ADR 0018](adr/0018-media-retention-and-photos-without-a-backend.md)).
+
+- **`s3`**: a private bucket and a key pair that can put, get and delete objects in it. Objects are
+  named `{household}/{message_id}/{n}.{ext}`. Add a bucket lifecycle rule a little longer than
+  `MEDIA_RETENTION_DAYS` as a backstop.
+- **`imgbb`**: one API key and no infrastructure. Images only; voice notes are transcribed and not
+  kept. Anyone holding an image's URL can view it until it expires, and it cannot be deleted
+  early. Receipts can show an address or part of a card number, so prefer `s3` for real use.
+- **Neither set**: everything else works; a photo gets a reply saying it could not be read.
+
+Message text and photos also go to the configured LLM provider. Check its retention settings.
+
+```sql
+-- stored media by age
+select date_trunc('month', created_at) as month, count(*) from messages
+where jsonb_path_exists(media, '$[*].storage_key') group by 1 order by 1;
+```
 
 ## Running without Docker
 
@@ -49,12 +77,14 @@ uv run python -m app.worker.main             # worker, in a second terminal
 
 ## Worker jobs
 
-`python -m app.worker.main` runs six jobs: `inbound`, `outbox`, `fire_reminders` (every 15 s),
-`expand_recurrence` (hourly), `daily_brief` and `weekly_digest` (checked every minute). What each
+`python -m app.worker.main` runs `inbound`, `outbox`, `fire_reminders` (every 15 s),
+`expand_recurrence` (hourly), `daily_brief` and `weekly_digest` (checked every minute) and, when a
+media backend is configured, `media_cleanup` (hourly). What each
 does and why running it twice is harmless is in
 [architecture.md](architecture.md#scheduled-jobs). Log events worth watching:
 `reminder_queued`, `digest_queued`, `outbox_sent`, `outbox_held_for_quiet_hours`,
-`outbox_send_failed`, `job_crashed`.
+`outbox_send_failed`, `media_failed`, `photo_unreadable`, `media_cleaned`, `media_cleanup_failed`,
+`invite_redeemed`, `job_crashed`.
 
 ```sql
 -- reminders that should have gone and have not
@@ -66,7 +96,8 @@ select id, target, send_after from outbox where status = 'pending' and send_afte
 ```
 
 The brief time is `households.digest_time` and quiet hours are `members.quiet_start` and
-`quiet_end`, all in household time. Until the Settings page exists they are changed in SQL.
+`quiet_end`, all in household time. Change them on the dashboard Settings page or by telling the
+assistant ("make the morning brief 7", "don't message me after 9pm").
 
 ## Logs
 
@@ -105,4 +136,5 @@ Nothing in the test suite, fixtures or eval results contains a credential.
 ## Not covered yet
 
 Helm chart, backups, rotating presence tokens, and outage runbooks for WhatsApp and BlueBubbles
-belong to later milestones. The calendar feed token is rotated from the Calendar page.
+belong to later milestones. The calendar feed token is rotated from the Calendar page, and an
+invite is replaced or revoked on the Family page.

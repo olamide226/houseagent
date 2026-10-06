@@ -33,6 +33,7 @@ Add `-k "calendar or reminders"` to run part of the suite.
     items: [{name: egg, staple: true, stock: {fridge: 6}}, {name: bread, stock: {store: 1}}]
     list: []                      # item names already on the shopping list
   turns: [{from: Ola, text: "we're out of eggs and bread"}]   # from: Ola or Ada; scope: dm (default) or group
+  # a turn may also carry photos: [receipt_supermarket.png], files in tests/evals/fixtures/
   expect:
     events: [{item: egg, type: finished}, {item: bread, type: finished}]
     shopping_list_active: [egg]
@@ -50,6 +51,14 @@ Add `-k "calendar or reminders"` to run part of the suite.
 | `calendar_cancelled` | How many events are cancelled |
 | `reminders_scheduled` | How many reminder rows are scheduled, for events and standalone |
 | `reminders` | Exactly these scheduled standalone reminders: `text_contains`, `local_fire`, `target`, `member`, `urgency`, `rrule_contains`, `repeats: false` |
+| `events_include` | Photos: an event whose item name contains `item_contains`, of one of the `type`s, exists. A model may call the item "milk" or "semi skimmed milk" |
+| `events_all` | Every event has this `type`, `source` or `location` (a value or a list of accepted values) |
+| `events_max` | No more events than this, so totals, savings and invented items fail the case |
+| `members_added` | Exactly these people beyond Ola and Ada, with their roles |
+| `onboarding_done`, `onboarding_step` | Steps that must be done; the step setup is now on (`null` when complete) |
+| `staples`, `shops`, `facts`, `facts_mention` | Items flagged as staples; shop names containing each text; a fact by key whose value contains the text; any fact value containing the text |
+| `brief`, `quiet` | The brief time (`"07:00"`); quiet hours per adult (`"22:00-06:30"`) |
+| `invites_sent` | How many invite messages were queued, each to the person who asked |
 
 Item names are normalised the way the resolver does, so `eggs` and `egg` are the same item.
 

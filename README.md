@@ -5,9 +5,9 @@ shopping list, appointments and reminders, so nobody has to remember things or f
 
 One FastAPI service, one worker process, one Postgres database. Channel-agnostic, model-agnostic.
 
-**Status: milestone 2 of 6.** Telegram, inventory, the shopping list, undo, appointments,
-recurring activities, reminders, a morning brief, a calendar feed and a small web dashboard work
-today. Photos, onboarding, WhatsApp, iMessage and presence are specified in
-[docs/spec.md](docs/spec.md) and not built yet.
+**Status: milestone 3 of 6.** Telegram, inventory, the shopping list, undo, appointments,
+recurring activities, reminders, a morning brief, a calendar feed, conversational setup, invites
+for the rest of the family, receipt and fridge photos, and a small web dashboard work today.
+WhatsApp, iMessage and presence are specified in [docs/spec.md](docs/spec.md) and not built yet.
 
 Start with [docs/README.md](docs/README.md): a five-minute local run and links to everything else.

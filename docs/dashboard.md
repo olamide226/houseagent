@@ -31,11 +31,29 @@ returns 403.
 | Shopping list | `/dashboard/shopping` | Active list, then a "probably needed" section | Add, tick off, remove, set the shop |
 | Inventory | `/dashboard/inventory` | Stock by location, filter by status; per-item history | Set a count, mark finished, edit an item (aliases, staple, threshold, usual place), merge a duplicate |
 | Calendar | `/dashboard/calendar` | The next 30 days with repeats expanded, the repeating series, standalone reminders | Add an event (once, daily, weekly or monthly), edit title, time and place, cancel, skip one date of a series, cancel a reminder, get the subscribe link |
+| Family | `/dashboard/family` | Everyone in the household, each adult's connected channels, open invites | Add an adult or a child, make a new invite (link, QR code and code, shown once), revoke an invite, choose which connected channel an adult is messaged on |
 | Activity | `/dashboard/activity` | The last 200 turns and dashboard actions: message, tool calls and results, tokens, latency, send status | Undo an action, retry a failed send |
 | Playground | `/dashboard/playground` | A chat with the agent in the browser | Dry run by default; tick "Apply for real" to keep the result |
+| Settings | `/dashboard/settings` | The morning brief time, each adult's quiet hours, remembered facts | Change the brief time, change or clear quiet hours, add, change or forget a fact |
 
-Family, Channels, Settings and System pages are not built yet. Reminders are added in chat; the
-Calendar page lists and cancels them.
+Channels and System pages are not built yet. Reminders are added in chat; the Calendar page lists
+and cancels them. Staples are set on an item's page. Presence links join Settings with milestone 5;
+the calendar subscribe link stays on the Calendar page.
+
+## Inviting the family
+
+Adding an adult on the Family page creates the member and shows their invite once: a Telegram
+deep link, a QR code of it, and the code itself, which can be sent to the bot on any connected
+channel. Only the code's hash is stored. It works once per channel and for 7 days; "New invite"
+replaces it and "Revoke" ends it. The same happens from chat: tell the assistant another adult
+lives there and it sends you the invite to pass on. When they open it their chat is linked, it
+becomes their preferred channel, and they can send `dashboard` to log in themselves. Children are
+records only: no chat, no login, no quiet hours.
+
+Quiet hours are on Settings rather than Family, next to the brief time they belong with. A fact
+named `shops` or `main_supermarket` also becomes a shop in `places`. The keys `staples`,
+`morning_brief` and `quiet_hours` are settings, not facts, and are refused in the facts form
+([ADR 0016](adr/0016-settings-said-in-chat-go-through-remember.md)).
 
 ## Calendar feed
 
@@ -51,6 +69,9 @@ block ([ADR 0015](adr/0015-ics-feed-token-and-time-zones.md)).
 Pages never write SQL. A write calls the same `app/services/` function the agent tool uses, inside
 `record(...)` with `source = 'dashboard'`, so stock rules, undo and the Activity log behave exactly
 as they do from chat. Ticking "Bought" in the browser logs a restock, just as "got the eggs" does.
+Brief time, quiet hours, facts, added members and the preferred channel can be undone from
+Activity. Creating or revoking an invite is logged but not undoable, and a member who has
+connected can no longer be removed by undo.
 
 The Playground calls `simulate_turn()`, the same service the eval suite uses. A dry run executes
 the whole turn in a transaction and rolls it back, so nothing is saved and each dry-run message

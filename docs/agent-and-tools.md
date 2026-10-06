@@ -5,9 +5,11 @@
 `AgentRuntime` (`app/agent/base.py`) has one method, `handle(envelope, ctx) -> AgentResult`.
 `LoopRuntime` (`app/agent/loop.py`) is the only implementation so far:
 
-1. System prompt = the static prompt + the household brief.
+1. System prompt = the static prompt + the household brief, + the onboarding section while the
+   household is being set up.
 2. Messages = the thread's last 20 messages from the past 48 hours (member messages as
-   `"{name}: {text}"`, agent messages as assistant turns, a bare reaction as `ACK`), then the current turn.
+   `"{name}: {text}"`, agent messages as assistant turns, a bare reaction as `ACK`), then the
+   current turn: its text and up to four photos.
 3. Loop up to `LLM_MAX_TOOL_ITERATIONS`: call the model; if it asks for tools, run each in order
    and return one tool message per call; otherwise stop.
 4. Final text: exactly `ACK` means react only, exactly `NOOP` means say nothing, anything else is
@@ -23,15 +25,52 @@ A turn's clock is the time its message arrived (`Ctx.now`), not the time the wor
 "In two hours" and "tomorrow" count from when it was said. See
 [ADR 0013](adr/0013-explicit-clocks.md).
 
+## Photos
+
+A turn's photos are loaded through `MediaStore` and sent to the model as images after the text.
+What the model does with them is in the static prompt: a receipt becomes `log_inventory` with
+`restocked` and source `receipt`; a fridge, freezer or cupboard photo becomes `adjusted` with
+source `photo` and that location, and nothing is ever marked finished for being absent from a
+photo. The usual rules then apply in code, so a receipt ticks bought items off the shopping list.
+
+When a photo cannot be shown to the model the turn still runs, with a note in place of the image:
+
+| Situation | Note in the turn |
+| --- | --- |
+| `LLM_SUPPORTS_IMAGES=false` | `[photo received; this model can't read photos]` |
+| No media backend, or the download, upload or read failed | `[photo received; it could not be loaded]` |
+| More than four photos in one batch | `[2 more photos not read: at most 4 per message]` |
+
+Earlier photos appear in thread history as `[photo]` lines only; the image is not sent again.
+
+## Onboarding
+
+A new household starts with `onboarding_state.step = "family"`. While a step is open the system
+prompt ends with the spec's onboarding section (current step and what remains), one line saying
+what this step asks and how to record it, and the model is offered `onboarding_advance`.
+
+| Step | The agent asks | Recorded with |
+| --- | --- | --- |
+| `family` | Who lives here, including the kids? | `add_family_member` |
+| `routines` | Regular things: nursery, classes, clubs? | `schedule_event` with a repeat rule |
+| `shops` | Where do you usually shop? | `remember` keys `main_supermarket` and `shops` |
+| `staples` | What do you always need in the house? | `remember` key `staples` |
+| `tour` | Photos of the fridge, freezer and cupboard | `log_inventory`, `adjusted`, source `photo` |
+| `rhythm` | Morning brief at 07:30, quiet 21:30 to 07:00, OK? | `remember` keys `morning_brief`, `quiet_hours` |
+
+The first question is not a model call: when an adult connects while `family` is open, the
+"you're connected" message asks it. Steps can be skipped or answered out of order, and everything
+they record can be said later in ordinary conversation. After the last step the section and the
+tool disappear. The spec's seventh step, `presence`, joins with milestone 5. See
+[ADR 0017](adr/0017-onboarding-state-and-messages-written-by-code.md).
+
 Token usage, tool calls and latency for each turn are stored on the batch's last message in
 `messages.meta` (`usage`, `turn`), and shown on the dashboard Activity page.
 
 ## Tools
 
-`REGISTRY` in `app/agent/tools/__init__.py` holds the tools the model is offered. Nine are
-implemented. The contract (argument models and descriptions) for the other three lives in
-`memory.py`, `family.py` and `onboarding.py` and is registered by the milestone that implements
-each.
+`REGISTRY` in `app/agent/tools/__init__.py` holds the twelve tools. Eleven are always offered;
+`onboarding_advance` only while a household is being set up.
 
 | Tool | Writes | Behaviour |
 | --- | --- | --- |
@@ -43,7 +82,10 @@ each.
 | `modify_event` | events, reminders | Finds the event from how it was described; moves, edits or cancels it; scope `this` on a series changes one date |
 | `list_upcoming` | none | Events in the next `days`, repeats expanded, plus standalone reminders; optional person filter |
 | `set_reminder` | reminders | One-off at `fire_at`, or repeating by `rrule`; for me, the household or a named member |
+| `remember` | facts; some settings | Upserts a fact for the household or one member; no value forgets it. The keys `staples`, `shops`, `main_supermarket`, `morning_brief` and `quiet_hours` are settings ([ADR 0016](adr/0016-settings-said-in-chat-go-through-remember.md)) |
+| `add_family_member` | members, an invite | Adds a child or an adult; a name already there is not added twice. For an adult who has not connected, an invite is sent to the person asking, to pass on |
 | `undo_last` | inverse of the last actions | The caller's own actions from the past 24 hours, newest first, `n` up to 5 |
+| `onboarding_advance` | onboarding state | Marks a setup step done or skipped and names the next one |
 
 Result lines are prefixed so the model can relay or act on them:
 
@@ -55,9 +97,14 @@ AMBIGUOUS: 'pepper' could be Bell pepper (fridge), Black pepper (store)
 ERROR: the shopping list is empty
 OK: GP for Ada on Wed 7 Oct at 10:30, Hurley Clinic
 NOTE: reminders at Tue 6 Oct 10:30, Wed 7 Oct 09:30
+NEW: Ada (adult)
+NOTE: an invite for Ada was sent to this person in a separate message; they pass it on and Ada connects by opening it
+OK: quiet hours for Ola, Ada: 22:00 to 06:30
+OK: staples done. Next step: tour
 ```
 
-`household_id` and `member_id` come from `Ctx`, never from the model. No tool can name a recipient.
+`household_id` and `member_id` come from `Ctx`, never from the model. No tool can name a recipient:
+the invite for a new adult goes to whoever asked, and its code is written by code, not by the model.
 
 `run_tool` validates arguments with the tool's Pydantic model and runs the tool in its own
 savepoint. Validation and domain errors come back as `ERROR:` tool messages so the model can
@@ -138,8 +185,12 @@ action's inverse in `agent_actions.inverse`:
 ```
 
 Rows that existed are restored in full; rows the action created are deleted. Undoable tables are
-`stock`, `shopping_list_items`, `items` (the staple flag and dashboard edits), `events` and
-`reminders`. Undoing a new event deletes it and its reminders; undoing a move, an edit, a skipped
+`stock`, `shopping_list_items`, `items` (the staple flag and dashboard edits), `events`,
+`reminders`, `household_facts`, `places`, `members` and `households`. For the last two only the
+columns an action may change are put back (name, role, preferred channel and quiet hours; brief
+time and onboarding state), never an invite, a token or the session version, so an undo cannot
+revive a revoked invite or a logged-out session. Undoing "add Tobi" removes him; once a member
+has connected, or anything else depends on them, that undo is refused. Undoing a new event deletes it and its reminders; undoing a move, an edit, a skipped
 date or a cancellation puts the event and every reminder row back as they were. Undo:
 
 - applies the newest non-undone action first and sets `undone_at`;
@@ -148,4 +199,5 @@ date or a cancellation puts the event and every reminder row back as they were. 
 - from chat covers the caller's own actions within 24 hours; from the dashboard Activity page any
   adult can undo any single action.
 
-Not undone: item and location creation, learned aliases, and merging duplicate items.
+Not undone: item and location creation, learned aliases, merging duplicate items, creating or
+revoking an invite, and an invite that was already sent (the code dies with the member).

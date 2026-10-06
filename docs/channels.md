@@ -47,7 +47,9 @@ A new channel adds `tests/contract/fixtures/<channel>/` and a factory in that fi
 ### Known limits
 
 - Voice notes need `STT_*` configured; without it the agent sees `[voice note] (could not be transcribed)`.
-- Photos are stored as references only. The agent is told a photo arrived and that it cannot read
-  photos yet; reading them arrives with `MediaStore`.
+- Photos need a media backend (`MEDIA_BACKEND` with its variables) and a model with image input.
+  Without either the agent is told a photo arrived and that it could not read it. Telegram sends a
+  photo's caption as the message text, so `MediaRef.caption` is not set.
+- At most four photos from one batch of messages reach the model.
 - Invite attempts are limited to 5 per handle per hour, counted in the api process's memory, so
   the count resets on restart.

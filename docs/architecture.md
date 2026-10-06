@@ -62,7 +62,8 @@ unprocessed message is older than `DEBOUNCE_SECONDS`, which batches "out of eggs
 1. takes `pg_advisory_xact_lock(hashtext(household_id))`, so two messages never race on stock;
 2. claims the household's `received` messages (`FOR UPDATE SKIP LOCKED`);
 3. answers the exact keyword `dashboard` with a login link, without the agent;
-4. for each thread: transcribes voice notes, builds the `Envelope`, runs the agent turn;
+4. for each thread: fetches each attachment once, stores it through `MediaStore` and transcribes
+   voice notes, then builds the `Envelope` and runs the agent turn;
 5. queues the response: nothing for `NOOP`, an `ack` reaction for `ACK`, otherwise the reply text
    (as a reply to the last message when the batch had more than one);
 6. marks the messages `processed` and stores usage, tool calls and latency in `messages.meta`.
@@ -95,6 +96,16 @@ of row are never held: `urgency = 'high'`, and rows with `respect_quiet_hours = 
 what direct replies, invite welcomes and login links use. See
 [ADR 0012](adr/0012-quiet-hours-and-reminder-delivery.md).
 
+**Media (`app/media/`, `app/pipeline/media.py`).** `MediaStore` has `put`, `get` and `delete`,
+with an S3-compatible backend and an ImgBB backend chosen by `MEDIA_BACKEND`. The pipeline and
+the agent only ever see a `MediaRef`. S3 keeps images and audio in a private bucket at
+`{household}/{message_id}/{n}.{ext}`. ImgBB keeps images only, behind an unlisted public URL, and
+never audio. Attachments are stored before the turn's savepoint, so a failed turn still leaves a
+reference that retention can delete. Up to four photos per turn are loaded back through the store
+and sent to the model inline, so the provider never sees a storage URL. With no backend
+configured, a failed fetch, or a model without image input, the turn carries a one-line note
+instead and still runs. See [ADR 0018](adr/0018-media-retention-and-photos-without-a-backend.md).
+
 ## Scheduled jobs
 
 The worker runs each job as its own supervised task (`app/worker/jobs.py`). Every job takes the
@@ -108,6 +119,7 @@ current time as an argument, so tests drive them on a controlled clock.
 | `expand_recurrence` | 1 h | Reminder rows for each recurring event's occurrences in the next 48 hours, skipping exception dates | Unique `(event_id, fire_at)` |
 | `daily_brief` | 1 min check | At the household's `digest_time`: today's events and reminders, items to use within 2 days. Nothing on an empty day | A `job_runs` row per household and date |
 | `weekly_digest` | 1 min check | Sunday 18:00: the week ahead, the list count, low and expiring items | A `job_runs` row per household and ISO week |
+| `media_cleanup` | 1 h, only with a media backend | Deletes stored media on messages older than `MEDIA_RETENTION_DAYS` and drops the storage fields; text and transcripts stay | `SKIP LOCKED`; a cleaned message no longer matches |
 
 A reminder is sent within about 17 seconds of its `fire_at` (15 s tick, then the outbox, which the
 job wakes). A digest missed by more than four hours is skipped instead of being sent late. After
@@ -123,8 +135,9 @@ app/
   db.py          engine, tx(), advisory lock, query helpers
   core/          envelope types, identity and invite codes, time, quiet hours, recurrence
   llm/           neutral types, OpenAI-compatible and Anthropic adapters, speech-to-text
+  media/         MediaStore protocol and factory, S3 and ImgBB backends
   channels/      ChannelAdapter protocol, registry, Telegram
-  pipeline/      inbound (persist, debounce, turn, simulate_turn), media, router
+  pipeline/      inbound (persist, debounce, turn, simulate_turn), media (fetch, store, transcribe), router
   agent/         runtime interface, loop, prompt, resolve, actions (undo), stock, tools/
   services/      the one write path, shared by tools and dashboard
   dashboard/     auth, routes, templates, static
@@ -135,7 +148,7 @@ tests/           unit/ contract/ evals/
 
 ## Not built yet
 
-The WhatsApp 24-hour window, falling back to a member's next channel after a failed send, and
-`MediaStore` arrive with the milestones that need them (WhatsApp, iMessage, photos). The jobs
-`consumption_model`, `low_stock_prompt`, `imessage_health` and `media_cleanup` are later
-milestones too, so the weekly digest lists low and out items but not predicted ones.
+The WhatsApp 24-hour window and falling back to a member's next channel after a failed send
+arrive with the milestones that need them (WhatsApp, iMessage). The jobs `consumption_model`,
+`low_stock_prompt` and `imessage_health` are later milestones too, so the weekly digest lists low
+and out items but not predicted ones. Presence, and with it the last onboarding step, is milestone 5.
