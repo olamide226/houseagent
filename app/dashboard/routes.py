@@ -31,7 +31,6 @@ router = APIRouter(prefix="/dashboard", default_response_class=HTMLResponse)
 ACTIVITY_LIMIT = 200
 CALENDAR_DAYS = 30
 REPEATS = {"": None, "daily": "FREQ=DAILY", "weekly": "FREQ=WEEKLY", "monthly": "FREQ=MONTHLY"}
-BUILT_CHANNELS = (Channel.telegram, Channel.whatsapp)   # the channels that have an adapter
 
 
 def _ctx(conn: AsyncConnection, session: Session) -> Ctx:
@@ -381,6 +380,7 @@ async def _channels(request: Request, session: Session, template: str = "_channe
         people = await members.identities(conn, session.household_id)
         failed = await outbound.failed_since(conn, session.household_id, now - timedelta(days=1))
         last_sent = await outbound.last_sent(conn, session.household_id)
+        imessage_down = await households.nudged_at(conn, session.household_id, households.IMESSAGE_OUTAGE)
     owners = {(p["channel"], ADAPTERS[Channel(p["channel"])].dm_thread_id(p["handle"])): p
               for p in people if Channel(p["channel"]) in ADAPTERS}
     for chat in chats:
@@ -403,7 +403,9 @@ async def _channels(request: Request, session: Session, template: str = "_channe
         "last_sent": last_sent.get(channel.value), "failed": failed.get(channel.value, 0),
         "template": ADAPTERS[channel].capabilities.proactive_template if channel in ADAPTERS else None,
         "creates_groups": isinstance(ADAPTERS.get(channel), GroupHost),
-    } for channel in BUILT_CHANNELS]
+        # Found by the worker's five-minute check of the BlueBubbles server.
+        "down_since": imessage_down if channel == Channel.imessage else None,
+    } for channel in Channel]
     return _page(request, template, session, health=health, chats=chats, error=error, invite=invite, local=local)
 
 

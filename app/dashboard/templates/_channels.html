@@ -17,6 +17,7 @@
         {% if channel.on %}
         <span class="muted">on, last heard from {{ when(channel.heard) }}, last sent {{ when(channel.last_sent) }}</span>
         {% else %}<span class="muted">not set up</span>{% endif %}</span>
+      {% if channel.down_since %}<span class="out">not reachable since {{ when(channel.down_since) }}; messages go to people's other channel</span>{% endif %}
       {% if channel.failed %}<span class="out">{{ channel.failed }} failed send{{ "" if channel.failed == 1 else "s" }} in the last day</span>{% endif %}
     </li>
   {% endfor %}

@@ -13,6 +13,7 @@ from app.db import execute, fetch_all, fetch_one, fetch_val, tx
 from app.main import app
 from app.pipeline import router
 from app.services import households, members
+from app.worker import jobs
 from tests.helpers import (
     FakeAdapter,
     FakeLLM,
@@ -769,6 +770,18 @@ async def test_channels_page_shows_each_channel_its_chats_and_what_whatsapp_will
     assert page.count("template messages only until they next write") == 1          # Ola's WhatsApp DM
     assert page.count("ordinary messages until") == 1                               # Ada's
     assert "Create a whatsapp group" in page and "household_reminder" in page
+    assert "<strong>imessage</strong> <span class=\"muted\">on, last heard from never" in page
+    assert "not reachable since" not in page
+
+    # The worker's five-minute check finds BlueBubbles down at 12:00; this household uses iMessage.
+    async with tx() as conn:
+        await link(conn, home.ola, "+447700900101", "imessage")
+    with respx.mock:
+        respx.get("http://mac-mini.test:1234/api/v1/ping").respond(502)
+        await jobs.imessage_health(ADAPTERS[Channel.imessage], london("2026-10-06 12:00"))
+    page = re.sub(r"\s+", " ", (await client.get("/dashboard/channels")).text)
+    assert "not reachable since Tue 6 Oct 12:00; messages go to people's other channel" in page
+    assert page.count("not reachable since") == 1                                   # said of iMessage only
 
 
 async def test_a_chat_that_has_only_just_connected_counts_as_heard_from(client):
@@ -779,7 +792,7 @@ async def test_a_chat_that_has_only_just_connected_counts_as_heard_from(client):
     await login(client, home)
     page = (await client.get("/dashboard/channels")).text
     assert "ordinary messages until" in page and "template messages only" not in page
-    assert page.count("last heard from never") == 1                             # Telegram; not Ola's chat
+    assert page.count("last heard from never") == 2                             # Telegram and iMessage; not Ola's chat
 
 
 async def test_channels_page_without_whatsapp_offers_no_group_and_refuses_the_request(client):

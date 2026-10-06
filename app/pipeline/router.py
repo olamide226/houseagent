@@ -10,7 +10,7 @@ from typing import Any
 import structlog
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from app.channels.base import ChannelAdapter, NotSupported, PermanentError
+from app.channels.base import ChannelAdapter, NotSupported, PermanentError, degraded
 from app.core.envelope import Channel, DeliveryStatus, OutboundMessage
 from app.core.timeutil import utcnow
 from app.db import execute, fetch_all, fetch_one, fetch_val, jsonb, tx
@@ -110,7 +110,7 @@ async def _dispatch(conn: AsyncConnection, adapters: dict[Channel, ChannelAdapte
                     row: dict[str, Any], now: datetime) -> None:
     destination = None
     try:
-        if row["target"] == "household" and await _fan_out(conn, row, now):
+        if row["target"] == "household" and await _fan_out(conn, adapters, row, now):
             return
         destination = await _destination(conn, adapters, row)
         if row["respect_quiet_hours"] and row["urgency"] != "high":
@@ -278,12 +278,15 @@ async def _window_open(conn: AsyncConnection, adapter: ChannelAdapter, destinati
     return heard is not None and now - heard < timedelta(hours=hours)
 
 
-async def _fan_out(conn: AsyncConnection, row: dict[str, Any], now: datetime) -> bool:
-    """A household send goes to the primary thread, else becomes one send per adult."""
-    primary = await fetch_val(conn, "select primary_thread_id from households where id = :h",
-                              h=row["household_id"])
-    if primary:
-        row["thread_id"] = primary
+async def _fan_out(conn: AsyncConnection, adapters: dict[Channel, ChannelAdapter], row: dict[str, Any],
+                   now: datetime) -> bool:
+    """A household send goes to the primary thread, else becomes one send per adult. It also goes
+    to each adult while the primary thread's channel is degraded: a group has no other channel."""
+    primary = await fetch_one(
+        conn, "select t.id, t.channel from households h join threads t on t.id = h.primary_thread_id "
+              "where h.id = :h", h=row["household_id"])
+    if primary and not (primary["channel"] in set(Channel) and degraded(adapters.get(Channel(primary["channel"])))):
+        row["thread_id"] = primary["id"]
         return False
     adults = await fetch_all(conn, "select id from members where household_id = :h and role = 'adult'",
                              h=row["household_id"])
@@ -309,17 +312,22 @@ async def _destination(conn: AsyncConnection, adapters: dict[Channel, ChannelAda
            where m.household_id = :h""",
         h=household_id,
     )
-    if row["target"] == "member":
+    async def dm_with(member_id: str) -> Destination:
+        """The member's DM: on their preferred channel, else the next one in order. A degraded
+        channel comes last, so its members are reached on their next identity until it is back."""
         mine = sorted(
-            (i for i in identities if i["member_id"] == row["member_id"] and Channel(i["channel"]) in adapters),
-            key=lambda i: (i["channel"] != i["preferred_channel"], CHANNEL_ORDER.index(Channel(i["channel"]))),
+            (i for i in identities if i["member_id"] == member_id and Channel(i["channel"]) in adapters),
+            key=lambda i: (degraded(adapters[Channel(i["channel"])]), i["channel"] != i["preferred_channel"],
+                           CHANNEL_ORDER.index(Channel(i["channel"]))),
         )
         if not mine:
             raise Undeliverable("member has no connected channel")
         channel = Channel(mine[0]["channel"])
         external = adapters[channel].dm_thread_id(mine[0]["handle"])
-        return Destination(channel, external, await _dm_thread(conn, household_id, channel, external),
-                           row["member_id"])
+        return Destination(channel, external, await _dm_thread(conn, household_id, channel, external), member_id)
+
+    if row["target"] == "member":
+        return await dm_with(row["member_id"])
 
     thread = await fetch_one(
         conn, "select id, channel, external_thread_id, scope from threads where id = :id and household_id = :h",
@@ -334,6 +342,10 @@ async def _destination(conn: AsyncConnection, adapters: dict[Channel, ChannelAda
                   and adapters[channel].dm_thread_id(i["handle"]) == thread["external_thread_id"]), None)
     if owner is None:
         raise Undeliverable("thread does not belong to a verified member")
+    if degraded(adapters[channel]) and row["text"]:
+        # A text for someone's DM on a channel that is down goes to their next channel instead;
+        # with no other channel it stays here and is retried. An ack means nothing in another chat.
+        return await dm_with(owner)
     return Destination(channel, thread["external_thread_id"], thread["id"], owner)
 
 

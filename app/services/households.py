@@ -181,6 +181,20 @@ async def claim_nudge(conn: AsyncConnection, household_id: str, key: str, now: d
     ))
 
 
+IMESSAGE_OUTAGE = "imessage_outage"   # nudge_log key a household holds for as long as BlueBubbles is down
+
+
+async def end_nudge(conn: AsyncConnection, key: str) -> bool:
+    """Forget a claim in every household, so the next `claim_nudge` under `key` is a first time."""
+    return bool(await execute(conn, "delete from nudge_log where dedupe_key = :key", key=key))
+
+
+async def nudged_at(conn: AsyncConnection, household_id: str, key: str) -> datetime | None:
+    at: datetime | None = await fetch_val(
+        conn, "select sent_at from nudge_log where household_id = :h and dedupe_key = :key", h=household_id, key=key)
+    return at
+
+
 # ---------------------------------------------------------------- settings and facts
 async def digest_time(conn: AsyncConnection, household_id: str) -> time:
     found: time = await fetch_val(conn, "select digest_time from households where id = :h", h=household_id)

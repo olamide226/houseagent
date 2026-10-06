@@ -25,6 +25,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      # The voice-note conversion test runs the real ffmpeg, as the image does.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: uv sync --frozen --all-extras
       - run: uv run ruff check app tests
       - run: uv run mypy app/core app/llm app/agent

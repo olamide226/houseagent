@@ -37,7 +37,8 @@ def message_lines(row: dict[str, Any], reaction_target: str | None = None) -> li
         elif media["kind"] == "image":
             lines.append(f"[photo] {media.get('caption') or ''}".rstrip())
         elif media["kind"] == "location":
-            lines.append(f"[location] {media.get('lat')}, {media.get('lng')}")
+            # iMessage shares a location as a card file, so there may be no coordinates to show.
+            lines.append(f"[location] {media.get('lat')}, {media.get('lng')}" if "lat" in media else "[location]")
         else:
             lines.append(f"[{media['kind']}]")
     return lines

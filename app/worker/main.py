@@ -10,7 +10,7 @@ from functools import partial
 import structlog
 
 from app.agent.loop import LoopRuntime
-from app.channels.base import build_adapters
+from app.channels.base import HealthChecked, build_adapters
 from app.config import configure_logging, get_settings
 from app.db import engine
 from app.llm.base import make_llm
@@ -63,6 +63,10 @@ async def main() -> None:
     if media is not None:
         scheduled["media_cleanup"] = (partial(jobs.media_cleanup, media, settings.media_retention_days),
                                       jobs.MEDIA_CLEANUP_SECONDS)
+    for adapter in adapters.values():
+        if isinstance(adapter, HealthChecked):
+            scheduled[f"{adapter.channel.value}_health"] = (partial(jobs.imessage_health, adapter),
+                                                           jobs.IMESSAGE_HEALTH_SECONDS)
     tasks = [
         asyncio.create_task(supervise(
             "inbound", lambda: jobs.inbound_job(settings, runtime, adapters, stt, media, outbox_wake))),

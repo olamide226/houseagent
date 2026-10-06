@@ -16,7 +16,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.agent.base import AgentRuntime, ToolError
-from app.channels.base import ChannelAdapter
+from app.channels.base import ChannelAdapter, HealthChecked
 from app.config import Settings
 from app.core.envelope import Channel, MediaRef, OutboundMessage
 from app.core.timeutil import day_bounds, local, next_occurrence, occurrences, utcnow
@@ -26,7 +26,7 @@ from app.llm.types import ChatMessage, LLMClient, TextPart
 from app.media.store import MediaStore
 from app.pipeline import inbound, router
 from app.pipeline import media as media_pipeline
-from app.services import calendar, consumption, inventory, shopping
+from app.services import calendar, consumption, households, inventory, shopping
 
 log = structlog.get_logger()
 POLL_SECONDS = 2.0
@@ -44,6 +44,10 @@ CATEGORISE_PROMPT = (
     "else, mapping each item name exactly as given to one of: " + ", ".join(CATEGORIES) + ".")
 CATEGORISE_BATCH = 200
 MEDIA_CLEANUP_SECONDS = 3600.0
+IMESSAGE_HEALTH_SECONDS = 300.0
+IMESSAGE_DOWN = ("iMessage is not reachable: the BlueBubbles server on the Mac is not answering. Until it is "
+                 "back, messages go to everyone's other channel where they have one. Check that the Mac is on, "
+                 "awake and online, and that BlueBubbles is running.")
 LATE_MINUTES = 10                       # a reminder this long after its event began is dropped
 
 
@@ -325,6 +329,45 @@ async def low_stock_prompt(now: datetime | None = None) -> int:
     return await _once_per_household(
         "low_stock_prompt", now or utcnow(),
         lambda here, household: f"{here:%Y-%m-%d}" if _due(here, LOW_STOCK_PROMPT_AT) else None, _low_stock)
+
+
+# ---------------------------------------------------------------- iMessage health
+async def imessage_health(adapter: HealthChecked, now: datetime | None = None) -> int:
+    """Every 5 minutes: ping BlueBubbles. While it does not answer the adapter is degraded, which
+    makes the router use each member's next channel, and the admin of every household that uses
+    iMessage is told once per outage. Returns how many messages were queued."""
+    now = now or utcnow()
+    outage = households.IMESSAGE_OUTAGE
+    healthy = await adapter.ping()
+    if adapter.degraded == healthy:
+        log.warning("imessage_health_changed", healthy=healthy)
+    adapter.degraded = not healthy
+    told = 0
+    async with tx() as conn:
+        if healthy:
+            if await households.end_nudge(conn, outage):
+                # A warning still held for quiet hours would be read after the outage it is about.
+                await execute(conn, "update outbox set status = 'cancelled', last_error = 'the outage ended' "
+                                    "where status = 'pending' and dedupe_key like :mine", mine=f"{outage}:%")
+            return 0
+        admins = await fetch_all(
+            conn,
+            """select m.id, m.household_id from members m
+               where m.is_admin and exists (
+                   select 1 from channel_identities ci join members other on other.id = ci.member_id
+                   where other.household_id = m.household_id and ci.channel = 'imessage')
+               order by m.household_id, m.created_at, m.id""")
+        claimed: dict[str, bool] = {}
+        for admin in admins:
+            household_id = admin["household_id"]
+            if household_id not in claimed:
+                claimed[household_id] = await households.claim_nudge(conn, household_id, outage, now)
+            if claimed[household_id] and await router.enqueue(conn, OutboundMessage(
+                household_id=household_id, target="member", member_id=admin["id"], text=IMESSAGE_DOWN,
+                dedupe_key=f"{outage}:{now.isoformat()}:{admin['id']}",
+            ), send_after=now):
+                told += 1
+    return told
 
 
 # ---------------------------------------------------------------- media retention

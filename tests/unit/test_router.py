@@ -33,7 +33,7 @@ async def outbox():
 
 
 async def random_outbox(rng: random.Random, rows: int = 300):
-    """Two households on Telegram and WhatsApp with every kind of thread a row could point at,
+    """Two households on Telegram, WhatsApp and iMessage with every kind of thread a row could point at,
     and `rows` random outbox rows. Returns who may be reached, per household and channel, and
     which household each message belongs to."""
     async with tx() as conn:
@@ -49,6 +49,9 @@ async def random_outbox(rng: random.Random, rows: int = 300):
             ada = await add_member(conn, home, "Ada", telegram_id=str(base + 2), whatsapp_id=f"GB.{base + 2}")
             await execute(conn, "update members set preferred_channel = 'whatsapp' where id = :m", m=ada)
             await add_member(conn, home, "Bisi", whatsapp_id=f"+4477009{base + 3}")   # WhatsApp only, by number
+            imessage = allowed[home.id, "imessage"] = {f"ola{base}@example.com", f"chidi{base}@example.com"}
+            await link(conn, home.ola, f"ola{base}@example.com", "imessage")
+            await add_member(conn, home, "Chidi", imessage_id=f"chidi{base}@example.com")   # iMessage only
             await add_member(conn, home, "Unlinked adult")                 # no channel identity
             await add_member(conn, home, "Tobi", role="child")
             members += list(home.members.values())
@@ -58,13 +61,16 @@ async def random_outbox(rng: random.Random, rows: int = 300):
             threads.append(await thread(conn, home, f"GB.{base + 666}", channel="whatsapp"))      # a stranger
             threads.append(await thread(conn, home, f"+4477009{base + 666}", channel="whatsapp"))  # and another
             threads.append(await thread(conn, home, str(base + 1), channel="whatsapp"))  # a Telegram id is no WhatsApp handle
-            threads.append(await thread(conn, home, f"ola{base}@example.com", channel="imessage"))   # no adapter
-            for channel, group in (("telegram", f"-100{base}"), ("whatsapp", f"Z3JvdXA{base}ZD")):
+            threads.append(await thread(conn, home, f"ola{base}@example.com", channel="imessage"))
+            threads.append(await thread(conn, home, f"stranger{base}@example.com", channel="imessage"))
+            threads.append(await thread(conn, home, f"+4477009{base + 3}", channel="imessage"))  # a WhatsApp number is no iMessage handle
+            for channel, group, groups in (("telegram", f"-100{base}", telegram), ("whatsapp", f"Z3JvdXA{base}ZD", whatsapp),
+                                           ("imessage", f"iMessage;+;chat{base}", imessage)):
                 threads.append(await thread(conn, home, group, scope="group", channel=channel))
-                (telegram if channel == "telegram" else whatsapp).add(group)
+                groups.add(group)
         # Only the first household has a primary thread, so the second fans out to adults.
-        await execute(conn, "update households set primary_thread_id = :t where id = :h",
-                      t=threads[8], h=homes[0].id)
+        await execute(conn, "update households set primary_thread_id = (select id from threads where "
+                            "household_id = :h and external_thread_id = '-1001000') where id = :h", h=homes[0].id)
 
         owner: dict[str, str] = {}
         for n in range(rows):
@@ -92,12 +98,13 @@ async def test_nothing_is_ever_sent_to_a_handle_outside_channel_identities():
     """Property test: whatever rows land in outbox, sends on either channel only reach the
     household's own verified handles and its own group threads."""
     allowed, owner = await random_outbox(random.Random(1791237159))
-    adapters = {Channel.telegram: FakeAdapter(), Channel.whatsapp: whatsapp()}
+    adapters = {Channel.telegram: FakeAdapter(), Channel.whatsapp: whatsapp(),
+                Channel.imessage: FakeAdapter(Channel.imessage)}
     while await router.dispatch_due(adapters):
         pass
 
     for channel, adapter in adapters.items():
-        assert len(reached(adapter)) > 40, "the property must be exercised by real sends"
+        assert len(reached(adapter)) > 30, "the property must be exercised by real sends"
         for chat, text in reached(adapter):
             assert chat in allowed[owner[text], channel.value], f"{text} was sent to {chat} on {channel.value}"
     assert adapters[Channel.whatsapp].sent and adapters[Channel.whatsapp].templates    # both ways of sending
@@ -122,6 +129,31 @@ async def test_the_fallback_to_another_channel_also_stays_inside_the_family():
     assert {row["channel_used"] for row in moved if row["status"] == "sent"} == {"telegram"}
     assert all(not chat.startswith("-100") for chat, text in reached(telegram)
                if text in {row["text"] for row in moved})                    # a fallback never lands in a group
+
+
+async def test_with_imessage_down_what_moves_to_another_channel_still_stays_inside_the_family():
+    """The same property while BlueBubbles is unhealthy: a DM that moves to its owner's next
+    channel only reaches that person's own verified handle there, and iMessage is still tried
+    only for groups and for people who have no other channel."""
+    allowed, owner = await random_outbox(random.Random(1791301207), rows=600)
+    down = FakeAdapter(Channel.imessage)
+    down.degraded = True
+    adapters = {Channel.telegram: FakeAdapter(), Channel.whatsapp: whatsapp(), Channel.imessage: down}
+    while await router.dispatch_due(adapters):
+        pass
+
+    for channel, adapter in adapters.items():
+        for chat, text in reached(adapter):
+            assert chat in allowed[owner[text], channel.value], f"{text} was sent to {chat} on {channel.value}"
+    still_on_imessage = {chat for chat, _ in reached(down)}
+    assert still_on_imessage and all("chidi" in chat or "chat" in chat for chat in still_on_imessage)
+    async with tx() as conn:
+        moved = await fetch_all(
+            conn, """select o.text, o.channel_used from outbox o join threads t on t.id = o.thread_id
+                     where o.target = 'thread' and t.channel = 'imessage' and t.scope = 'dm' and o.status = 'sent'""")
+    assert len(moved) > 5 and {row["channel_used"] for row in moved} == {"telegram"}, "the move must be exercised"
+    delivered = {text: chat for chat, text in reached(adapters[Channel.telegram])}
+    assert all(delivered[row["text"]] in ("1001", "2001") for row in moved)       # Ola's own Telegram, nobody else's
 
 
 async def test_member_target_goes_to_the_preferred_channel_dm():
