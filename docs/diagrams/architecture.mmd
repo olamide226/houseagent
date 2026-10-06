@@ -1,6 +1,7 @@
 flowchart LR
     TG[Telegram] -- webhook --> API
     WA[WhatsApp] -- "webhook, statuses" --> API
+    BB["BlueBubbles on a Mac, over the tailnet"] -- "webhook, send errors" --> API
     Browser -- dashboard --> API
     Cal[Phone calendar] -- "ICS feed" --> API
     Phone[iPhone Shortcut] -- "presence: entered, left" --> API
@@ -14,3 +15,4 @@ flowchart LR
     W -- tool-calling loop --> LLM[LLM provider]
     W -- "replies, reminders, digests, shop lists" --> TG
     W -- "replies, templates" --> WA
+    W -- "replies, tapbacks, a ping every 5 min" --> BB

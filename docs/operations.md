@@ -28,6 +28,8 @@ Everything is read by `Settings` in `app/config.py`, from the environment or a l
 | `WA_PHONE_NUMBER_ID`, `WA_ACCESS_TOKEN`, `WA_APP_SECRET`, `WA_VERIFY_TOKEN` | for WhatsApp | | Cloud API. The app secret checks webhook signatures; the verify token answers Meta's subscription check |
 | `WA_API_VERSION` | no | `v26.0` | Graph API version in every WhatsApp call. Meta retires a version about two years after release |
 | `WA_REMINDER_TEMPLATE` | no | `household_reminder` | The approved utility template that carries a message outside the 24-hour window |
+| `BB_BASE_URL`, `BB_PASSWORD`, `BB_WEBHOOK_SECRET` | for iMessage | | The BlueBubbles server on the Mac, its password, and the secret in the webhook URL it calls |
+| `BB_PRIVATE_API` | no | `false` | `true` when the BlueBubbles Private API helper is installed: tapbacks and threaded replies |
 | `AGENT_NAME` | no | `Home` | Name used in the prompt and pages |
 | `DEFAULT_TIMEZONE` | no | `Europe/London` | Prefilled on `/setup` |
 | `DEBOUNCE_SECONDS` | no | `4` | How long a batch must be quiet before its turn |
@@ -83,14 +85,14 @@ uv run python -m app.worker.main             # worker, in a second terminal
 
 `python -m app.worker.main` runs `inbound`, `outbox`, `fire_reminders` (every 15 s),
 `expand_recurrence` (hourly), `daily_brief`, `weekly_digest`, `consumption_model` and
-`low_stock_prompt` (checked every minute) and, when a media backend is configured,
-`media_cleanup` (hourly). What each
+`low_stock_prompt` (checked every minute), when a media backend is configured
+`media_cleanup` (hourly), and when iMessage is set up `imessage_health` (every 5 minutes). What each
 does and why running it twice is harmless is in
 [architecture.md](architecture.md#scheduled-jobs). Log events worth watching:
 `reminder_queued`, `digest_queued`, `outbox_sent`, `outbox_held_for_quiet_hours`,
 `outbox_send_failed`, `outbox_delivery_failed`, `outbox_fallback_queued`, `group_created`,
 `group_not_created`, `media_failed`, `photo_unreadable`, `media_cleaned`, `media_cleanup_failed`,
-`invite_redeemed`, `items_categorised`, `categorise_failed`, `categorise_unreadable`, `job_crashed`.
+`invite_redeemed`, `imessage_health_changed`, `items_categorised`, `categorise_failed`, `categorise_unreadable`, `job_crashed`.
 
 ```sql
 -- reminders that should have gone and have not
@@ -135,6 +137,59 @@ Every WhatsApp call fails with Graph error `190`. Sends fail at once and move to
 next channel, incoming photos and voice notes cannot be downloaded (the turn still runs and says
 so), and group creation shows the error. Set a new `WA_ACCESS_TOKEN` and restart both processes.
 Incoming text keeps working throughout, because webhooks are checked with the app secret.
+
+## iMessage
+
+Setup is in [channels.md](channels.md#imessage). The BlueBubbles password travels as a query
+parameter on every call to the Mac, so it is in the Mac's own BlueBubbles log; it is never in
+this service's logs or error messages, and `httpx` request logging is off.
+
+### BlueBubbles outage
+
+iMessage depends on one Mac. The worker pings it every five minutes; a failed ping logs
+`imessage_health_changed` with `healthy: false`, DMs the admin once ("iMessage is not
+reachable..."), and shows "not reachable since" on the Channels page. From then on people are
+reached on their next channel ([what moves and what does not](channels.md#when-bluebubbles-does-not-answer)).
+Messages people send over iMessage in the meantime are not lost if the Mac is merely cut off from
+the cluster: they stay in Messages on the Mac, but BlueBubbles does not send their webhooks again,
+so anything written during the outage has to be said again.
+
+Work through these in order; stop at the first that fixes it.
+
+1. **Is the Mac on and awake?** Screen-share or look at it. Energy settings must never sleep the
+   machine. After a power cut it must start by itself (System Settings, Energy, "Start up
+   automatically after a power failure") and log in automatically, or BlueBubbles does not start.
+2. **Is it on the tailnet?** `tailscale ping <mac>` from another device. An expired Tailscale key
+   on the Mac looks exactly like the Mac being off: disable key expiry for it.
+3. **Is BlueBubbles running?** Open the app on the Mac. From any tailnet machine:
+
+   ```sh
+   curl "$BB_BASE_URL/api/v1/ping?password=$BB_PASSWORD"     # {"status":200,"message":"Ping received!","data":"pong"}
+   ```
+
+   A 401 means `BB_PASSWORD` no longer matches the server's password. Set it and restart both
+   processes.
+4. **Is Messages signed in?** After a macOS update or an Apple ID password change, Messages on the
+   Mac can sign out while BlueBubbles still answers pings. Then pings pass, sends fail with
+   `imessage send failed: HTTP 500`, and after five tries each send moves to the person's next
+   channel. Sign in again in Messages, Settings, iMessage.
+5. **Do webhooks still arrive?** If sends work and nothing comes in, check the webhook in
+   BlueBubbles (API and Webhooks): the URL, its `secret`, and the two events. A wrong secret
+   shows as `401` for `POST /webhooks/imessage?secret=…` in the api's access log.
+6. **After a BlueBubbles update** re-check step 5, then send one message each way. The adapter
+   was written against server v1.9.9 and field names shift between releases.
+
+When the next ping succeeds the worker logs `imessage_health_changed` with `healthy: true`, the
+Channels page clears, and DMs go back to iMessage with nothing to undo. Sends that failed for
+good during the outage are on the Activity page with "Retry".
+
+```sql
+-- since when iMessage has been unreachable, per household (no row: it is up)
+select household_id, sent_at from nudge_log where dedupe_key = 'imessage_outage';
+-- what was sent on another channel because of it
+select created_at, channel_used, left(text, 40) from outbox o join members m on m.id = o.member_id
+where m.preferred_channel = 'imessage' and o.channel_used <> 'imessage' order by created_at desc limit 20;
+```
 
 The brief time is `households.digest_time` and quiet hours are `members.quiet_start` and
 `quiet_end`, all in household time. Change them on the dashboard Settings page or by telling the

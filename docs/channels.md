@@ -1,7 +1,8 @@
 # Channels
 
-A channel is one adapter module in `app/channels/` plus identity rows. Telegram and WhatsApp are
-built; iMessage is specified in [spec.md section 6](spec.md#6-channel-adapters).
+A channel is one adapter module in `app/channels/` plus identity rows. Telegram, WhatsApp and
+iMessage are built. Only Telegram's wire format has been checked against the service itself;
+WhatsApp and iMessage have been tested against recorded payloads and mocked calls.
 
 ## The adapter contract
 
@@ -16,6 +17,8 @@ built; iMessage is specified in [spec.md section 6](spec.md#6-channel-adapters).
   does not ([ADR 0022](adr/0022-permanent-failures-and-the-next-channel.md)).
 - `GroupHost` is an optional second protocol for a channel that can create a group and hand out
   its invite link. Only WhatsApp implements it.
+- `HealthChecked` is an optional third: a channel that runs on a server of ours has `ping()` and
+  a `degraded` flag. Only iMessage implements it ([below](#when-bluebubbles-does-not-answer)).
 
 Adapters register in `ADAPTERS` only when their environment variables are set.
 
@@ -150,3 +153,95 @@ If it is rejected, or later paused or disabled, see
   business number is not in the configuration: tell people which number to message.
 - Edited and deleted messages, and message types not listed above, are not read.
 - `channel_identities.handle` is a user id, so nobody can be linked by phone number in advance.
+
+## iMessage
+
+Apple has no bot API, so iMessage goes through a [BlueBubbles](https://bluebubbles.app) server on
+a Mac the household owns ([ADR 0007](adr/0007-imessage-via-bluebubbles.md)). The adapter was
+written against the BlueBubbles server source at **v1.9.9** (read on 6 Oct 2026); pin that
+version on the Mac. **It has never talked to a BlueBubbles server**: there is no Mac set up, so
+everything below is tested against payloads built from that source and against mocked calls.
+
+### Setup checklist
+
+1. An always-on Mac signed into a dedicated Apple ID (the assistant's own, not a family
+   member's), with BlueBubbles Server installed and its server password set. Turn off sleep.
+2. Put the Mac and the cluster on the same tailnet. Nothing on the Mac needs to be public.
+   `BB_BASE_URL` is the Mac's tailnet address and BlueBubbles port, for example
+   `http://mac-mini.tailnet:1234`; `BB_PASSWORD` is the server password.
+3. Choose a random `BB_WEBHOOK_SECRET`. In BlueBubbles, API and Webhooks, add a webhook to
+   `{PUBLIC_BASE_URL}/webhooks/imessage?secret={BB_WEBHOOK_SECRET}` for the events **New
+   Messages** (`new-message`) and **Message Send Errors** (`message-send-error`).
+4. Optional: install the BlueBubbles Private API helper and set `BB_PRIVATE_API=true`. That turns
+   the ack into a tapback and makes replies threaded. It needs System Integrity Protection
+   disabled on the Mac, which is why it is off by default.
+5. Each adult sends their invite code, from the Family page, to the assistant's Apple ID in a DM.
+6. For a family group, add the assistant's Apple ID to it and write something there.
+
+All three of `BB_BASE_URL`, `BB_PASSWORD` and `BB_WEBHOOK_SECRET` must be set for the channel to
+be on.
+
+### Payload notes
+
+- **Verification:** BlueBubbles does not sign what it sends, so the `secret` query parameter must
+  equal `BB_WEBHOOK_SECRET`, compared in constant time; anything else gets 401. The api's access
+  log masks the parameter.
+- **Shape:** a webhook body is `{"type": ..., "data": ...}`. Only `new-message` is read as a
+  message. `data` is the message in the server's notification form.
+- **Own messages:** `data.isFromMe` is dropped, so the assistant never answers itself.
+- **Who:** `data.handle.address`, a phone number in E.164 or an Apple ID email address.
+- **Where:** a `data.chats[0].guid` containing `;+;` (`iMessage;+;chat...`) is a group and that
+  guid is the thread. Anything else is a DM, and its thread is always `iMessage;-;{handle}`, whatever
+  prefix the server reports ([ADR 0027](adr/0027-imessage-threads-tapbacks-and-voice-notes.md)).
+- **What:** `data.text` with the attachment placeholder character removed; each of
+  `data.attachments` by `guid`, typed from `mimeType`; `threadOriginatorGuid` is the message
+  being replied to.
+- **Tapbacks** arrive as messages with `associatedMessageType` (`love`, `like`, `dislike`,
+  `laugh`, `emphasize`, `question`) and `associatedMessageGuid` (`p:0/<guid>`). They become
+  reactions with the matching emoji. A tapback taken back (`-like`), a sticker and any other kind
+  are ignored, and so is the "Liked ..." text.
+- **Voice notes** are recorded as `.caf`. BlueBubbles converts them to MP3 when it can; when the
+  download is still a CAF file the pipeline converts it with
+  `ffmpeg -i in.caf -ar 16000 out.wav` before transcription. `ffmpeg` is in the image.
+- **Photos:** BlueBubbles converts HEIC to JPEG on download, and the download's content type is
+  what the photo is stored as.
+- **A shared location** is a small card file (`CL.loc.vcf`). It becomes a location with no
+  coordinates: they are inside the file, which is not parsed.
+- **Media:** `GET {BB_BASE_URL}/api/v1/attachment/{guid}/download?password=...`.
+- **Sends:** `POST /api/v1/message/text?password=...` with `chatGuid`, `message`, a fresh
+  `tempGuid` and `method` (`apple-script`, or `private-api` when `BB_PRIVATE_API` is on, which
+  also adds `selectedMessageGuid` for a threaded reply). The answer's `data.guid` is kept.
+- **The ack:** with the Private API, a `like` tapback through `POST /api/v1/message/react`;
+  without it, a tick sent as a message of its own. iMessage has six tapbacks and no tick.
+- **Failures:** a 4xx (unknown chat, wrong password) is final; a 5xx or no answer is retried. A
+  `message-send-error` webhook marks the matching send failed and moves it to the member's next
+  channel, as a WhatsApp `failed` status does.
+
+### When BlueBubbles does not answer
+
+The worker calls `GET /api/v1/ping` every five minutes (`imessage_health`). One failed ping marks
+the adapter degraded; one good ping clears it. While it is degraded:
+
+- A message for one person goes to their next channel, in the order Telegram, WhatsApp. That
+  covers reminders, the arrival list, login links and a reply that was still waiting for an
+  iMessage DM. Their `preferred_channel` is not changed, so their DMs return by themselves.
+- A message for the whole household goes to each adult instead of an iMessage family group.
+- Someone whose only channel is iMessage is still tried there, and so is an ack and anything
+  addressed to an iMessage group. Those are retried with the usual backoff and fail after about
+  43 minutes.
+- The admin of each household that uses iMessage gets one message per outage, on a channel that
+  works, and the Channels page says since when iMessage has been unreachable.
+
+Nothing sent this way can reach anyone new: the fallback goes through the same destination check
+as every send. What to do about an outage is in
+[operations.md](operations.md#bluebubbles-outage).
+
+### Known limits
+
+- Never run against a real BlueBubbles server or a real iPhone.
+- A message that only renames a group or adds someone is ignored.
+- An edited or unsent message is not read (`updated-message` events are ignored).
+- Text and iMessage use the same Apple ID; a text message (green bubble) from a member is
+  answered over iMessage.
+- Up to five minutes pass before an outage is noticed. Sends in that time fail and are retried.
+- The invite pages show a Telegram link and the raw code. Tell people which Apple ID to message.

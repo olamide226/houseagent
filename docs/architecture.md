@@ -6,6 +6,7 @@ One container image runs as two processes that talk only through Postgres.
 flowchart LR
     TG[Telegram] -- webhook --> API
     WA[WhatsApp] -- "webhook, statuses" --> API
+    BB["BlueBubbles on a Mac, over the tailnet"] -- "webhook, send errors" --> API
     Browser -- dashboard --> API
     Cal[Phone calendar] -- "ICS feed" --> API
     Phone[iPhone Shortcut] -- "presence: entered, left" --> API
@@ -19,6 +20,7 @@ flowchart LR
     W -- tool-calling loop --> LLM[LLM provider]
     W -- "replies, reminders, digests, shop lists" --> TG
     W -- "replies, templates" --> WA
+    W -- "replies, tapbacks, a ping every 5 min" --> BB
 ```
 
 (The same diagram lives in [diagrams/architecture.mmd](diagrams/architecture.mmd).)
@@ -91,8 +93,8 @@ Destinations come only from the database:
 | Target | Resolves to |
 | --- | --- |
 | `thread` | That thread, if it belongs to the household. A DM thread must also match a verified member handle |
-| `member` | The member's preferred-channel identity, then telegram, whatsapp, imessage |
-| `household` | The primary thread if set, else one send per adult |
+| `member` | The member's preferred-channel identity, then telegram, whatsapp, imessage; a degraded channel comes last |
+| `household` | The primary thread if set and its channel is not degraded, else one send per adult |
 
 A row with no allowed destination is marked `failed` and never sent.
 
@@ -108,6 +110,13 @@ retries, or reported undelivered by a later WhatsApp status), the dispatcher que
 to that member's DM on their next connected channel in the order Telegram, WhatsApp, iMessage. The
 second try never falls back again. Group sends and reactions do not move. See
 [ADR 0022](adr/0022-permanent-failures-and-the-next-channel.md).
+
+**A degraded channel.** iMessage runs through a Mac that can go away. The worker pings it every
+five minutes and marks the adapter degraded while it does not answer. The dispatcher then picks
+each member's next identity before trying, sends a text that was waiting for an iMessage DM to
+its owner's next channel, and gives each adult what was meant for an iMessage family group.
+Acks, group sends and people with no other channel stay where they are and are retried. See
+[ADR 0028](adr/0028-a-degraded-channel-and-the-next-identity.md).
 
 **Quiet hours.** Each member has a quiet window, 21:30 to 07:00 by default; a window whose start
 is later than its end crosses midnight. Before a send, the dispatcher asks whether the recipient
@@ -152,6 +161,7 @@ current time as an argument, so tests drive them on a controlled clock.
 | `weekly_digest` | 1 min check | Sunday 18:00: the week ahead, the list count, low and expiring items, and what will probably run low that week | A `job_runs` row per household and ISO week |
 | `consumption_model` | 1 min check | Once a day from 03:00: relearns each item's run-out interval, refreshes the list's "probably" entries, then fills missing item categories in one model call per household | A `job_runs` row per household and date; the refresh is idempotent |
 | `low_stock_prompt` | 1 min check | 17:30: asks the household about items predicted to run out within 2 days that nobody was asked about in the last 3 | A `job_runs` row per household and date, and a `nudge_log` row per item |
+| `imessage_health` | 5 min, only with iMessage set up | Pings BlueBubbles; sets or clears the adapter's degraded flag; tells each affected household's admin once per outage | A `nudge_log` row per household for the length of the outage |
 | `media_cleanup` | 1 h, only with a media backend | Deletes stored media on messages older than `MEDIA_RETENTION_DAYS` and drops the storage fields; text and transcripts stay | `SKIP LOCKED`; a cleaned message no longer matches |
 
 A reminder is sent within about 17 seconds of its `fire_at` (15 s tick, then the outbox, which the
@@ -169,7 +179,7 @@ app/
   core/          envelope types, identity and invite codes, time, quiet hours, recurrence
   llm/           neutral types, OpenAI-compatible and Anthropic adapters, speech-to-text
   media/         MediaStore protocol and factory, S3 and ImgBB backends
-  channels/      ChannelAdapter protocol, registry, Telegram, WhatsApp
+  channels/      ChannelAdapter protocol, registry, Telegram, WhatsApp, iMessage
   pipeline/      inbound (persist, debounce, turn, simulate_turn), media (fetch, store, transcribe), router
   agent/         runtime interface, loop, prompt, resolve, actions (undo), stock, tools/
   services/      the one write path, shared by tools and dashboard
@@ -182,5 +192,4 @@ tests/           unit/ contract/ evals/
 
 ## Not built yet
 
-iMessage, and with it the `imessage_health` job that would move sends away from a channel that is
-down before they fail. The Letta runtime and the System page are milestone 6 too.
+The Letta runtime and the System page.

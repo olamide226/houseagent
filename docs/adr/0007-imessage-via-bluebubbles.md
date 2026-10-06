@@ -17,4 +17,6 @@ are optional (`BB_PRIVATE_API`).
 - The Mac is a single point of failure, so the worker will health-check it and fall back to each
   member's next channel.
 - BlueBubbles field names shift between releases; the server version must be pinned.
-- **Not implemented yet.** This adapter is milestone 6.
+- Built in milestone 6 against the server source at v1.9.9. What had to be decided then is in
+  [ADR 0027](0027-imessage-threads-tapbacks-and-voice-notes.md) and
+  [ADR 0028](0028-a-degraded-channel-and-the-next-identity.md).
