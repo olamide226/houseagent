@@ -21,6 +21,7 @@ class Ctx(BaseModel):
     message_id: str | None = None    # last message of the debounced batch
     source: Literal["agent", "dashboard"] = "agent"
     now: datetime = Field(default_factory=utcnow)   # when the turn's message arrived; "tomorrow" counts from here
+    undone: list[tuple[str, dict[str, Any]]] = []   # (tool, args) of what undo reverted in this turn
 
 
 class ToolError(Exception):

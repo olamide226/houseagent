@@ -133,7 +133,7 @@ async def undo_last(ctx: Ctx, n: int) -> list[str]:
 async def undo_action(ctx: Ctx, action_id: str) -> str:
     action = await fetch_one(
         ctx.conn,
-        """select id, tool, result, inverse, touched, created_at from agent_actions
+        """select id, tool, args, result, inverse, touched, created_at from agent_actions
            where id = :id and household_id = :household and undone_at is null for update""",
         id=action_id, household=ctx.household_id,
     )
@@ -174,6 +174,7 @@ async def undo_action(ctx: Ctx, action_id: str) -> str:
     await _log_stock_restores(ctx, action["inverse"])
     await execute(ctx.conn, "update agent_actions set undone_at = clock_timestamp() where id = :id",
                   id=action["id"])
+    ctx.undone.append((action["tool"], action["args"]))
     return f"OK: undid {action['tool']} ({action['result'].splitlines()[0]})"
 
 

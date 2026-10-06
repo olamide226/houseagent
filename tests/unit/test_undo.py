@@ -163,6 +163,25 @@ async def test_undo_n_reverts_the_newest_actions_first():
         assert (await undo(ctx))[1]   # nothing left
 
 
+async def test_the_call_an_undo_just_reverted_is_not_run_again_in_the_same_turn():
+    """Seen with live models: "undo that" ran undo_last and then the very same add again."""
+    add = {"add": [{"item": "kitchen foil"}]}
+    async with tx() as conn:
+        home = await seed_home(conn)
+        await run_tool("update_shopping_list", add, ctx_for(conn, home))
+
+        turn = ctx_for(conn, home)
+        await undo(turn)
+        result, is_error = await run_tool("update_shopping_list", add, turn)
+        assert not is_error and "just undone" in result
+        assert await active_list(conn, home) == {}
+        await run_tool("update_shopping_list", {"add": [{"item": "bin bags"}]}, turn)    # any other call still runs
+        assert await active_list(conn, home) == {"bin bag": "explicit"}
+
+        await run_tool("update_shopping_list", add, ctx_for(conn, home))                 # and so does a later turn
+        assert await active_list(conn, home) == {"bin bag": "explicit", "kitchen foil": "explicit"}
+
+
 async def test_dashboard_actions_are_logged_with_their_source_and_can_be_undone():
     async with tx() as conn:
         home = await seed_home(conn)

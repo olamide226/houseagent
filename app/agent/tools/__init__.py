@@ -75,6 +75,9 @@ async def run_tool(name: str, raw_args: dict[str, Any], ctx: Ctx) -> tuple[str, 
     except ValidationError as exc:
         problems = "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors())
         return f"ERROR: invalid arguments ({problems})", True
+    if (name, args.model_dump(mode="json")) in ctx.undone:
+        # Models sometimes follow an undo by repeating the very call it reverted.
+        return "OK: not done again: that is exactly what was just undone", False
     try:
         async with ctx.conn.begin_nested():
             return await spec.fn(ctx, args), False
