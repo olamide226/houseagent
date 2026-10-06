@@ -1,5 +1,6 @@
 """Onboarding and the family (spec section 12): invites end to end, adding people from chat,
 the setup steps, and the settings that are saved by talking."""
+import json
 import re
 from datetime import time, timedelta
 
@@ -24,9 +25,11 @@ from tests.helpers import (
     call,
     ctx_for,
     link,
+    post_whatsapp,
     say,
     seed_home,
     tg_update,
+    wa_message,
 )
 
 SECRET = {"X-Telegram-Bot-Api-Secret-Token": "test-webhook-secret"}
@@ -188,13 +191,13 @@ async def test_the_setup_tool_and_prompt_are_offered_only_while_setup_is_open():
 
     system, tools = await offered()
     assert "onboarding_advance" in tools
-    assert "Current step: family. Remaining: family, routines, shops, staples, tour, rhythm." in system
+    assert "Current step: family. Remaining: family, routines, shops, staples, tour, rhythm, presence." in system
     assert STEP_GUIDE["family"] in system
 
     for step in ("family", "routines", "shops", "staples", "tour"):
         await tool(home, "onboarding_advance", step=step)
     system, tools = await offered()
-    assert "Current step: rhythm. Remaining: rhythm." in system and STEP_GUIDE["rhythm"] in system
+    assert "Current step: rhythm. Remaining: rhythm, presence." in system and STEP_GUIDE["rhythm"] in system
 
     result, _ = await tool(home, "onboarding_advance", step="rhythm")
     assert "complete" in result
@@ -224,8 +227,148 @@ async def test_steps_can_be_skipped_or_done_out_of_order_and_undo_reopens_one():
     assert result == "OK: routines skipped. Next step: shops"
     await tool(home, "undo_last")
     assert (await state())["step"] == "routines"
-    _, is_error = await tool(home, "onboarding_advance", step="presence")     # not a step until milestone 5
+    _, is_error = await tool(home, "onboarding_advance", step="garden")
     assert is_error
+
+
+# ---------------------------------------------------------------- the presence step
+URL = re.compile(r"http://testserver/presence/([\w-]{43})")
+
+
+async def presence_messages():
+    """Queued presence DMs as {member name: (token, respect_quiet_hours)}."""
+    sent = await rows("select m.name, o.text, o.target, o.respect_quiet_hours from outbox o "
+                      "join members m on m.id = o.member_id where o.text like '%/presence/%' order by o.created_at")
+    assert all(row["target"] == "member" for row in sent)
+    return {row["name"]: (URL.search(row["text"]).group(1), row["respect_quiet_hours"]) for row in sent}
+
+
+async def setting_up(conn, *, reached="rhythm"):
+    """Ola and Ada connected, Grace invited but not connected, a child, and setup at `reached`."""
+    home = await seed_home(conn, onboarding=True)
+    await add_member(conn, home, "Ada", telegram_id="1002")
+    await add_member(conn, home, "Grace")
+    await add_member(conn, home, "Tobi", role="child")
+    steps = households.ONBOARDING_STEPS
+    await execute(conn, "update households set onboarding_state = cast(:state as jsonb)",
+                  state=json.dumps({"step": reached, "done": list(steps[:steps.index(reached)])}))
+    return home
+
+
+async def test_answering_the_last_question_sends_each_connected_adult_a_personal_link_that_works(client):
+    async with tx() as conn:
+        home = await setting_up(conn)
+    await tool(home, "remember", key="shops", value="Tesco Extra, Costco")
+
+    result, is_error = await tool(home, "onboarding_advance", step="rhythm")
+    assert not is_error and result.splitlines()[0] == "OK: rhythm done. Setup is complete"
+    assert "NOTE: Ada, Ola got a private message with a personal link" in result   # made together: by name
+    assert await fetch_state(home) == {"step": None, "skipped": [],
+                                       "done": ["family", "routines", "shops", "staples", "tour", "rhythm", "presence"]}
+
+    links = await presence_messages()
+    assert set(links) == {"Ola", "Ada"} and links["Ola"][0] != links["Ada"][0]
+    assert (links["Ola"][1], links["Ada"][1]) == (False, True)       # Ola is talking to us now; Ada may be asleep
+    (text,) = {r["text"].replace(links["Ola"][0], "TOKEN") for r in await rows(
+        "select text from outbox where member_id = :m", m=home.ola)}
+    assert text == households.presence_text("http://testserver/presence/TOKEN", ["Costco", "Tesco Extra"])
+    for wanted in ("Arrive", "Run Immediately", "Get Contents of URL", "POST", "event = enter", "event = exit",
+                   "place = Home", "Shops I know: Costco, Tesco Extra."):
+        assert wanted in text
+    # The model is told that links went out, never what they are; only hashes are stored.
+    logged = json.dumps(await rows("select args, result, inverse from agent_actions"), default=str)
+    hashes = {r["name"]: r["presence_token_hash"] for r in await rows("select name, presence_token_hash from members")}
+    for token, _ in links.values():
+        assert token not in result and token not in logged and token not in hashes.values()
+    assert hashes["Grace"] is None and hashes["Tobi"] is None and hashes["Ola"] and hashes["Ada"]
+
+    # The link in Ada's message is hers: her phone calling it is recorded as Ada arriving.
+    await client.post(f"/presence/{links['Ada'][0]}", json={"event": "enter", "place": "Tesco Extra"})
+    assert await rows("select m.name, p.name as place, p.kind from presence_events e join members m "
+                      "on m.id = e.member_id join places p on p.id = e.place_id") == [
+        {"name": "Ada", "place": "Tesco Extra", "kind": "store"}]
+
+    await tool(home, "undo_last")                           # reopening the step takes nobody's link away
+    assert (await fetch_state(home))["step"] == "rhythm"
+    assert {r["name"]: r["presence_token_hash"] for r in await rows(
+        "select name, presence_token_hash from members")} == hashes
+
+
+async def fetch_state(home):
+    async with tx() as conn:
+        return await fetch_val(conn, "select onboarding_state from households where id = :h", h=home.id)
+
+
+async def test_presence_can_be_skipped_or_asked_for_early_and_a_link_someone_has_is_never_replaced():
+    async with tx() as conn:
+        home = await setting_up(conn, reached="tour")
+    await tool(home, "onboarding_advance", step="presence", skipped=True)
+    await tool(home, "onboarding_advance", step="tour")
+    result, _ = await tool(home, "onboarding_advance", step="rhythm", skipped=True)
+    assert result == "OK: rhythm skipped. Setup is complete"
+    assert await presence_messages() == {} and await rows(
+        "select 1 from members where presence_token_hash is not null") == []
+
+    async with tx() as conn:
+        await execute(conn, "delete from households")
+        home = await setting_up(conn, reached="tour")
+        mine = await members.new_presence_token(conn, home.ola)      # Ola made a link on the Settings page already
+    result, _ = await tool(home, "onboarding_advance", step="presence")      # "send me that shop link now"
+    assert result.splitlines() == ["OK: presence done. Next step: tour",
+                                   "NOTE: Ada got a private message with a personal link for shop-arrival "
+                                   "nudges and the phone steps; setting it up is optional"]
+    assert set(await presence_messages()) == {"Ada"}
+    await tool(home, "onboarding_advance", step="tour")
+    await tool(home, "onboarding_advance", step="rhythm")
+    assert set(await presence_messages()) == {"Ada"}        # not sent twice
+    async with tx() as conn:
+        assert (await members.for_presence_token(conn, mine))["id"] == home.ola
+
+
+async def test_a_household_left_at_the_presence_step_is_told_what_it_is_and_the_tool_finishes_it():
+    async with tx() as conn:
+        home = await setting_up(conn, reached="presence")
+    llm = FakeLLM(call("onboarding_advance", step="presence"), say("All set. I've sent you each a link."))
+    async with tx() as conn:
+        await inbound.simulate_turn(conn, LoopRuntime(llm), home.id, home.ola, "anything else?")
+    assert "Current step: presence. Remaining: presence." in llm.requests[0][0]
+    assert STEP_GUIDE["presence"] in llm.requests[0][0]
+    assert set(await presence_messages()) == {"Ola", "Ada"} and (await fetch_state(home))["step"] is None
+
+
+async def test_an_adult_who_connects_after_setup_gets_the_welcome_and_then_their_link(client):
+    async with tx() as conn:
+        home = await setting_up(conn)
+        grace_code = await members.create_invite(conn, home.members["Grace"], utcnow())
+    await tool(home, "onboarding_advance", step="rhythm")
+    await deliver()
+
+    await post(client, tg_update(1, f"/start {grace_code}", user_id=1003, name="Grace"))
+    (welcome, link) = await deliver()
+    assert welcome == ("1003", f"Hi Grace, you're connected. {inbound.WELCOME}", None)
+    assert link[0] == "1003" and URL.search(link[1])
+    token = URL.search(link[1]).group(1)
+    async with tx() as conn:
+        assert (await members.for_presence_token(conn, token))["name"] == "Grace"
+
+    # The same invite links her WhatsApp too. That must not replace the link her phone already uses.
+    await post_whatsapp(client, wa_message(1, grace_code, user_id="GB.1000000000000000000103", name="Grace"))
+    assert len(await presence_messages()) == 3
+    async with tx() as conn:
+        assert (await members.for_presence_token(conn, token))["name"] == "Grace"
+
+
+@pytest.mark.parametrize("state", ['{"step": null, "done": []}',                               # set up before presence existed
+                                   '{"step": null, "done": ["presence"], "skipped": ["presence"]}',   # said no thanks
+                                   '{"step": "shops", "done": ["family", "routines"]}'])        # not there yet
+async def test_no_link_is_sent_on_connecting_unless_setup_sent_them(client, state):
+    async with tx() as conn:
+        home = await seed_home(conn)
+        await execute(conn, "update households set onboarding_state = cast(:state as jsonb)", state=state)
+        ada = await add_member(conn, home, "Ada")
+        code = await members.create_invite(conn, ada, utcnow())
+    await post(client, tg_update(1, f"/start {code}", user_id=1002, name="Ada"))
+    assert await deliver() == [("1002", f"Hi Ada, you're connected. {inbound.WELCOME}", None)]
 
 
 # ---------------------------------------------------------------- remember: facts and settings

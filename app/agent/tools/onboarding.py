@@ -9,7 +9,7 @@ from app.services import households
 
 
 class OnboardingAdvance(BaseModel):
-    step: Literal["family", "routines", "shops", "staples", "tour", "rhythm"]
+    step: Literal["family", "routines", "shops", "staples", "tour", "rhythm", "presence"]
     skipped: bool = False
 
 

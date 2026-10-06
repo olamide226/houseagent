@@ -114,6 +114,10 @@ async def _unknown_sender(conn: AsyncConnection, adapter: ChannelAdapter, event:
         text=f"Hi {member['name']}, you're connected. {FIRST_QUESTION if setting_up else WELCOME}",
         respect_quiet_hours=False,
     ))
+    if not setting_up and await households.presence_offered(conn, member["household_id"]):
+        # Setup already sent the others their presence links; a first link for this adult follows the welcome.
+        await households.send_presence_links(conn, member["household_id"], member_id=member["id"],
+                                             speaker=member["id"])
     log.info("invite_redeemed", household_id=member["household_id"], channel=event.channel.value)
 
 

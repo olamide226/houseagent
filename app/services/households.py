@@ -19,9 +19,9 @@ from app.pipeline.router import enqueue
 from app.services import inventory, members
 
 log = structlog.get_logger()
-# Spec section 12.2, in order. `presence` joins the list once the links can be sent.
+# Spec section 12.2, in order. The last one asks nothing: code sends each adult their link (ADR 0025).
 PRESENCE = "presence"
-ONBOARDING_STEPS = ("family", "routines", "shops", "staples", "tour", "rhythm")
+ONBOARDING_STEPS = ("family", "routines", "shops", "staples", "tour", "rhythm", PRESENCE)
 PLACE_KINDS = ("home", "store", "school", "clinic", "other")
 SETTING_KEYS = ("staples", "morning_brief", "quiet_hours")   # said like facts, stored as settings (ADR 0016)
 STORE_KEYS = ("shops", "main_supermarket")                   # facts whose values are also `places`
