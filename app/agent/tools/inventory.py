@@ -33,7 +33,11 @@ async def log_inventory(ctx: Ctx, args: LogInventory) -> str:
     """Record food and household stock that came in, got used, is running low or ran out.
     Batch every change from the turn into one call. Unknown items are created (NEW:).
     Ambiguous names are skipped and reported (AMBIGUOUS:); other changes still apply.
-    Finished staples and anything running low are added to the shopping list (NOTE:)."""
+    The shopping list follows by itself and each NOTE: says how: finished staples and anything
+    running low go on it, purchases are ticked off it. Leave it at that: add what ran out yourself
+    only if the person asked for it to go on the list, and do not offer to. A result of only OK:,
+    NEW: and NOTE: lines is routine, not news: the reply to it is ACK, or after a photo one line
+    saying what was read."""
     async with record(ctx, "log_inventory", args) as rec:
         for change in args.changes:
             location_id = None

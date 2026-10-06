@@ -26,7 +26,26 @@ async def test_batch_finish_adds_only_the_staple_to_the_list():
         assert await stock_of(conn, home) == {("egg", "fridge"): (D(0), "out"), ("bread", "store"): (D(0), "out")}
         assert await active_list(conn, home) == {"egg": "finished"}
         assert [(e[0], e[1]) for e in await events_of(conn, home)] == [("egg", "finished"), ("bread", "finished")]
-        assert "NOTE: egg added to shopping list" in result
+        # Both outcomes are spelled out: a model told nothing about bread adds it itself, or says it was added.
+        assert result.splitlines() == [
+            "OK: egg finished (fridge)", "NOTE: egg added to shopping list",
+            "OK: bread finished (store)", "NOTE: bread not added to shopping list: it is not a staple"]
+
+
+async def test_running_out_of_something_already_on_the_list_says_so_and_changes_nothing_there():
+    async with tx() as conn:
+        home = await seed_home(conn)
+        await add_item(conn, home, "egg", staple=True, qty=6)
+        await add_item(conn, home, "bread", qty=1)
+        ctx = ctx_for(conn, home)
+        await run_tool("update_shopping_list", {"add": [{"item": "eggs"}, {"item": "bread"}]}, ctx)
+        result = await log(ctx, change("eggs", "finished"), change("bread", "finished"))
+        assert [line for line in result.splitlines() if line.startswith("NOTE:")] == [
+            "NOTE: egg is already on the shopping list", "NOTE: bread is already on the shopping list"]
+        assert await active_list(conn, home) == {"egg": "explicit", "bread": "explicit"}
+        # An entry that was ticked off is no longer "on the list".
+        await run_tool("update_shopping_list", {"bought": ["bread"]}, ctx)
+        assert "NOTE: bread not added to shopping list: it is not a staple" in await log(ctx, change("bread", "finished"))
 
 
 async def test_low_adds_any_item_to_the_list_once():
@@ -34,8 +53,8 @@ async def test_low_adds_any_item_to_the_list_once():
         home = await seed_home(conn)
         await add_item(conn, home, "rice", qty=2)
         ctx = ctx_for(conn, home)
-        await log(ctx, change("rice", "low"))
-        await log(ctx, change("rice", "low"))
+        assert "NOTE: rice added to shopping list" in await log(ctx, change("rice", "low"))
+        assert "NOTE: rice is already on the shopping list" in await log(ctx, change("rice", "low"))
         assert await stock_of(conn, home) == {("rice", "store"): (D(2), "low")}
         assert await active_list(conn, home) == {"rice": "low"}
 

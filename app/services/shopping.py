@@ -44,6 +44,12 @@ async def add_entry(rec: Recorder, item_id: str, reason: str, *, quantity: Decim
     return True
 
 
+async def on_list(conn: AsyncConnection, household_id: str, item_id: str) -> bool:
+    return bool(await fetch_val(
+        conn, "select exists (select 1 from shopping_list_items where household_id = :h and item_id = :item "
+              "and status = 'needed')", h=household_id, item=item_id))
+
+
 async def resolve_entry(rec: Recorder, item_id: str, status: str) -> bool:
     """Mark the item's active entry bought or dismissed. False if it was not on the list."""
     entry = await fetch_one(

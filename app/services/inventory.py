@@ -227,8 +227,7 @@ async def apply_change(rec: Recorder, change: Change, source: str) -> None:
         if await shopping.resolve_entry(rec, change.item_id, "bought"):
             rec.lines.append(f"NOTE: {name} ticked off the shopping list")
     elif change.action == "low":
-        if await shopping.add_entry(rec, change.item_id, "low"):
-            rec.lines.append(f"NOTE: {name} added to shopping list")
+        rec.lines.append(await _list_note(rec, change.item_id, name, "low"))
     elif after.status == "out" and change.action in ("finished", "discarded"):
         staple = item["is_staple"]
         if not staple and await _completed_cycles(conn, change.item_id) >= 2:
@@ -236,8 +235,17 @@ async def apply_change(rec: Recorder, change: Change, source: str) -> None:
             await execute(conn, "update items set is_staple = true where id = :id", id=change.item_id)
             rec.lines.append(f"NOTE: {name} is now a staple")
             staple = True
-        if staple and await shopping.add_entry(rec, change.item_id, "finished"):
-            rec.lines.append(f"NOTE: {name} added to shopping list")
+        rec.lines.append(await _list_note(rec, change.item_id, name, "finished" if staple else None))
+
+
+async def _list_note(rec: Recorder, item_id: str, name: str, reason: str | None) -> str:
+    """List the item for `reason` if there is one, and say where that leaves the shopping list either
+    way: a model told nothing adds the item itself, or says it was added."""
+    if reason and await shopping.add_entry(rec, item_id, reason):
+        return f"NOTE: {name} added to shopping list"
+    if await shopping.on_list(rec.ctx.conn, rec.ctx.household_id, item_id):
+        return f"NOTE: {name} is already on the shopping list"
+    return f"NOTE: {name} not added to shopping list: it is not a staple"
 
 
 async def _usual_location(conn: AsyncConnection, item: dict[str, Any]) -> str:

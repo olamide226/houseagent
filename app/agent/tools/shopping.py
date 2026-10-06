@@ -18,7 +18,9 @@ class ShoppingAdd(BaseModel):
 
 class UpdateShoppingList(BaseModel):
     add: list[ShoppingAdd] = []
-    bought: list[str] = Field([], description="Ticks off AND logs a restock to inventory")
+    bought: list[str] = Field([], description=(
+        "Ticks off AND logs a restock to inventory. Not for anything log_inventory recorded as bought, "
+        "from a receipt or a message: that is ticked off already"))
     remove: list[str] = Field([], description="No longer needed (dismissed)")
     bought_all: bool = Field(False, description="True for 'got everything on the list'")
 
