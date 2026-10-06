@@ -110,6 +110,55 @@ the same path into the model as a stored Telegram photo.
 
 ## Latest results
 
+One run of the whole suite, 6 Oct 2026 (milestone 5), 50 cases, model `deepseek-flash` through
+both adapters. Five cases are new: four answers to messages the assistant
+starts, and setup ending with the presence links.
+
+| Adapter | Endpoint | Passed | NOOP | Undo | Input tokens (cached) | Output tokens |
+| --- | --- | --- | --- | --- | --- | --- |
+| `openai_compat` | `https://api.deepseek.com/` | **48/50** (96%) | 3/3 | 4/4 | 437,831 (388,736) | 11,329 |
+| `anthropic` | `https://api.deepseek.com/anthropic` | **44/50** (88%) | 3/3 | **3/4** | 424,775 (397,696) | 13,894 |
+
+| Category | `openai_compat` | `anthropic` |
+| --- | --- | --- |
+| inventory | 7/8 | 7/8 |
+| shopping list | 5/5 | 5/5 |
+| NOOP | 3/3 | 3/3 |
+| undo | 4/4 | 3/4 |
+| calendar | 7/7 | 7/7 |
+| reminders | 4/4 | 4/4 |
+| photos | 4/5 | 4/5 |
+| onboarding | 10/10 | 9/10 |
+| presence (new) | 4/4 | 2/4 |
+
+The release bar (95% overall and 100% on NOOP and undo, on at least two providers) is met on the
+OpenAI-compatible endpoint in this run and **not met on the Anthropic-compatible one**, so it is
+not met. One sample per case: the 48 could be a 46 next time.
+
+Cost: the account balance, shown to the cent, read $4.82 before the run and $4.81 after it.
+
+Failures, from the assertion messages of this run:
+
+| Case | Endpoint | What the rows showed |
+| --- | --- | --- |
+| batch finish with staple | `openai_compat` | Rows correct; the reply was "Eggs and bread are on the shopping list." where the case expects `ACK`, and bread is not on it |
+| batch finish with staple | `anthropic` | Bread was on the list as well as eggs: the model added it itself. This case has failed in every run |
+| long receipt ignores totals and savings | both | An event with a source other than `receipt`: after logging the receipt the model also ticked an item off the list, a second restock of the same purchase |
+| undo a list change | `anthropic` | After "add bleach" then "undo", bleach was still on the list. The same was seen on the other endpoint in milestone 1, where the trace showed `undo_last` running and the model then adding bleach again |
+| quiet hours changed later just by talking | `anthropic` | Ada said "don't message me after 8pm" and both adults ended at 20:00 to 07:00. Third run in a row |
+| yes to the low-stock prompt puts the guessed items on the list | `anthropic` | Milk and bread were still only guesses |
+| yes to the out-and-about offer reads the list back | `anthropic` | The reply was `NOOP` |
+
+**The last two were a defect in the Anthropic adapter, found by these cases.** It dropped a
+thread's opening message when the assistant had sent it, because that API wants a user turn
+first (`app/llm/anthropic.py`), so "yes" reached the model with nothing to answer. The adapter
+now keeps the message behind a placeholder user turn. The four presence cases were then run once
+more on that endpoint only and all four passed. That re-run is not part of the score above, and
+the rest of the suite was not run again: no other case starts with an assistant message, so the
+change does not reach them.
+
+## Previous full run (milestone 4)
+
 One run of the whole suite, 6 Oct 2026 (milestone 4), model `deepseek-flash` through both
 adapters. Nothing in `app/agent/` changed since the previous run, and no case was added: the
 agent does not behave differently on WhatsApp, and the suite talks to it without a channel.

@@ -30,7 +30,10 @@ with no category into supermarket sections, with a JSON answer and no tools.
   the next request. `LLMResponse.opaque` carries the provider's own blocks; the loop copies it onto
   the assistant `ChatMessage` and never reads it. Only the adapter that produced it does.
 - **Anthropic wire shape.** Tool results for one assistant turn are merged into a single user
-  turn, adjacent same-role turns merge, and a leading assistant turn (from thread history) is dropped.
+  turn, and adjacent same-role turns merge. That API wants a user turn first, so when a thread's
+  history begins with something the assistant said (a reminder, the low-stock prompt), a one-line
+  placeholder user turn goes in front of it; the message itself is kept, because the reply to it
+  means nothing without it.
 - **Images.** The loop loads a turn's photos through `MediaStore` and sends them as `ImagePart`s
   (base64, with the stored mime type) after the turn's text. `LLM_SUPPORTS_IMAGES=false` makes it
   send a note instead: `[photo received; this model can't read photos]`.
