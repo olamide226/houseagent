@@ -28,26 +28,29 @@ Without Docker: [operations.md](operations.md#running-without-docker).
 
 ## What is built
 
-Milestones 1 to 5 of the six in [spec.md](spec.md#17-deployment-and-build-milestones):
+All six milestones in [spec.md](spec.md#17-deployment-and-build-milestones):
 Telegram, inventory and the shopping list, undo, `/setup`, magic-link login; the calendar tools,
 reminders that respect quiet hours, the daily brief and weekly digest, a read-only ICS feed;
 conversational onboarding, invites, media storage on S3 or ImgBB, receipt and fridge photos, and
 the Family and Settings pages; then WhatsApp with its 24-hour window and reminder template, a
 second try on another channel when a send fails for good, and the Channels page; then the
 presence endpoint for iOS Shortcuts with its store-arrival list, the consumption model, and the
-low-stock prompt. WhatsApp has only been tested against recorded payloads, and presence only with
-plain HTTP calls, not from a phone. Each page below says what exists now and what is deferred.
+low-stock prompt; then iMessage through a BlueBubbles server with a health check that moves
+people to their next channel while it is down, the System page, the optional Letta runtime
+(not promoted) and a Helm chart. WhatsApp and iMessage have only been tested against recorded
+payloads, presence only with plain HTTP calls and not from a phone, and the chart has been
+rendered but not installed. Each page below says what has been checked and what has not.
 
 | Doc | Contents |
 | --- | --- |
 | [architecture.md](architecture.md) | Processes, message flow, media, quiet hours, scheduled jobs, repo layout |
 | [data-model.md](data-model.md) | Tables, stock transitions, calendar rows, invariants |
-| [channels.md](channels.md) | The adapter contract; Telegram and WhatsApp setup, template approval, payload notes, limits |
+| [channels.md](channels.md) | The adapter contract; Telegram, WhatsApp and iMessage setup, template approval, payload notes, what happens when BlueBubbles is down, limits |
 | [llm.md](llm.md) | Provider layer, adding an adapter, tested models |
-| [agent-and-tools.md](agent-and-tools.md) | Runtime loop, photos, onboarding, tools, calendar rules, resolution rules, undo |
+| [agent-and-tools.md](agent-and-tools.md) | Runtime loop, the optional Letta runtime, photos, onboarding, tools, calendar rules, resolution rules, undo |
 | [presence.md](presence.md) | iPhone Shortcut setup, the presence rules, the consumption model, "probably" list entries, the low-stock prompt |
-| [dashboard.md](dashboard.md) | Pages, the login flow, invites, channels and the family group, the calendar feed |
-| [operations.md](operations.md) | Environment variables, running, media storage, worker jobs, WhatsApp template and token trouble, logs |
+| [dashboard.md](dashboard.md) | Pages, the login flow, invites, channels and the family group, the System page, the calendar feed |
+| [operations.md](operations.md) | Environment variables, running, Helm, media storage, worker jobs, the BlueBubbles outage and WhatsApp template runbooks, logs |
 | [evals.md](evals.md) | Running the agent evals, adding a case, latest results |
 | [adr/](adr/) | One decision per file |
 | [spec.md](spec.md) | The v1 implementation spec: the baseline for behaviour, names and layout |

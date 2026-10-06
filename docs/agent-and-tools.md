@@ -3,7 +3,8 @@
 ## Runtime
 
 `AgentRuntime` (`app/agent/base.py`) has one method, `handle(envelope, ctx) -> AgentResult`.
-`LoopRuntime` (`app/agent/loop.py`) is the only implementation so far:
+`LoopRuntime` (`app/agent/loop.py`) is the default, and the one in use. `LettaRuntime` is an
+optional second implementation ([below](#the-letta-runtime-optional)). The loop:
 
 1. System prompt = the static prompt + the household brief, + the onboarding section while the
    household is being set up.
@@ -24,6 +25,47 @@ next 7 days, each list capped at 25 entries with "+N more".
 A turn's clock is the time its message arrived (`Ctx.now`), not the time the worker got to it.
 "In two hours" and "tomorrow" count from when it was said. See
 [ADR 0013](adr/0013-explicit-clocks.md).
+
+## The Letta runtime (optional)
+
+`AGENT_RUNTIME=letta` swaps the loop for `LettaRuntime` (`app/agent/letta_runtime.py`), which
+hands the conversation and the model calls to a [Letta](https://docs.letta.com) server. **It is
+off by default and has not been promoted**: on the eval suite it did not beat the loop
+([evals.md](evals.md#the-letta-comparison)). It needs the `letta` extra (`letta-client`),
+`LETTA_BASE_URL`, `INTERNAL_TOOL_TOKEN`, and usually `LETTA_MODEL`, the model's handle as that
+Letta server names it.
+
+- **One Letta agent per household**, created on its first turn; its id is kept in
+  `households.letta_agent_id`. Letta's own memory tools are not attached.
+- **Postgres stays the source of truth.** Before every turn the runtime rewrites the agent's two
+  memory blocks: `persona` (the static prompt) and `household` (the brief, and the setup section
+  while setup is open). Thread history is not sent; Letta keeps its own, one for the whole
+  household, DMs and group together.
+- **Tools** are the same twelve, registered with Letta as functions whose whole body posts the
+  arguments to `POST /internal/tools/{name}` with `Authorization: Bearer INTERNAL_TOOL_TOKEN`.
+  The household id, the address to call and the token come from the agent's tool environment,
+  which is also rewritten before every turn.
+- **The bridge** (`app/agent/internal.py`) answers `{"result": str, "is_error": bool}`. It runs the
+  call on the connection of that household's turn in flight, as that turn's member and message,
+  so the writes, the undo log and the outbox are exactly the loop's. A call with a wrong token
+  gets 401; with no turn in flight for that household, 409; with no token configured, 404.
+- **Which process answers.** The bridge runs in whichever process is running the turn: the
+  worker for chat (it listens on the port of `WORKER_INTERNAL_URL`, 8001 by default) and the api
+  for the Playground (`INTERNAL_BASE_URL`, by default `PUBLIC_BASE_URL`). `/internal` must be
+  reachable from the Letta server and from nowhere else; the Helm chart keeps it off the
+  ingress ([ADR 0029](adr/0029-the-letta-tool-bridge.md)).
+- **Photos** go to Letta as base64 image parts of the user message.
+- The final answer is read as in the loop: `ACK`, `NOOP`, or a reply. A Letta failure fails the
+  turn, and the member gets the usual "Sorry, that didn't go through".
+
+What is different under Letta: a Playground dry run rolls the database back but Letta still
+remembers the exchange; the model's own instructions are Letta's system prompt with ours in a
+memory block; and message text is stored on the Letta server as well as in Postgres.
+
+Letta's documentation now describes a different product (a harness with a WebSocket App Server).
+This runtime uses the REST API that `letta-client` wraps, which the documentation lists for
+Letta Cloud. Self-hosted, that API is the server image up to `letta/letta:0.16.8`; later tags of
+the same image are the new harness and do not serve it.
 
 ## Photos
 

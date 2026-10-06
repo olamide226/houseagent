@@ -30,6 +30,11 @@ Everything is read by `Settings` in `app/config.py`, from the environment or a l
 | `WA_REMINDER_TEMPLATE` | no | `household_reminder` | The approved utility template that carries a message outside the 24-hour window |
 | `BB_BASE_URL`, `BB_PASSWORD`, `BB_WEBHOOK_SECRET` | for iMessage | | The BlueBubbles server on the Mac, its password, and the secret in the webhook URL it calls |
 | `BB_PRIVATE_API` | no | `false` | `true` when the BlueBubbles Private API helper is installed: tapbacks and threaded replies |
+| `AGENT_RUNTIME` | no | `loop` | `loop`, or `letta` for the optional Letta runtime ([agent-and-tools.md](agent-and-tools.md#the-letta-runtime-optional)) |
+| `LETTA_BASE_URL`, `LETTA_API_KEY`, `LETTA_MODEL` | for `letta` | | The Letta server, its key if it wants one, and the model's handle as that server names it |
+| `INTERNAL_TOOL_TOKEN` | for `letta` | | The bearer token Letta's tools present to `/internal/tools/*`. Unset, that route answers 404 |
+| `INTERNAL_BASE_URL` | no | `PUBLIC_BASE_URL` | Where Letta reaches the api's `/internal` (Playground turns) |
+| `WORKER_INTERNAL_URL` | no | `http://localhost:8001` | Where Letta reaches the worker's `/internal` (chat turns); the worker listens on this port under `letta` |
 | `AGENT_NAME` | no | `Home` | Name used in the prompt and pages |
 | `DEFAULT_TIMEZONE` | no | `Europe/London` | Prefilled on `/setup` |
 | `DEBOUNCE_SECONDS` | no | `4` | How long a batch must be quiet before its turn |
@@ -37,8 +42,8 @@ Everything is read by `Settings` in `app/config.py`, from the environment or a l
 | `WORKER_HEARTBEAT_FILE` | no | `/tmp/worker-heartbeat` | The file the worker touches every minute, for its liveness probe |
 | `EVAL_RESULTS_DIR` | no | `tests/evals/.results` | Where the System page looks for the last eval result |
 
-Variables for later milestones (iMessage, Letta) are in
-[spec.md section 3](spec.md#3-configuration-and-dependencies) and are not read yet.
+Of the spec's variables, `DASHBOARD_PUBLIC` is not read: it is the Helm value
+`dashboard.public` instead. `STT_PROVIDER` only accepts `openai_compat`; `local` is not built.
 
 ## Running with Docker
 

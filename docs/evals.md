@@ -22,8 +22,16 @@ uv run pytest tests/evals
 ```
 
 Every case runs once per endpoint that is configured, so the same suite exercises both adapters.
-Results, with token totals, are written to `tests/evals/.results/<provider>.json` (git-ignored).
+Results, with token totals, are written to `tests/evals/.results/<provider>.json` (git-ignored),
+which is also where the dashboard's System page reads the last result from.
 Add `-k "calendar or reminders"` to run part of the suite.
+
+To run the same cases through the optional Letta runtime instead, start a Letta server and set
+`EVAL_RUNTIME=letta`, `EVAL_LETTA_BASE_URL` (default `http://127.0.0.1:8283`) and
+`EVAL_LETTA_MODEL` (the model's handle on that server). The test process then serves the tool
+bridge itself on `EVAL_BRIDGE_PORT` (8011); `EVAL_BRIDGE_URL` is how the Letta server reaches
+it, by default `http://host.docker.internal:8011`. The result is written as `letta.json`.
+[The Letta comparison](#the-letta-comparison) has the exact commands that were used.
 
 ## Adding a case
 
@@ -109,6 +117,115 @@ photo case reads its image through a read-only `MediaStore` over that folder, so
 the same path into the model as a stored Telegram photo.
 
 ## Latest results
+
+One run of the whole suite with the loop runtime, 6 Oct 2026 (milestone 6), 50 cases, model
+`deepseek-flash` through both adapters, 299 seconds. No case and no prompt changed since the
+previous run; the Anthropic adapter's fix from that run is in.
+
+| Adapter | Endpoint | Passed | NOOP | Undo | Input tokens (cached) | Output tokens |
+| --- | --- | --- | --- | --- | --- | --- |
+| `openai_compat` | `https://api.deepseek.com/` | **48/50** (96%) | 3/3 | **3/4** | 426,902 (405,502) | 12,776 |
+| `anthropic` | `https://api.deepseek.com/anthropic` | **48/50** (96%) | 3/3 | 4/4 | 440,912 (418,560) | 14,845 |
+
+| Category | `openai_compat` | `anthropic` |
+| --- | --- | --- |
+| inventory | 7/8 | 7/8 |
+| shopping list | 5/5 | 5/5 |
+| NOOP | 3/3 | 3/3 |
+| undo | 3/4 | 4/4 |
+| calendar | 7/7 | 7/7 |
+| reminders | 4/4 | 4/4 |
+| photos | 5/5 | 4/5 |
+| onboarding | 10/10 | 10/10 |
+| presence | 4/4 | 4/4 |
+
+The release bar (95% overall and 100% on NOOP and undo, on at least two providers) is met on the
+Anthropic-compatible endpoint in this run and **not on the OpenAI-compatible one**, where one
+undo case failed. So it is not met. In the previous run it was the other way round. One sample
+per case: these are the same model on two wire formats, and a case that passes on one and fails
+on the other mostly shows how much one run varies.
+
+Cost: the account balance, shown to the cent, read $4.78 before the run and $4.77 after it.
+
+Failures, from the assertion messages of this run:
+
+| Case | Endpoint | What the rows showed |
+| --- | --- | --- |
+| batch finish with staple | both | Bread was on the list as well as eggs: the model added it itself. This case has failed in every run |
+| correction undoes then records what was meant | `openai_compat` | After "no, I meant we're low on milk" the milk row was `low` with quantity 0 where the case expects the 2 that were there before the mistaken "finished" |
+| long receipt ignores totals and savings | `anthropic` | An event with a source other than `receipt`: after logging the receipt the model also ticked an item off the list, a second restock of the same purchase |
+
+## The Letta comparison
+
+Spec section 8.4: the Letta runtime is "promoted only if it beats the loop on the eval suite".
+**It did not, so the loop stays the default and Letta stays off.**
+
+| Runtime | Passed | NOOP | Undo | Model calls | Input tokens (cached) | Output tokens | Seconds |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| loop, `openai_compat` (above) | 48/50 | 3/3 | 3/4 | not counted | 426,902 (405,502) | 12,776 | 299 for both |
+| loop, `anthropic` (above) | 48/50 | 3/3 | 4/4 | not counted | 440,912 (418,560) | 14,845 | |
+| **Letta** | **45/50** (90%) | 3/3 | 3/4 | 118 | 506,802 (310,400) | 13,679 | 246 |
+
+| Category | Letta |
+| --- | --- |
+| inventory | 7/8 |
+| shopping list | 5/5 |
+| NOOP | 3/3 |
+| undo | 3/4 |
+| calendar | 7/7 |
+| reminders | 4/4 |
+| photos | 5/5 |
+| onboarding | 9/10 |
+| presence | 2/4 |
+
+One run, 6 Oct 2026, the same 50 cases and the same model. Cost: $4.70 before, $4.69 after.
+
+| Case that failed under Letta | What the rows showed |
+| --- | --- |
+| yes to the low-stock prompt puts the guessed items on the list | Nothing was added. Letta answered "yes" with no idea what had been asked |
+| yes to the out-and-about offer reads the list back | The reply was "Yes to what? I don't have anything pending" |
+| batch finish with staple | Bread on the list as well as eggs, as with the loop |
+| undo a list change | Bleach was still on the list after "undo" |
+| quiet hours changed later just by talking | Both adults ended at 20:00, where only the speaker should have |
+
+**The two presence failures are the design, not the model.** The low-stock prompt and the "out
+and about" offer are written by code and sent through the outbox. The loop sees them because it
+reads the thread's history from Postgres. Letta keeps its own history, which only holds what
+went through Letta, so it never saw the question it was being answered. The same would be true
+of every reminder, brief and arrival list. A Letta runtime that was going to be used would have
+to be told about what the assistant said on its own.
+
+**How it was run**, because none of it is the default:
+
+- **Server:** `letta/letta:0.16.8` in Docker, the last tag of that image that serves the REST
+  API `letta-client` wraps. It started without an embedding model or any other setup.
+- **Model:** DeepSeek through Letta's OpenAI-compatible provider (`OPENAI_BASE_URL`), handle
+  `openai-proxy/deepseek-flash`. Letta's own DeepSeek provider only knows the model names
+  `deepseek-chat` and `deepseek-reasoner`, which DeepSeek no longer lists.
+- **A pass-through in front of DeepSeek** (`tests/evals/letta_deepseek_shim.py`). Without it no
+  turn with a tool call completes: Letta shortens tool-call ids to 29 characters, and DeepSeek's
+  thinking mode refuses a conversation whose ids it did not issue ("The `reasoning_content` in
+  the thinking mode must be passed back to the API"). The pass-through restores the ids and
+  hands the reasoning back, and changes nothing else. The loop needs none of this.
+- **Two runs.** The first scored 32/50 and measured this integration, not Letta: every tool
+  argument that was optional failed inside Letta ("Unsupported type: None"), because Letta
+  0.16.8 cannot coerce a value declared as `anyOf` a type or null, which took out every
+  reminder and most of setup; and the first version of the pass-through did not hand reasoning
+  back, which DeepSeek demands when the turn has a photo. Both were fixed (the first in
+  `app/agent/letta_runtime.py`) and the suite was run again. The table is the second run.
+
+```sh
+DEEPSEEK_OPENAI_BASE_URL=https://api.deepseek.com uv run python tests/evals/letta_deepseek_shim.py &
+docker run -d --name letta -p 127.0.0.1:8283:8283 --add-host host.docker.internal:host-gateway \
+  -e OPENAI_API_KEY="$EVAL_API_KEY" -e OPENAI_BASE_URL=http://host.docker.internal:9911/v1 letta/letta:0.16.8
+RUN_EVALS=1 EVAL_RUNTIME=letta EVAL_LETTA_MODEL=openai-proxy/deepseek-flash uv run pytest tests/evals
+```
+
+What the comparison does not show: Letta with a model it supports natively, Letta's current
+harness (a different product with a different API), or anything about long conversations, which
+is where Letta's own memory is meant to help and which no case in this suite exercises.
+
+## Previous full run (milestone 5)
 
 One run of the whole suite, 6 Oct 2026 (milestone 5), 50 cases, model `deepseek-flash` through
 both adapters. Five cases are new: four answers to messages the assistant

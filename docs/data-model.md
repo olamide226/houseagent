@@ -28,13 +28,15 @@ milestones 1 to 5 use and the rules the code enforces.
 | `households.calendar_token_hash` | the Calendar page's "New subscribe link" |
 | `agent_actions` | every tool call or dashboard action that wrote something, and each invite redemption |
 | `outbox` | turns, invites and welcomes, login links, reminders, digests |
-| `job_runs` | the daily brief, the weekly digest, the consumption model and the low-stock prompt, one row per household and run |
+| `job_runs` | the daily brief, the weekly digest, the consumption model and the low-stock prompt, one row per household and run; and one `worker_heartbeat` row per household that the worker moves forward every minute |
+| `households.letta_agent_id` | the Letta runtime, when it creates the household's agent |
 
 Every table in the schema is now written by something.
 
 `nudge_log.dedupe_key` is `store:{member id}:{place id}` (a shop list, again after 2 hours),
-`out:{member id}:{local date}` (the "out and about" offer, once) or `low_stock:{item id}` (asked
-about in the 17:30 prompt, again after 3 days).
+`out:{member id}:{local date}` (the "out and about" offer, once), `low_stock:{item id}` (asked
+about in the 17:30 prompt, again after 3 days) or `imessage_outage` (held by a household that
+uses iMessage for as long as BlueBubbles does not answer; `sent_at` is when the outage began).
 
 `consumption_profiles.predicted_runout_at` is null unless the item has two or more measured
 cycles and has been bought since it last ran out. `samples` counts the cycles that were measured;

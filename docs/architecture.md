@@ -181,15 +181,18 @@ app/
   media/         MediaStore protocol and factory, S3 and ImgBB backends
   channels/      ChannelAdapter protocol, registry, Telegram, WhatsApp, iMessage
   pipeline/      inbound (persist, debounce, turn, simulate_turn), media (fetch, store, transcribe), router
-  agent/         runtime interface, loop, prompt, resolve, actions (undo), stock, tools/
+  agent/         runtime interface and factory, loop, the optional Letta runtime and its tool bridge,
+                 prompt, resolve, actions (undo), stock, tools/
   services/      the one write path, shared by tools and dashboard
   dashboard/     auth, routes, templates, static
   ics/           the read-only calendar feed
   presence/      the Shortcut endpoint and its rules
   worker/        supervisor and jobs
+deploy/helm/     the chart
 tests/           unit/ contract/ evals/
 ```
 
-## Not built yet
+## Deploying
 
-The Letta runtime.
+`deploy/helm/household-agent/` is the chart: the api and the worker as two Deployments of the one
+image ([operations.md](operations.md#deploying-with-helm)).
