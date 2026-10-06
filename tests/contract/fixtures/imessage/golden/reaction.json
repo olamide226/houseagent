@@ -1,0 +1,12 @@
+[
+  {
+    "channel": "imessage",
+    "external_message_id": "5C0FFEE0-0505-4A6B-9C1D-000000000505",
+    "external_thread_id": "iMessage;+;chat610000000000000042",
+    "scope": "group",
+    "sender_handle": "ada@example.com",
+    "reaction_emoji": "👍",
+    "reaction_target_external_id": "5C0FFEE0-0777-4A6B-9C1D-000000000777",
+    "sent_at": "2026-10-05T20:04:00Z"
+  }
+]

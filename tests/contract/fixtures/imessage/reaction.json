@@ -1,0 +1,62 @@
+{
+  "type": "new-message",
+  "data": {
+    "originalROWID": 1505,
+    "guid": "5C0FFEE0-0505-4A6B-9C1D-000000000505",
+    "text": "Liked “Probably running low: milk, bread. Add to the list?”",
+    "attributedBody": null,
+    "handle": {
+      "originalROWID": 4,
+      "address": "ada@example.com",
+      "service": "iMessage"
+    },
+    "handleId": 4,
+    "otherHandle": 0,
+    "attachments": [],
+    "subject": null,
+    "error": 0,
+    "dateCreated": 1791230640000,
+    "dateRead": null,
+    "dateDelivered": null,
+    "isDelivered": false,
+    "isFromMe": false,
+    "hasDdResults": false,
+    "isArchived": false,
+    "itemType": 0,
+    "groupTitle": null,
+    "groupActionType": 0,
+    "balloonBundleId": null,
+    "associatedMessageGuid": "p:0/5C0FFEE0-0777-4A6B-9C1D-000000000777",
+    "associatedMessageType": "like",
+    "expressiveSendStyleId": null,
+    "threadOriginatorGuid": null,
+    "hasPayloadData": false,
+    "chats": [
+      {
+        "originalROWID": 9,
+        "guid": "iMessage;+;chat610000000000000042",
+        "style": 43,
+        "chatIdentifier": "chat610000000000000042",
+        "isArchived": false,
+        "displayName": "Adebayo family",
+        "participants": [
+          {
+            "originalROWID": 3,
+            "address": "+447700900101",
+            "service": "iMessage"
+          },
+          {
+            "originalROWID": 4,
+            "address": "ada@example.com",
+            "service": "iMessage"
+          }
+        ]
+      }
+    ],
+    "messageSummaryInfo": null,
+    "payloadData": null,
+    "dateEdited": null,
+    "dateRetracted": null,
+    "partCount": 1
+  }
+}

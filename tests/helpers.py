@@ -31,7 +31,8 @@ async def seed_home(conn: AsyncConnection, *, telegram_id: str | None = "1001", 
 
 
 async def add_member(conn: AsyncConnection, home: Home, name: str, *, role: str = "adult",
-                     telegram_id: str | None = None, whatsapp_id: str | None = None) -> str:
+                     telegram_id: str | None = None, whatsapp_id: str | None = None,
+                     imessage_id: str | None = None) -> str:
     member_id = str(await fetch_val(
         conn, "insert into members (household_id, name, role) values (:h, :name, :role) returning id",
         h=home.id, name=name, role=role,
@@ -41,6 +42,8 @@ async def add_member(conn: AsyncConnection, home: Home, name: str, *, role: str 
         await link(conn, member_id, telegram_id)
     if whatsapp_id:
         await link(conn, member_id, whatsapp_id, "whatsapp")
+    if imessage_id:
+        await link(conn, member_id, imessage_id, "imessage")
     return member_id
 
 
@@ -165,6 +168,8 @@ class FakeAdapter:
             threaded_replies=True, proactive_window_hours=window_hours, proactive_template=template,
             max_text_len=4096, formatting="plain")
         self.fail = fail
+        self.healthy = True     # what `ping` answers
+        self.degraded = False   # what the health check last found
         self.sent: list[tuple[str, str, str | None]] = []       # (chat, text, reply_to)
         self.templates: list[tuple[str, str, list[str]]] = []   # (chat, template, params)
         self.reactions: list[tuple[str, str, str]] = []         # (chat, message, emoji)
@@ -208,6 +213,9 @@ class FakeAdapter:
 
     def format(self, text: str) -> str:
         return text
+
+    async def ping(self) -> bool:
+        return self.healthy
 
 
 class MemoryStore:
@@ -288,6 +296,26 @@ async def post_whatsapp(client: Any, payload: dict[str, Any]) -> Any:
     body = json.dumps(payload).encode()
     signature = "sha256=" + hmac.new(WA_SECRET.encode(), body, hashlib.sha256).hexdigest()
     return await client.post("/webhooks/whatsapp", content=body, headers={"X-Hub-Signature-256": signature})
+
+
+BB_SECRET = "test-bb-secret"
+
+
+def bb_message(n: int, text: str | None = None, *, handle: str = "+447700900101", group: str | None = None,
+               kind: str = "new-message", **data: Any) -> dict[str, Any]:
+    """A BlueBubbles webhook carrying one message, in the notification form the server sends."""
+    chat = ({"guid": group, "style": 43, "displayName": "Adebayo family"} if group
+            else {"guid": f"iMessage;-;{handle}", "style": 45, "displayName": ""})
+    return {"type": kind, "data": {
+        "guid": f"5C0FFEE0-{n:04d}", "text": text, "handle": {"address": handle, "service": "iMessage"},
+        "attachments": [], "error": 0, "dateCreated": 1791230400000 + n, "isFromMe": False,
+        "associatedMessageGuid": None, "associatedMessageType": None, "threadOriginatorGuid": None,
+        "chats": [chat], **data}}
+
+
+async def post_imessage(client: Any, payload: dict[str, Any], secret: str | None = BB_SECRET) -> Any:
+    """Post a webhook the way BlueBubbles does: unsigned, the secret in the URL it was given."""
+    return await client.post("/webhooks/imessage", json=payload, params={"secret": secret} if secret else None)
 
 
 def london(text: str) -> Any:

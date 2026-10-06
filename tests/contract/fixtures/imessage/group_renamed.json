@@ -1,0 +1,62 @@
+{
+  "type": "new-message",
+  "data": {
+    "originalROWID": 1516,
+    "guid": "5C0FFEE0-0516-4A6B-9C1D-000000000516",
+    "text": null,
+    "attributedBody": null,
+    "handle": {
+      "originalROWID": 4,
+      "address": "ada@example.com",
+      "service": "iMessage"
+    },
+    "handleId": 4,
+    "otherHandle": 0,
+    "attachments": [],
+    "subject": null,
+    "error": 0,
+    "dateCreated": 1791230880000,
+    "dateRead": null,
+    "dateDelivered": null,
+    "isDelivered": false,
+    "isFromMe": false,
+    "hasDdResults": false,
+    "isArchived": false,
+    "itemType": 2,
+    "groupTitle": "Adebayo family",
+    "groupActionType": 0,
+    "balloonBundleId": null,
+    "associatedMessageGuid": null,
+    "associatedMessageType": null,
+    "expressiveSendStyleId": null,
+    "threadOriginatorGuid": null,
+    "hasPayloadData": false,
+    "chats": [
+      {
+        "originalROWID": 9,
+        "guid": "iMessage;+;chat610000000000000042",
+        "style": 43,
+        "chatIdentifier": "chat610000000000000042",
+        "isArchived": false,
+        "displayName": "Adebayo family",
+        "participants": [
+          {
+            "originalROWID": 3,
+            "address": "+447700900101",
+            "service": "iMessage"
+          },
+          {
+            "originalROWID": 4,
+            "address": "ada@example.com",
+            "service": "iMessage"
+          }
+        ]
+      }
+    ],
+    "messageSummaryInfo": null,
+    "payloadData": null,
+    "dateEdited": null,
+    "dateRetracted": null,
+    "partCount": 1
+  }
+}

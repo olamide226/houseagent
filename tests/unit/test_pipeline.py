@@ -36,7 +36,8 @@ async def rows(sql, **params):
 async def test_webhook_rejects_a_wrong_secret_and_unknown_channels(client):
     assert (await post(client, tg_update(1, "hi"), headers={})).status_code == 401
     assert (await post(client, tg_update(1, "hi"), headers={"X-Telegram-Bot-Api-Secret-Token": "x"})).status_code == 401
-    assert (await client.post("/webhooks/imessage", json={})).status_code == 404
+    ADAPTERS.pop(Channel.imessage)   # a channel that is not set up in this deployment
+    assert (await client.post("/webhooks/imessage?secret=test-bb-secret", json={})).status_code == 404
     assert await rows("select 1 from messages") == []
 
 

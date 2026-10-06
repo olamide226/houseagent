@@ -1,0 +1,18 @@
+[
+  {
+    "channel": "imessage",
+    "external_message_id": "5C0FFEE0-0503-4A6B-9C1D-000000000503",
+    "external_thread_id": "iMessage;-;+447700900101",
+    "scope": "dm",
+    "sender_handle": "+447700900101",
+    "text": "Tesco receipt",
+    "media": [
+      {
+        "kind": "image",
+        "mime": "image/jpeg",
+        "external_id": "at_0_5C0FFEE0-0503-4A6B-9C1D-000000000503"
+      }
+    ],
+    "sent_at": "2026-10-05T20:02:00Z"
+  }
+]

@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     wa_api_version: str = "v26.0"
     wa_reminder_template: str = "household_reminder"
 
+    bb_base_url: str | None = None
+    bb_password: str | None = None
+    bb_webhook_secret: str | None = None
+    bb_private_api: bool = False
+
     @property
     def telegram_enabled(self) -> bool:
         return bool(self.tg_bot_token and self.tg_webhook_secret)
@@ -62,6 +67,10 @@ class Settings(BaseSettings):
     def whatsapp_enabled(self) -> bool:
         return bool(self.wa_phone_number_id and self.wa_access_token and self.wa_app_secret
                     and self.wa_verify_token)
+
+    @property
+    def imessage_enabled(self) -> bool:
+        return bool(self.bb_base_url and self.bb_password and self.bb_webhook_secret)
 
 
 @lru_cache

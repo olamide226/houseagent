@@ -30,9 +30,12 @@ os.environ.update(
     WA_ACCESS_TOKEN="test-access-token",
     WA_APP_SECRET="test-app-secret",
     WA_VERIFY_TOKEN="test-verify-token",
+    BB_BASE_URL="http://mac-mini.test:1234",
+    BB_PASSWORD="test-bb-password",
+    BB_WEBHOOK_SECRET="test-bb-secret",
     DEBOUNCE_SECONDS="0",
 )
-for name in ("STT_PROVIDER", "STT_BASE_URL", "STT_MODEL", "WA_API_VERSION", "WA_REMINDER_TEMPLATE"):
+for name in ("STT_PROVIDER", "STT_BASE_URL", "STT_MODEL", "WA_API_VERSION", "WA_REMINDER_TEMPLATE", "BB_PRIVATE_API"):
     os.environ.pop(name, None)
 
 from app import db  # noqa: E402

@@ -1,0 +1,50 @@
+{
+  "type": "new-message",
+  "data": {
+    "originalROWID": 1501,
+    "guid": "5C0FFEE0-0501-4A6B-9C1D-000000000501",
+    "text": "we're out of eggs",
+    "attributedBody": null,
+    "handle": {
+      "originalROWID": 3,
+      "address": "+447700900101",
+      "service": "iMessage"
+    },
+    "handleId": 3,
+    "otherHandle": 0,
+    "attachments": [],
+    "subject": null,
+    "error": 0,
+    "dateCreated": 1791230400000,
+    "dateRead": null,
+    "dateDelivered": null,
+    "isDelivered": false,
+    "isFromMe": false,
+    "hasDdResults": false,
+    "isArchived": false,
+    "itemType": 0,
+    "groupTitle": null,
+    "groupActionType": 0,
+    "balloonBundleId": null,
+    "associatedMessageGuid": null,
+    "associatedMessageType": null,
+    "expressiveSendStyleId": null,
+    "threadOriginatorGuid": null,
+    "hasPayloadData": false,
+    "chats": [
+      {
+        "originalROWID": 7,
+        "guid": "iMessage;-;+447700900101",
+        "style": 45,
+        "chatIdentifier": "+447700900101",
+        "isArchived": false,
+        "displayName": ""
+      }
+    ],
+    "messageSummaryInfo": null,
+    "payloadData": null,
+    "dateEdited": null,
+    "dateRetracted": null,
+    "partCount": 1
+  }
+}

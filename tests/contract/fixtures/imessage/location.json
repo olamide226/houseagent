@@ -1,0 +1,62 @@
+{
+  "type": "new-message",
+  "data": {
+    "originalROWID": 1504,
+    "guid": "5C0FFEE0-0504-4A6B-9C1D-000000000504",
+    "text": "￼",
+    "attributedBody": null,
+    "handle": {
+      "originalROWID": 3,
+      "address": "+447700900101",
+      "service": "iMessage"
+    },
+    "handleId": 3,
+    "otherHandle": 0,
+    "attachments": [
+      {
+        "originalROWID": 504,
+        "guid": "at_0_5C0FFEE0-0504-4A6B-9C1D-000000000504",
+        "uti": "public.vlocation",
+        "mimeType": "text/x-vlocation",
+        "transferName": "CL.loc.vcf",
+        "totalBytes": 412,
+        "height": 0,
+        "width": 0,
+        "metadata": null
+      }
+    ],
+    "subject": null,
+    "error": 0,
+    "dateCreated": 1791230580000,
+    "dateRead": null,
+    "dateDelivered": null,
+    "isDelivered": false,
+    "isFromMe": false,
+    "hasDdResults": false,
+    "isArchived": false,
+    "itemType": 0,
+    "groupTitle": null,
+    "groupActionType": 0,
+    "balloonBundleId": null,
+    "associatedMessageGuid": null,
+    "associatedMessageType": null,
+    "expressiveSendStyleId": null,
+    "threadOriginatorGuid": null,
+    "hasPayloadData": false,
+    "chats": [
+      {
+        "originalROWID": 7,
+        "guid": "iMessage;-;+447700900101",
+        "style": 45,
+        "chatIdentifier": "+447700900101",
+        "isArchived": false,
+        "displayName": ""
+      }
+    ],
+    "messageSummaryInfo": null,
+    "payloadData": null,
+    "dateEdited": null,
+    "dateRetracted": null,
+    "partCount": 1
+  }
+}

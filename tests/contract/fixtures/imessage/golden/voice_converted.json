@@ -1,0 +1,17 @@
+[
+  {
+    "channel": "imessage",
+    "external_message_id": "5C0FFEE0-0512-4A6B-9C1D-000000000512",
+    "external_thread_id": "iMessage;-;+447700900101",
+    "scope": "dm",
+    "sender_handle": "+447700900101",
+    "media": [
+      {
+        "kind": "audio",
+        "mime": "audio/mp3",
+        "external_id": "at_0_5C0FFEE0-0512-4A6B-9C1D-000000000512"
+      }
+    ],
+    "sent_at": "2026-10-05T20:01:00Z"
+  }
+]

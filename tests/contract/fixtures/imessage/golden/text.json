@@ -1,0 +1,11 @@
+[
+  {
+    "channel": "imessage",
+    "external_message_id": "5C0FFEE0-0501-4A6B-9C1D-000000000501",
+    "external_thread_id": "iMessage;-;+447700900101",
+    "scope": "dm",
+    "sender_handle": "+447700900101",
+    "text": "we're out of eggs",
+    "sent_at": "2026-10-05T20:00:00Z"
+  }
+]

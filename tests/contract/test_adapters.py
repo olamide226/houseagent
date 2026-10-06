@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from app.channels.imessage import IMessageAdapter
 from app.channels.telegram import TelegramAdapter
 from app.channels.whatsapp import WhatsAppAdapter
 
@@ -15,6 +16,7 @@ ADAPTERS = {
     "telegram": lambda: TelegramAdapter("424242:TEST-TOKEN", "test-webhook-secret"),
     "whatsapp": lambda: WhatsAppAdapter("100000000000001", "test-access-token", "test-app-secret",
                                         "test-verify-token"),
+    "imessage": lambda: IMessageAdapter("http://mac-mini.test:1234", "test-bb-password", "test-bb-secret"),
 }
 # Every recorded payload of a channel is checked, the required ones and any it adds.
 CASES = [(channel, path.stem) for channel in ADAPTERS for path in sorted((FIXTURES / channel).glob("*.json"))]

@@ -52,6 +52,19 @@ class GroupHost(Protocol):
     async def invite_link(self, external_thread_id: str) -> str: ...
 
 
+@runtime_checkable
+class HealthChecked(Protocol):
+    """A channel that runs on a server of ours which can go away (BlueBubbles on the Mac)."""
+
+    degraded: bool   # set by the worker's health check; the router then prefers people's other channels
+
+    async def ping(self) -> bool: ...
+
+
+def degraded(adapter: ChannelAdapter | None) -> bool:
+    return isinstance(adapter, HealthChecked) and adapter.degraded
+
+
 ADAPTERS: dict[Channel, ChannelAdapter] = {}
 
 
@@ -72,4 +85,11 @@ def build_adapters(settings: Settings) -> dict[Channel, ChannelAdapter]:
             settings.wa_phone_number_id, settings.wa_access_token, settings.wa_app_secret,
             settings.wa_verify_token, api_version=settings.wa_api_version,
             reminder_template=settings.wa_reminder_template)
+    if settings.imessage_enabled:
+        from app.channels.imessage import IMessageAdapter
+
+        assert settings.bb_base_url and settings.bb_password and settings.bb_webhook_secret
+        ADAPTERS[Channel.imessage] = IMessageAdapter(
+            settings.bb_base_url, settings.bb_password, settings.bb_webhook_secret,
+            private_api=settings.bb_private_api)
     return ADAPTERS

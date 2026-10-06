@@ -1,0 +1,51 @@
+{
+  "type": "new-message",
+  "data": {
+    "originalROWID": 1900,
+    "guid": "5C0FFEE0-0900-4A6B-9C1D-000000000900",
+    "text": "Added eggs to the list.",
+    "attributedBody": null,
+    "handle": {
+      "originalROWID": 3,
+      "address": "+447700900101",
+      "service": "iMessage"
+    },
+    "handleId": 3,
+    "otherHandle": 0,
+    "attachments": [],
+    "subject": null,
+    "error": 0,
+    "dateCreated": 1791230760000,
+    "dateRead": null,
+    "dateDelivered": 1791230761000,
+    "isDelivered": true,
+    "isFromMe": true,
+    "hasDdResults": false,
+    "isArchived": false,
+    "itemType": 0,
+    "groupTitle": null,
+    "groupActionType": 0,
+    "balloonBundleId": null,
+    "associatedMessageGuid": null,
+    "associatedMessageType": null,
+    "expressiveSendStyleId": null,
+    "threadOriginatorGuid": null,
+    "hasPayloadData": false,
+    "chats": [
+      {
+        "originalROWID": 7,
+        "guid": "iMessage;-;+447700900101",
+        "style": 45,
+        "chatIdentifier": "+447700900101",
+        "isArchived": false,
+        "displayName": ""
+      }
+    ],
+    "messageSummaryInfo": null,
+    "payloadData": null,
+    "dateEdited": null,
+    "dateRetracted": null,
+    "partCount": 1,
+    "tempGuid": "0b6f6a0e-58a5-4d0c-9d1f-0000000000aa"
+  }
+}
