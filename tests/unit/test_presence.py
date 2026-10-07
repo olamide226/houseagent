@@ -466,6 +466,7 @@ async def fetch_count(sql):
 # ---------------------------------------------------------------- tokens stay out of the logs
 @pytest.mark.parametrize("path,logged", [
     ("/presence/q8Zk3v_Lr-1x", "/presence/…"),
+    ("/presence/q8Zk3v_Lr-1x/enter/Tesco%20Extra", "/presence/…/enter/Tesco%20Extra"),   # a link copied for a shop
     ("/login/q8Zk3v_Lr-1x", "/login/…"),
     ("/ics/q8Zk3v_Lr-1x.ics", "/ics/…"),
     ("/setup?token=hunter2", "/setup?token=…"),
