@@ -234,6 +234,9 @@ code.plain { font-size: .9375em; font-weight: 600; letter-spacing: 0; }
 .code { display: flex; align-items: center; justify-content: space-between; gap: .75rem; min-height: 3.5rem;
         padding: .375rem .375rem .375rem 1rem; border-radius: var(--control); background: var(--raised); }
 .copy { display: flex; gap: .5rem; }
+.numbered .stack { gap: .625rem; }
+.pick { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.pick button:not([hidden]) + input { display: none; }   /* the link itself, only where it cannot be copied for you */
 
 /* ---- what was said: Activity and the practice chat */
 .entry-head { display: flex; align-items: center; gap: .75rem; margin-bottom: .625rem; }

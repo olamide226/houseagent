@@ -4,10 +4,12 @@ Covers the acceptance item "a store-arrival Shortcut call produces the filtered 
 at most once per 2 h per store". Shortcut calls are plain HTTP requests, as a phone makes them.
 """
 import asyncio
+import re
 import time
 
 import pytest
 
+from app.config import get_settings
 from app.core.envelope import Channel
 from app.db import execute, fetch_all, fetch_val, tx
 from app.presence import routes
@@ -207,6 +209,76 @@ async def test_a_body_that_is_not_an_enter_or_exit_at_a_named_place_is_answered_
     response = await client.post(f"/presence/{tokens['Ola']}", content=body)
     assert response.status_code == 204
     assert await pings() == [] and await nudges() == [] and len(await rows("select 1 from places")) == 3
+
+
+# ---------------------------------------------------------------- the link, opened in a browser
+SHORTCUT = "https://www.icloud.com/shortcuts/0123456789abcdef"
+ENGINEERS_WORDS = ("POST", "JSON", "request body", "endpoint", "token", "URL", "Method Not Allowed")
+
+
+def words_of(response):
+    """What the page says to someone reading it: the HTML without its tags and their links."""
+    return " ".join(re.sub(r"<[^>]+>", " ", response.text).split())
+
+
+async def test_opening_the_link_shows_what_it_is_for_in_plain_words_and_records_nothing(client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "presence_shortcut_url", SHORTCUT)
+    async with tx() as conn:
+        home, tokens = await household(conn)
+        await the_usual_list(conn, home)
+    tesco = f"http://testserver/presence/{tokens['Ada']}/enter/Tesco%20Extra"
+
+    for opened in (f"/presence/{tokens['Ada']}", tesco):                     # her link, and one copied from the page
+        page = await client.get(opened)
+        assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+        said = words_of(page)
+        assert "lets your iPhone tell Home when you arrive at a shop" in said and "It is optional" in said
+        assert not [word for word in ENGINEERS_WORDS if word in said], said
+        # One thing to copy per shop, the shared shortcut to add it to, and the two for home.
+        assert f'data-copy="{tesco}"' in page.text and "African%20shop%20on%20Rye%20Lane" in page.text
+        assert f'href="{SHORTCUT}"' in page.text and "Get Shortcut" in said
+        assert f"{tokens['Ada']}/exit/Home" in page.text
+        # The address holds a secret: it is not cached, indexed, or passed on to the page a link opens.
+        assert (page.headers["cache-control"], page.headers["referrer-policy"]) == ("no-store", "no-referrer")
+    assert await pings() == [] and await nudges() == [] and len(await rows("select 1 from places")) == 3
+
+
+async def test_until_the_shortcut_is_shared_the_admin_is_shown_how_and_everyone_else_is_told_to_wait(client):
+    async with tx() as conn:
+        _, tokens = await household(conn)
+    ada, ola = [words_of(await client.get(f"/presence/{tokens[who]}")) for who in ("Ada", "Ola")]
+    assert "Nearly ready" in ada and "Tesco Extra" not in ada
+    assert not [word for word in ENGINEERS_WORDS if word in ada], ada
+    assert "Get Contents of URL" in ola and "Copy iCloud Link" in ola and "PRESENCE_SHORTCUT_URL" in ola
+
+
+async def test_a_link_that_is_not_in_use_opens_a_page_that_says_so(client):
+    async with tx() as conn:
+        home, tokens = await household(conn)
+        await members.new_presence_token(conn, home.members["Ola"])           # Ola's link is replaced
+    for opened in (f"/presence/{tokens['Ola']}", "/presence/never-issued/enter/Tesco%20Extra"):
+        page = await client.get(opened)
+        assert page.status_code == 404 and "This link has stopped working" in page.text
+        assert "send the word shops" in words_of(page) and "Tesco Extra" not in page.text
+        assert page.headers["cache-control"] == "no-store"
+
+
+async def test_a_link_copied_for_a_shop_is_the_whole_ping_with_no_body(client):
+    async with tx() as conn:
+        home, tokens = await household(conn)
+        await the_usual_list(conn, home)
+    for path in (f"/presence/{tokens['Ola']}/arrive/Tesco%20Extra", "/presence/wrong/enter/Tesco%20Extra",
+                 f"/presence/{tokens['Ola']}/enter/{'x' * 81}"):
+        assert (await client.post(path)).status_code == 204                 # the same answer, and nothing done
+    assert await pings() == [] and await nudges() == []
+
+    response = await client.post(f"/presence/{tokens['Ola']}/enter/Tesco%20Extra")
+    assert (response.status_code, response.content) == (204, b"")
+    await client.post(f"/presence/{tokens['Ola']}/exit/Home")
+    assert await pings() == [("Ola", "Tesco Extra", "enter"), ("Ola", "Home", "exit")]
+    assert await nudges() == [("Ola", TESCO_LIST)]
+    await client.post(f"/presence/{tokens['Ola']}/enter/Fruit%2FVeg%20stall")      # a name with a slash in it
+    assert (await pings())[-1] == ("Ola", "Fruit/Veg stall", "enter")
 
 
 async def test_the_place_is_matched_whatever_its_case_or_spacing(client):

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}The list when you reach a shop{% endblock %}
+{# One link to copy. The link itself is shown only where the browser cannot copy it for you. #}
+{% macro copy(label, link) %}
+<div class="pick"><span class="title grow">{{ label }}</span>
+  <button type="button" class="quiet" data-copy="{{ link }}" hidden>Copy</button>
+  <input type="text" readonly value="{{ link }}" aria-label="Link for {{ label }}" onfocus="this.select()"></div>
+{% endmacro %}
+{% block main %}
+<span class="logo">{{ icon("cart") }}</span>
+{% if not known %}
+<h1>This link has stopped working</h1>
+<p class="lead">It was replaced by a newer one, or part of it went missing when it was copied.</p>
+<p>Your link lets your iPhone tell {{ agent }} when you arrive at a shop, so the shopping list for that shop is waiting
+  for you. To get yours, send the word <strong>shops</strong> to {{ agent }} in your chat.</p>
+{% else %}
+<h1>The list when you reach a shop</h1>
+<p class="lead">This is your personal link. It lets your iPhone tell {{ agent }} when you arrive at a shop, so the
+  shopping list for that shop is waiting for you.</p>
+<p class="notice">It is optional. Everything else works without it, and you can set it up any time.</p>
+{% if not shortcut and not admin %}
+<p class="notice warn">Nearly ready. Whoever set up {{ agent }} for your family has one thing to do first, once for
+  everyone. Ask them to open their own link from {{ agent }}: it shows them what to do.</p>
+{% else %}
+<h2>Set it up, one shop at a time</h2>
+<p class="hint">You need your iPhone and its Shortcuts app. Do the three steps for one shop, then come back for the next.</p>
+<div class="card">
+  <ol class="numbered">
+    <li><div class="grow stack">
+      <span><strong>Copy the link for the shop.</strong></span>
+      {% for name, link in shops %}{{ copy(name, link) }}{% else %}
+      <span class="sub">{{ agent }} does not know your shops yet. Tell it in your chat where you shop, for example
+        "we shop at Tesco and Lidl", then open this page again.</span>
+      {% endfor %}
+    </div></li>
+    <li><div class="grow stack">
+      {% if shortcut %}
+      <span><strong>Add the shortcut.</strong> Tap the button, then <strong>Get Shortcut</strong>. When it asks for
+        the link, paste what you copied.</span>
+      <a class="btn big" href="{{ shortcut }}">{{ icon("plus") }}Get the shortcut</a>
+      <span class="sub">Adding a second shop? First rename the shortcut you already have to its shop's name: open it,
+        tap the arrow beside its name, then <strong>Rename</strong>.</span>
+      {% else %}
+      <span><strong>Make the shortcut.</strong> You do this part once, and share it so nobody else in the family
+        has to.</span>
+      <details class="opt" open>
+        <summary>How to make and share it</summary>
+        <ol class="numbered">
+          <li><span>In the Shortcuts app, make a new shortcut and add the action <strong>Get Contents of URL</strong>.</span></li>
+          <li><span>Paste the link you copied where it says URL. Tap <strong>Show More</strong> and change
+            <strong>Method</strong> to <strong>POST</strong>. Leave the rest as it is.</span></li>
+          <li><span>Run it once. If something is on the list for that shop, the list arrives in your chat.</span></li>
+          <li><span>To share it: open the shortcut's details, tap <strong>Setup</strong>, then
+            <strong>Add New Question</strong>. Choose the link you pasted and type the question
+            "Paste the link you copied for this shop".</span></li>
+          <li><span>Share it with <strong>Copy iCloud Link</strong>, and save that link as
+            <code class="plain">PRESENCE_SHORTCUT_URL</code> where {{ agent }} is set up. From then on this page
+            gives everyone a button in place of these steps.</span></li>
+        </ol>
+      </details>
+      {% endif %}
+    </div></li>
+    <li><div class="grow stack">
+      <span><strong>Tell your iPhone when to use it.</strong> Open the shortcut in the Shortcuts app and tap
+        <strong>Edit</strong>, then <strong>Automation</strong>.</span>
+      <span>Choose <strong>Arrive</strong>, tap <strong>Choose</strong> and find the shop.</span>
+      <span>Tap <strong>Edit</strong> again, open <strong>Privacy</strong> and turn on
+        <strong>Allow Running When Locked</strong>, so it runs by itself.</span>
+      <details class="opt">
+        <summary>My iPhone does not show Automation there</summary>
+        <span class="sub">On an iPhone that has not been updated for a while: in the Shortcuts app tap
+          <strong>Automation</strong>, then <strong>+</strong>, and choose <strong>Arrive</strong>. Tap
+          <strong>Choose</strong>, find the shop and tap <strong>Next</strong>. Pick the shortcut you added. Then tap
+          the new automation, turn off <strong>Ask Before Running</strong> and tap <strong>Don't Ask</strong>.</span>
+      </details>
+    </div></li>
+  </ol>
+</div>
+<p class="hint">To try it, put something on the shopping list and run the shortcut once. The list for that shop should
+  arrive in your chat with {{ agent }}.</p>
+<details class="card fold">
+  <summary><span class="grow">Also when you leave home</span>{{ icon("down", "chev") }}</summary>
+  <div class="stack">
+    <span class="sub">With two more shortcuts, {{ agent }} can offer you the list as you head out with a lot on it. Do
+      the same three steps with each of these links, and choose your home as the place: <strong>Arrive</strong> for
+      the first and <strong>Leave</strong> for the second.</span>
+    {% for name, link in home %}{{ copy(name, link) }}{% endfor %}
+  </div>
+</details>
+<p class="sub">Keep this page to yourself: the links on it are how {{ agent }} knows it is your phone.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

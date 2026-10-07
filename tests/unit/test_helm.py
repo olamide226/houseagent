@@ -11,7 +11,7 @@ import yaml
 pytestmark = pytest.mark.skipif(shutil.which("helm") is None, reason="needs helm")
 
 CHART = str(Path(__file__).parents[2] / "deploy" / "helm" / "household-agent")
-PUBLIC = ["/webhooks", "/presence", "/ics", "/healthz"]
+PUBLIC = ["/webhooks", "/presence", "/ics", "/healthz", "/static"]   # /static: the page a presence link opens
 DASHBOARD = ["/setup", "/login", "/logout", "/dashboard", "/static"]
 
 
@@ -56,7 +56,7 @@ def test_the_default_render_is_two_deployments_with_referenced_secrets_and_an_al
     assert not secretish, secretish
     assert not any(kind == "Secret" for kind, _ in docs)                    # the chart creates no Secret at all
     ingress = docs["Ingress", "ha"]
-    assert paths(ingress) == PUBLIC + DASHBOARD and not any(p.startswith(("/internal", "/readyz")) for p in paths(ingress))
+    assert paths(ingress) == PUBLIC + DASHBOARD[:-1] and not any(p.startswith(("/internal", "/readyz")) for p in paths(ingress))
     assert all(p["pathType"] == "Prefix" and p["backend"]["service"] == {"name": "ha-api", "port": {"name": "http"}}
                for rule in ingress["spec"]["rules"] for p in rule["http"]["paths"])
     assert ingress["spec"]["tls"] == [{"hosts": ["home.example.com"], "secretName": "household-agent-tls"}]

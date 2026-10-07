@@ -1,8 +1,9 @@
 {{- /*
 The allowlist: only these paths reach the api from outside. /internal and /readyz never do.
-/static is the dashboard's stylesheet and htmx, so it travels with the dashboard paths.
+/static is the stylesheet and scripts of every page, so it goes wherever a page does: with the
+dashboard paths, and with /presence, whose link opens a page on a phone outside the house.
 */ -}}
-{{- $channels := list "/webhooks" "/presence" "/ics" "/healthz" -}}
+{{- $channels := list "/webhooks" "/presence" "/ics" "/healthz" "/static" -}}
 {{- $dashboard := list "/setup" "/login" "/logout" "/dashboard" "/static" -}}
 {{- if .Values.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
@@ -28,7 +29,7 @@ spec:
     - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
-          {{- include "household-agent.paths" (list . (ternary (concat $channels $dashboard) $channels .Values.dashboard.public)) | nindent 10 }}
+          {{- include "household-agent.paths" (list . (ternary (concat $channels $dashboard | uniq) $channels .Values.dashboard.public)) | nindent 10 }}
 {{- end }}
 {{- if and (not .Values.dashboard.public) .Values.dashboard.internalIngress.enabled }}
 ---

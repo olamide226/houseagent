@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     setup_token: str | None = None
 
     agent_name: str = "Home"
+    # The iCloud link of the Shortcut the household's admin shared once (docs/presence.md). With it,
+    # nobody else builds anything on their phone: they add that Shortcut and paste a link.
+    presence_shortcut_url: str | None = None
     agent_runtime: Literal["loop", "letta"] = "loop"
     default_timezone: str = "Europe/London"
     debounce_seconds: float = 4

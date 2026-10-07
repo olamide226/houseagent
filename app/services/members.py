@@ -130,7 +130,8 @@ async def presence_link(rec: Recorder, member_id: str) -> str:
 async def for_presence_token(conn: AsyncConnection, token: str) -> dict[str, Any] | None:
     return await fetch_one(
         conn,
-        """select m.id, m.household_id, m.name, h.timezone from members m join households h on h.id = m.household_id
+        """select m.id, m.household_id, m.name, m.is_admin, h.timezone
+           from members m join households h on h.id = m.household_id
            where m.presence_token_hash = :hash and m.role = 'adult'""",
         hash=hash_token(token),
     )
