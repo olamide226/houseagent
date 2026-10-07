@@ -215,7 +215,8 @@ async def test_the_first_turn_creates_the_households_agent_with_our_tools_blocks
     blocks = {block["label"]: block["value"] for block in created["memory_blocks"]}
     assert list(blocks) == ["persona", "household"]
     assert blocks["persona"].startswith("You are Hearth, the household assistant") and "reply with exactly ACK" in blocks["persona"]
-    assert "Now: Monday 5 Oct 2026 12:00 (Europe/London)" in blocks["household"] and "Family: Ola (adult)" in blocks["household"]
+    assert "Now: Monday 5 Oct 2026 12:00 (Europe/London)" in blocks["household"] and "Family: Ola (adult, set this up, on Telegram)" in blocks["household"]
+    assert "The word dashboard, sent to you" in blocks["persona"]   # the product guide goes with the static prompt
     assert "egg" not in blocks["persona"] and "cache-break" not in "".join(blocks.values())
 
     # One user message with the turn's text. No thread history: Letta keeps its own.

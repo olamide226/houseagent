@@ -99,7 +99,7 @@ async def test_system_prompt_carries_the_agent_name_and_a_brief_of_current_state
     assert system.startswith("You are Hearth, the household assistant")
     brief = system.split("<cache-break/>")[1]
     assert "(Europe/London)" in brief and "Speaking: Ola (telegram, dm)" in brief
-    assert "Family: Ola (adult)" in brief and "Locations: freezer, fridge, store" in brief
+    assert "Family: Ola (adult, set this up, on Telegram)" in brief and "Locations: freezer, fridge, store" in brief
     assert "Shopping list (1): egg" in brief
     assert "rice (low)" in brief and "egg (out)" in brief
     # What the speaker last recorded, which thread history does not show, so "undo" has something to mean.

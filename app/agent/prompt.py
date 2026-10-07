@@ -5,11 +5,12 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.agent.actions import undoable
+from app.agent.guide import CHAT_APPS, Setup, product_guide
 from app.core.envelope import Envelope
 from app.core.timeutil import local
 from app.db import fetch_all, fetch_one
 from app.llm.types import CACHE_BREAK
-from app.services import calendar, households, inventory, shopping
+from app.services import calendar, households, inventory, members, shopping
 
 STATIC_PROMPT = """\
 You are {AGENT_NAME}, the household assistant for a family. You live in their group chat and their direct messages. Your job is to keep track of food stock, the shopping list, appointments and reminders so nobody has to remember things or fill in forms.
@@ -55,9 +56,34 @@ def _capped(values: list[str], separator: str = ", ") -> str:
     return separator.join(values[:LIST_CAP]) + (f"{separator}+{extra} more" if extra > 0 else "")
 
 
+def _person(person: dict[str, Any]) -> str:
+    """One of the family as the brief lists them. An adult's chat apps are what an invite, or a
+    move to another app, depends on; "whoever set this up" is who the guide sends people to."""
+    if person["role"] != "adult":
+        return f"{person['name']} ({person['role']})"
+    apps = [CHAT_APPS[channel] for channel in person["channels"]]
+    return (f"{person['name']} (adult{', set this up' if person['is_admin'] else ''}, "
+            f"{'on ' + ' and '.join(apps) if apps else 'not connected yet'})")
+
+
+def _own_setup(person: dict[str, Any]) -> str:
+    """What else the guide's answers depend on for the person speaking."""
+    link = "has a personal link for the shops" if person["has_presence_link"] else "no personal link for the shops yet"
+    if len(person["channels"]) < 2 or not person["preferred_channel"]:
+        return f"{person['name']}'s setup: {link}"
+    return f"{person['name']}'s setup: messaged on {CHAT_APPS[person['preferred_channel']]}; {link}"
+
+
+def _quiet(person: dict[str, Any]) -> str:
+    if not (person["quiet_start"] and person["quiet_end"]):
+        return f"{person['name']} off"
+    return f"{person['name']} {person['quiet_start']:%H:%M}-{person['quiet_end']:%H:%M}"
+
+
 async def build_brief(conn: AsyncConnection, env: Envelope, now: datetime) -> str:
     """The dynamic part of the system prompt: who is speaking and the household's current state."""
-    household = await fetch_one(conn, "select timezone from households where id = :h", h=env.household_id)
+    household = await fetch_one(conn, "select timezone, digest_time from households where id = :h",
+                                h=env.household_id)
     assert household is not None
     here = local(now, household["timezone"])
     lines = [f"Now: {here:%A %-d %b %Y %H:%M} ({household['timezone']})"]
@@ -65,9 +91,13 @@ async def build_brief(conn: AsyncConnection, env: Envelope, now: datetime) -> st
         where = f"{env.channel.value if env.channel else 'dashboard'}, {env.scope or 'dm'}"
         lines.append(f"Speaking: {env.member_name} ({where})")
 
-    members = await fetch_all(
-        conn, "select name, role from members where household_id = :h order by role, created_at", h=env.household_id)
-    lines.append("Family: " + _capped([f"{m['name']} ({m['role']})" for m in members]))
+    family = await members.family(conn, env.household_id, now)
+    adults = [person for person in family if person["role"] == "adult"]
+    lines.append("Family: " + _capped([_person(person) for person in family], "; "))
+    if speaker := next((person for person in adults if person["id"] == env.member_id), None):
+        lines.append(_own_setup(speaker))
+    lines.append(f"Morning brief: {household['digest_time']:%H:%M}. Quiet hours: "
+                 + _capped([_quiet(person) for person in adults]))
     locations = await fetch_all(conn, "select name from locations where household_id = :h order by name",
                                 h=env.household_id)
     lines.append("Locations: " + _capped([row["name"] for row in locations]))
@@ -96,9 +126,12 @@ async def build_brief(conn: AsyncConnection, env: Envelope, now: datetime) -> st
     return "\n".join(lines)
 
 
-def system_prompt(agent_name: str, brief: str, onboarding: dict[str, Any] | None = None) -> str:
-    """Static prompt, then the brief, then the onboarding section while a household is being set up."""
-    prompt = STATIC_PROMPT.replace("{AGENT_NAME}", agent_name) + CACHE_BREAK + brief
+def system_prompt(agent_name: str, brief: str, onboarding: dict[str, Any] | None = None,
+                  setup: Setup | None = None) -> str:
+    """Static prompt and product guide, then the brief, then the onboarding section while a
+    household is being set up."""
+    static = STATIC_PROMPT.replace("{AGENT_NAME}", agent_name) + "\n" + product_guide(setup or Setup())
+    prompt = static + CACHE_BREAK + brief
     if onboarding and onboarding["step"]:
         prompt += "\n\n" + ONBOARDING_PROMPT.format(
             step=onboarding["step"], remaining=", ".join(onboarding["remaining"]))

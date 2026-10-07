@@ -5,6 +5,7 @@ from typing import Any
 import structlog
 
 from app.agent.base import AgentResult, Ctx, ToolCallRecord
+from app.agent.guide import Setup
 from app.agent.prompt import build_brief, system_prompt
 from app.agent.tools import run_tool, tool_definitions
 from app.core.envelope import Envelope
@@ -94,15 +95,17 @@ def final_result(text: str | None, records: list[ToolCallRecord], usage: Usage) 
 
 class LoopRuntime:
     def __init__(self, llm: LLMClient, *, media: MediaStore | None = None, agent_name: str = "Home",
-                 max_iterations: int = 8) -> None:
+                 max_iterations: int = 8, setup: Setup | None = None) -> None:
         self._llm = llm
         self._media = media
         self._agent_name = agent_name
         self._max_iterations = max_iterations
+        self._setup = setup
 
     async def handle(self, env: Envelope, ctx: Ctx) -> AgentResult:
         onboarding = await households.onboarding(ctx.conn, env.household_id)
-        system = system_prompt(self._agent_name, await build_brief(ctx.conn, env, env.received_at), onboarding)
+        system = system_prompt(self._agent_name, await build_brief(ctx.conn, env, env.received_at), onboarding,
+                               self._setup)
         messages = await self._history(env, ctx)
         photos, notes = await load_photos(env, self._media, self._llm.supports_images)
         messages.append(ChatMessage(role="user", content=[TextPart(text=turn_text(env, notes)), *photos]))

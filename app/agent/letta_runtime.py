@@ -12,6 +12,7 @@ from typing import Any
 import structlog
 
 from app.agent.base import AgentResult, Ctx
+from app.agent.guide import Setup
 from app.agent.internal import turn_in_flight
 from app.agent.loop import LOST, final_result, load_photos, turn_text
 from app.agent.prompt import build_brief, system_prompt
@@ -80,7 +81,7 @@ def _plain(node: Any, defs: dict[str, Any]) -> Any:
 class LettaRuntime:
     def __init__(self, client: Any, *, tool_url: str, tool_token: str, model: str | None = None,
                  media: MediaStore | None = None, agent_name: str = "Home", max_iterations: int = 8,
-                 supports_images: bool = True) -> None:
+                 supports_images: bool = True, setup: Setup | None = None) -> None:
         self._client = client          # letta_client.AsyncLetta
         self._tool_url = tool_url.rstrip("/")
         self._tool_token = tool_token
@@ -89,11 +90,13 @@ class LettaRuntime:
         self._agent_name = agent_name
         self._max_iterations = max_iterations
         self._supports_images = supports_images
+        self._setup = setup
         self._tool_ids: list[str] | None = None
 
     async def handle(self, env: Envelope, ctx: Ctx) -> AgentResult:
         onboarding = await households.onboarding(ctx.conn, env.household_id)
-        prompt = system_prompt(self._agent_name, await build_brief(ctx.conn, env, env.received_at), onboarding)
+        prompt = system_prompt(self._agent_name, await build_brief(ctx.conn, env, env.received_at), onboarding,
+                               self._setup)
         persona, household = prompt.split(CACHE_BREAK)
         photos, notes = await load_photos(env, self._media, self._supports_images)
         content: list[dict[str, Any]] = [{"type": "text", "text": turn_text(env, notes)}]

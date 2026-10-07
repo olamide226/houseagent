@@ -1,6 +1,7 @@
 """Seed helpers and fakes shared by the tests."""
 import base64
 import json
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
@@ -12,6 +13,14 @@ from app.agent.base import Ctx
 from app.db import execute, fetch_all, fetch_val
 from app.llm.types import ChatMessage, LLMResponse, ToolCall, ToolDef, Usage
 from app.services import households, inventory
+
+# Words for whoever runs the installation. The family is never shown one, a link the model wrote
+# itself, or a name_with_underscores (a tool, a setting).
+TECHNICAL = ("api", "url", "token", "database", "webhook", "endpoint", "json", "backend", "server", "config")
+
+
+def technical_words(text: str) -> list[str]:
+    return re.findall(rf"\b(?:{'|'.join(TECHNICAL)})\b|https?://|\w+_\w+", text, flags=re.IGNORECASE)
 
 
 @dataclass
