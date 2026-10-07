@@ -42,5 +42,5 @@ def invite_text(name: str, code: str) -> str:
     settings = get_settings()
     link = invite_link(code, settings.tg_bot_username)
     how = f"open {link} or send the code {code}" if link else f"send the code {code}"
-    return (f"Invite for {name}. Pass this on: to connect to {settings.agent_name}, {how} "
-            f"to {settings.agent_name} in a direct message. It works once per channel and expires in 7 days.")
+    return (f"Invite for {name}. Pass this on: to start chatting with {settings.agent_name}, {how} "
+            f"to {settings.agent_name} in a private chat. It works once in each chat app, for the next 7 days.")

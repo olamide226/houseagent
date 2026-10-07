@@ -45,9 +45,9 @@ CATEGORISE_PROMPT = (
 CATEGORISE_BATCH = 200
 MEDIA_CLEANUP_SECONDS = 3600.0
 IMESSAGE_HEALTH_SECONDS = 300.0
-IMESSAGE_DOWN = ("iMessage is not reachable: the BlueBubbles server on the Mac is not answering. Until it is "
-                 "back, messages go to everyone's other channel where they have one. Check that the Mac is on, "
-                 "awake and online, and that BlueBubbles is running.")
+IMESSAGE_DOWN = ("iMessage has stopped working: the Mac that sends the messages is not answering. Until it is "
+                 "back, messages go to each person's other chat app, if they have one. Check that the Mac is on, "
+                 "awake and online, and that the BlueBubbles app on it is open.")
 LATE_MINUTES = 10                       # a reminder this long after its event began is dropped
 
 

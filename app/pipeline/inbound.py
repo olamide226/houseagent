@@ -308,7 +308,8 @@ async def _keyword(conn: AsyncConnection, message: dict[str, Any], public_base_u
     word = (message["text"] or "").strip().lower()
     if word == "dashboard":
         token = await members.create_login_token(conn, message["member_id"], utcnow())
-        text = (f"Your dashboard link (valid 10 minutes, works once): {public_base_url}/login/{token}"
+        text = (f"Here is your link to the dashboard. It works once, for the next 10 minutes: "
+                f"{public_base_url}/login/{token}"
                 if token else "Too many login links for now. Try again in an hour.")
     elif word == "shops":
         text = await households.shops_link(conn, message["member_id"])

@@ -267,7 +267,7 @@ async def test_the_dashboard_keyword_gets_a_login_link_by_dm_without_an_agent_tu
     (link,) = await rows("select target, member_id, text from outbox")
     assert (link["target"], link["member_id"]) == ("member", home.ola)
     token = link["text"].rsplit("/login/", 1)[1]
-    assert link["text"].startswith("Your dashboard link") and "http://testserver/login/" in link["text"]
+    assert link["text"].startswith("Here is your link to the dashboard") and "http://testserver/login/" in link["text"]
     assert (await rows("select token_hash from login_tokens"))[0]["token_hash"] != token   # stored hashed
 
     adapter = FakeAdapter()
