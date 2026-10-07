@@ -362,6 +362,8 @@ async def test_a_usage_limit_is_named_as_that(cli, client, answer, message):
     (CodexCliClient, codex(said({"text": "ACK", "tool_calls": []}), exit=1), "Codex failed: "),   # the turn never completed
     (CodexCliClient, codex(DONE), "Codex failed: "),                                              # it completed with no answer
     (CodexCliClient, {"stdout": "", "stderr": "", "exit": 3}, "Codex failed: exit code 3"),
+    (CodexCliClient, {"stdout": '[1]\n"x"\n{"type": "item.completed", "item": "x"}\n{"item": {}}\n', "exit": 1},
+     "Codex failed: \\[1\\]"),                                                                    # lines that are not events
     (ClaudeCodeClient, {"stdout": "", "stderr": "error: unknown option '--restricted'\n", "exit": 1},
      "Claude Code failed: error: unknown option '--restricted'"),
     (ClaudeCodeClient, claude(exit=1, is_error=True, subtype="error_during_execution", result=None),

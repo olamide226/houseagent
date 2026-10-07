@@ -15,7 +15,7 @@ NAME = "Codex"
 # Codex is an agent with a shell. These switch off the tools that run or read anything, and the
 # parts of a personal setup that would otherwise join the turn. `--ignore-user-config` leaves
 # out config.toml, and with it the user's own MCP servers. Skills have no switch: a budget of
-# one token (zero is refused) leaves their list empty, which is also 3,000 tokens fewer a step.
+# one token (zero is refused) leaves their list, and its tokens, out of every request.
 OFF = ("shell_tool", "unified_exec", "code_mode_host", "view_image", "image_generation", "browser_use",
        "computer_use", "multi_agent", "hooks", "memories", "plugins", "apps")
 ISOLATED = ["--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
@@ -108,12 +108,13 @@ class CodexCliClient:
         for line in out.splitlines():
             try:
                 event = json.loads(line)
-                kind, item = event["type"], event.get("item") or {}
-            except (ValueError, KeyError, TypeError):
-                continue
-            if kind.startswith("item.") and item.get("type") not in QUIET:
-                raise LLMError(f"{NAME} used a tool of its own ({item.get('type')}); its answer was discarded")
-            if kind == "item.completed" and item.get("type") == "agent_message":
+                kind, item = str(event["type"]), event.get("item") or {}
+                made = item.get("type")
+            except (ValueError, KeyError, TypeError, AttributeError):
+                continue   # not an event
+            if kind.startswith("item.") and made not in QUIET:
+                raise LLMError(f"{NAME} used a tool of its own ({made}); its answer was discarded")
+            if kind == "item.completed" and made == "agent_message":
                 answer = item.get("text")
             elif kind == "turn.completed":
                 usage = event.get("usage") or {}
