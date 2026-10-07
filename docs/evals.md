@@ -88,7 +88,7 @@ it, by default `http://host.docker.internal:8011`. The result is written as `let
 | `staples`, `shops`, `facts`, `facts_mention` | Items flagged as staples; shop names containing each text; a fact by key whose value contains the text; any fact value containing the text |
 | `brief`, `quiet` | The brief time (`"07:00"`); quiet hours per adult (`"22:00-06:30"`) |
 | `invites_sent` | How many invite messages were queued, each to the person who asked |
-| `presence_links` | Exactly these adults were sent a personal presence link and have one |
+| `shops_offers` | Exactly these adults were offered the list on arriving at a shop, and nobody was given a link unasked |
 
 Item names are normalised the way the resolver does, so `eggs` and `egg` are the same item.
 

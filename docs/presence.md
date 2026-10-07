@@ -6,69 +6,131 @@ up a phone, everything else works as before.
 
 ## Arriving at a shop
 
-Each adult's iPhone runs a Shortcuts automation per place. When the phone arrives, the automation
-calls that adult's personal link, and the assistant sends them the shopping list for that shop.
-There is no app, no background location on the server, and no coordinates are stored: the server
-only ever hears "Ola entered Tesco Extra".
+Your iPhone can tell the assistant when you arrive at a shop, and the assistant sends you the
+shopping list for that shop. There is no app to install. The assistant never learns where you
+are: it only ever hears "Ola arrived at Tesco Extra".
 
 ### Getting your link
 
-- **During setup.** When the last setup question is answered, each connected adult is sent a
-  private message with their link and these steps. An adult who connects later gets theirs after
-  the welcome.
-- **On the dashboard.** Settings, "The list when you reach a shop", "Make link". The link is shown once,
-  because only its hash is stored. "Replace link" makes a new one and stops the old one working,
-  so the automations on that phone then need the new link.
+Send the word **shops** to the assistant in your chat. It answers with your personal link. Open
+the link on your iPhone: the page it opens shows the steps below with a button for each one.
 
-The link looks like `https://home.example.com/presence/<43 characters>`. It is personal: whoever
-holds it can tell the assistant that you arrived somewhere. Keep it out of screenshots.
+At the end of setup the assistant tells each adult about this once, in a short message, and sends
+nothing more until someone asks. An adult can also be given a link from the dashboard: Settings,
+"The list when you reach a shop", "Make link".
 
-### Phone setup, once per place
+The link is yours alone. Whoever has it can tell the assistant that you arrived somewhere, so do
+not pass it on or post a screenshot of it. If you lose it, "Replace link" on Settings makes a new
+one and the old one stops working.
 
-**Not tried on a phone yet.** The wording in the Shortcuts app differs between iOS versions. The
-two variants below are from Apple's Shortcuts User Guide as fetched on 6 Oct 2026 (its iOS 27 and
-iOS 18 pages, read through a tool that summarises); "Run Immediately" is the spec's wording and
-was not on either page as fetched.
+### Setting it up, one shop at a time
 
-1. Open **Shortcuts** and start a new automation with the trigger **Arrive**.
-   - Apple's iOS 27 guide: create a shortcut, tap **Edit**, then **Automation**, and choose **Arrive**.
-   - Apple's iOS 18 guide: **Automation**, **+**, **Create Personal Automation**, **Arrive**.
-2. Choose the location (search for the shop, or drop a pin on it).
-3. Make it run without asking. The iOS 27 guide: in the shortcut's **Info**, **Privacy**, turn on
-   **Allow Running When Locked**. Earlier versions: choose **Run Immediately** where the trigger's
-   options are set.
-4. Add one action: **Get Contents of URL**.
-   - URL: your personal link.
-   - Tap **Show More**. **Method**: `POST`. **Request Body**: `JSON`.
-   - Add two **Text** fields: `event` with the value `enter`, and `place` with the name of the
-     place.
-5. Save it. To test, run the shortcut by hand while something is on the list for that shop.
+Do these three steps for one shop, then again for the next.
 
-The place name must be the name the assistant knows the shop by: the names you gave when it asked
-where you shop, listed under Places on the Settings page. Case and extra spaces do not matter.
+1. **Copy the link for the shop.** On your page, tap **Copy** beside the shop's name.
+2. **Add the shortcut.** Tap **Get the shortcut**, then **Get Shortcut**. When it asks for the
+   link, paste what you copied. Before you add a second shop, rename the shortcut you already
+   have to its shop's name: open it, tap the arrow beside its name, then **Rename**.
+3. **Tell your iPhone when to use it.** Open the shortcut in the Shortcuts app and tap **Edit**,
+   then **Automation**. Choose **Arrive**, tap **Choose** and find the shop. Then tap **Edit**
+   again, open **Privacy** and turn on **Allow Running When Locked**, so it runs by itself.
 
-For **home**, make two automations, with the place `Home`:
+On an iPhone that has not been updated for a while, step 3 is different: in the Shortcuts app tap
+**Automation**, then **+**, and choose **Arrive**. Tap **Choose**, find the shop and tap **Next**.
+Pick the shortcut you added. Then tap the new automation, turn off **Ask Before Running** and tap
+**Don't Ask**.
 
-| Trigger | `event` | `place` |
-| --- | --- | --- |
-| Arrive (at home) | `enter` | `Home` |
-| Leave (home) | `exit` | `Home` |
+To try it, put something on the shopping list and run the shortcut once. The list for that shop
+should arrive in your chat.
 
-The same call from a terminal, for testing:
+If your page says "Nearly ready" where the steps should be, whoever set up the assistant for your
+family has one thing to do first. It is the next section.
+
+**Leaving home.** With two more shortcuts the assistant can offer you the list as you head out
+with a lot on it. Under "Also when you leave home" your page has two more links. Do the same three
+steps with each, choosing your home as the place: **Arrive** for the first and **Leave** for the
+second.
+
+## For whoever set the assistant up
+
+This part is technical and is done once for the whole family, on an iPhone.
+
+### What Apple allows
+
+Read from Apple's Shortcuts User Guide on 7 October 2026 (its iOS 27, iOS 26 and iOS 18 editions,
+fetched as pages, not summaries). **None of it has been tried on a phone.**
+
+| Apple's guide says | So |
+| --- | --- |
+| A shortcut can be shared as an iCloud link; whoever taps it and then **Get Shortcut** has it in their collection ("Share shortcuts") | One person builds the shortcut, everyone else adds it |
+| A field with an *import question* is cleared when the shortcut is shared, and the person adding it is asked for their own value ("Add import questions to shared shortcuts") | The shared shortcut holds nobody's link |
+| "Automation shortcuts are specific to a device" ("Intro to shortcuts with automations"). No page describes sharing or installing an automation | The Arrive step cannot be sent to anyone. Each person makes it on their own phone, once per shop. There is no one-tap setup |
+| No page describes an automation passing anything to the shortcut it runs | A shortcut cannot be told which shop it is for when it runs, so there is one shortcut per shop, each holding that shop's link |
+| iOS 27: a trigger is added to a shortcut with **Edit**, **Automation**; it runs unasked with **Privacy**, **Allow Running When Locked**. iOS 26 and 18: **Automation**, **+**, **Create Personal Automation**, a trigger, **Next**, then "use an existing shortcut"; it runs unasked with **Ask Before Running** off and **Don't Ask** ("Add automations", "Create a new personal automation", "Enable or disable a personal automation") | The two versions of step 3 |
+| **Get Contents of URL** has **Show More**, where the method can be POST ("Request your first API") | The one action the shortcut needs |
+
+Not in Apple's guide, so not known:
+
+- Which fields an import question can be attached to. The steps below assume the URL of **Get
+  Contents of URL** is one of them. If it is not offered, put the link in a **Text** action above
+  it, use that text as the URL, and attach the question to the Text action.
+- Whether the question is asked when the shortcut is added or the first time it runs. The guide
+  says "when the recipient runs the shortcut".
+- What happens when the same shared shortcut is added a second time. The steps tell people to
+  rename the first copy before adding another, in case the second would replace it.
+- Whether a shortcut shared from iOS 27 carries its automation with it. The steps assume not.
+- "Run Immediately", which is what iOS 17 and 18 show on the trigger's own screen according to
+  the spec this app was built from, is on none of Apple's pages.
+
+### Sharing the shortcut, once
+
+1. Send **shops** to the assistant and open your link on your iPhone. Tap **Copy** beside any
+   shop.
+2. In the Shortcuts app make a new shortcut. Add the action **Get Contents of URL** and paste the
+   link where it says URL. Tap **Show More** and change **Method** to **POST**. Leave the rest.
+3. Name it, for example "Tell Home I'm at the shop", and run it once. With something on that
+   shop's list, the list arrives in your chat.
+4. Open the shortcut's details, tap **Setup**, then **Add New Question**. Choose the link you
+   pasted and type the question: `Paste the link you copied for this shop`.
+5. Share the shortcut with **Copy iCloud Link**.
+6. Set `PRESENCE_SHORTCUT_URL` to that link ([operations.md](operations.md#configuration)) and
+   restart the api.
+
+From then on every adult's page has a **Get the shortcut** button in place of these steps, and
+nobody else sees the words POST or URL. Until it is set, the page of the household's admin shows
+steps 2 to 5, and everyone else's says to ask them.
+
+### The links
+
+A personal link is `https://home.example.com/presence/<43 characters>`. Three things answer on it:
+
+| Request | What it does |
+| --- | --- |
+| `GET /presence/{token}`, and `GET` of any link below | The page: what the link is for, and the steps. Reads only; nothing is recorded, so a chat app's link preview or a tap in the browser is harmless. An unknown token gets a page saying the link has stopped working (404) |
+| `POST /presence/{token}/{event}/{place}` | A ping with nothing to fill in: `event` is `enter` or `exit`, `place` is the place's name, URL-encoded. This is what a link copied from the page is |
+| `POST /presence/{token}` with `{"event": "enter" \| "exit", "place": "<name>"}` | The same ping, as the spec has it |
+
+The place name must be one the assistant knows: the shops said during setup, listed under Places
+on Settings. Case and extra spaces do not matter. The page writes the names into the links, so
+nobody types one.
+
+By hand, without the shared shortcut, an automation's one action is **Get Contents of URL** with a
+link copied from the page and **Method** set to **POST**. From a terminal:
 
 ```sh
+curl -i -X POST https://home.example.com/presence/<token>/enter/Tesco%20Extra
 curl -i -X POST https://home.example.com/presence/<token> \
      -H 'Content-Type: application/json' -d '{"event": "enter", "place": "Tesco Extra"}'
 ```
 
-The answer is always `204 No Content`, whether or not the token or the body was any good, so the
-response cannot be used to find out whether a link exists. To see what happened, look at the
+A POST is always answered `204 No Content`, whether or not the token or the body was any good, so
+the response cannot be used to find out whether a link exists. To see what happened, look at the
 worker and api logs (`presence`, `presence_ignored`, `presence_rate_limited`).
 
 ### What a ping does
 
-`POST /presence/{token}` with `{"event": "enter" | "exit", "place": "<name>"}`. A valid ping is
-stored in `presence_events` and one rule runs (`app/presence/rules.py`, no model involved):
+A valid ping, in either form, is stored in `presence_events` and one rule runs
+(`app/presence/rules.py`, no model involved):
 
 | Rule | When | Condition | What happens |
 | --- | --- | --- | --- |
@@ -85,7 +147,8 @@ called Home) and does nothing until someone gives it a kind on the Settings page
 for 30 pings an hour.
 
 Decisions and their reasons: [ADR 0023](adr/0023-presence-endpoint-and-tokens.md),
-[ADR 0024](adr/0024-presence-rules-and-nudge-dedupe.md).
+[ADR 0024](adr/0024-presence-rules-and-nudge-dedupe.md),
+[ADR 0033](adr/0033-the-presence-link-opens-a-page-and-is-sent-on-request.md).
 
 ## Predictions
 
@@ -131,7 +194,8 @@ the question in the thread and updates the list. Reasons: [ADR 0026](adr/0026-co
 ## Limits
 
 - The phone steps have not been tried on a phone, and Apple renames these screens between iOS
-  versions.
+  versions. What is and is not in Apple's guide is listed under
+  [What Apple allows](#what-apple-allows).
 - iOS decides when an Arrive or Leave automation fires. It can be a minute late, fire twice, or
   not fire with Location Services or Background App Refresh off. A double ping sends one list.
 - The model learns from what it is told. If nobody says the milk ran out, it has no cycle to

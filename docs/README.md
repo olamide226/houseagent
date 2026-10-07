@@ -18,8 +18,8 @@ docker compose up --build     # Postgres, migration, api on :8000, worker
 2. Tap the invite it shows (a Telegram deep link, QR code and code). The bot answers "Hi <name>,
    you're connected" and asks its first setup question: who lives here.
 3. Answer in your own words, or say "skip". It asks about routines, shops, staples, photos of the
-   fridge and when to stay quiet, one at a time, sends each adult a personal link for
-   shop-arrival nudges ([presence.md](presence.md)), then gets out of the way.
+   fridge and when to stay quiet, one at a time, tells each adult they can have the list sent
+   when they reach a shop ([presence.md](presence.md)), then gets out of the way.
 4. Tell it another adult lives there and it sends you an invite to pass on. Send `dashboard` for a
    login link to the web dashboard.
 

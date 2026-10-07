@@ -144,7 +144,8 @@ the ping and runs one rule in code (`app/presence/rules.py`): arriving at a shop
 person the list for that shop, leaving home with a long or freshly changed list queues an offer
 of it. Like everything else the api does, it only writes rows; the worker's outbox sends them.
 Every nudge is claimed in `nudge_log` first, so a doubled or replayed ping sends nothing twice.
-Phone setup and the rules are in [presence.md](presence.md).
+Opened in a browser, the same link is a page that says what it is for and how to put it on an
+iPhone; a GET records nothing. Phone setup and the rules are in [presence.md](presence.md).
 
 ## Scheduled jobs
 

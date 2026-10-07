@@ -111,10 +111,13 @@ they record can be said later in ordinary conversation. After the last step the 
 tool disappear. See [ADR 0017](adr/0017-onboarding-state-and-messages-written-by-code.md).
 
 The seventh step is done by code. When `onboarding_advance` leaves `presence` as the only step
-open, it sends each connected adult their personal link and the phone steps, marks the step done,
-and tells the model in a `NOTE:` line who was sent one. The model never sees a link.
+open, it sends each connected adult one short message offering the shopping list on arrival at a
+shop, marks the step done, and tells the model in a `NOTE:` line who was sent it.
 `onboarding_advance(presence, skipped=true)` before that sends nothing
-([ADR 0025](adr/0025-the-presence-step-is-done-by-code.md)).
+([ADR 0025](adr/0025-the-presence-step-is-done-by-code.md)). The offer holds no link. An adult
+who sends the single word `shops` is answered by the pipeline, not the model, with their personal
+link, as `dashboard` is answered with a login link
+([ADR 0033](adr/0033-the-presence-link-opens-a-page-and-is-sent-on-request.md)).
 
 ## Messages the assistant starts
 

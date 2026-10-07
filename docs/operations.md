@@ -39,6 +39,7 @@ Everything is read by `Settings` in `app/config.py`, from the environment or a l
 | `INTERNAL_BASE_URL` | no | `PUBLIC_BASE_URL` | Where Letta reaches the api's `/internal` (Practice chat turns) |
 | `WORKER_INTERNAL_URL` | no | `http://localhost:8001` | Where Letta reaches the worker's `/internal` (chat turns); the worker listens on this port under `letta` |
 | `AGENT_NAME` | no | `Home` | Name used in the prompt and pages |
+| `PRESENCE_SHORTCUT_URL` | no | | The iCloud link of the Shortcut the admin shared once. With it, the page a presence link opens gives everyone a "Get the shortcut" button ([presence.md](presence.md#sharing-the-shortcut-once)) |
 | `DEFAULT_TIMEZONE` | no | `Europe/London` | Prefilled on `/setup` |
 | `DEBOUNCE_SECONDS` | no | `4` | How long a batch must be quiet before its turn |
 | `LOG_LEVEL` | no | `INFO` | |
@@ -84,10 +85,10 @@ from the `Dockerfile`, push it to your registry, and set `image.repository` and 
 - **worker:** one replica. Its liveness probe checks that the heartbeat file
   (`worker.heartbeatFile`) was touched in the last `worker.heartbeatMaxAgeSeconds` (180); the
   worker touches it every minute. A second replica is safe, not useful for one household.
-- **Ingress:** only these paths reach the api: `/webhooks`, `/presence`, `/ics`, `/healthz`, and
-  for the dashboard `/setup`, `/login`, `/logout`, `/dashboard`, `/static`. `/internal` and
+- **Ingress:** only these paths reach the api: `/webhooks`, `/presence`, `/ics`, `/healthz`,
+  `/static`, and for the dashboard `/setup`, `/login`, `/logout`, `/dashboard`. `/internal` and
   `/readyz` are never routed. With `dashboard.public: false` the dashboard paths are left off
-  that ingress, and `dashboard.internalIngress` can serve them on another ingress class, such as
+  that ingress (`/static` stays, for the page a presence link opens), and `dashboard.internalIngress` can serve them on another ingress class, such as
   a tailnet one. TLS is cert-manager's, through the ingress annotations.
 - **Pods** run as `nobody` with a read-only root file system; `/tmp` is an `emptyDir` for the
   heartbeat file and voice-note conversion.
@@ -389,8 +390,9 @@ assistant ("make the morning brief 7", "don't message me after 9pm").
 
 ## Presence
 
-Phone setup is in [presence.md](presence.md). The endpoint answers 204 to everything, so the
-logs are where a Shortcut is debugged. The api logs one line per call:
+Phone setup is in [presence.md](presence.md). A POST is answered 204 whatever it holds, so the
+logs are where a Shortcut is debugged. Opening a link in a browser is a GET: it shows a page and
+logs nothing here. The api logs one line per call:
 
 | Event | Meaning |
 | --- | --- |

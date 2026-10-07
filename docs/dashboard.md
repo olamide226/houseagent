@@ -104,10 +104,11 @@ stays on the Calendar page.
 ## Presence links and places
 
 "The list when you reach a shop" on Settings lists each adult with "has a link" or "no link yet".
-"Make link" or "Replace link" creates a new personal link and shows it once with the phone steps;
-only its hash is stored, so it cannot be shown again, and replacing it stops the old link working.
-Any adult can make a link for any adult, as with invites. The steps for the phone are in
-[presence.md](presence.md#phone-setup-once-per-place).
+"Make link" or "Replace link" creates a new personal link and shows it once, to be sent to that
+person; only its hash is stored, so it cannot be shown again, and replacing it stops the old link
+working. Any adult can make a link for any adult, as with invites. Someone without a link can also
+get theirs by sending the word `shops` in chat. The steps for the phone are not on Settings: they
+are on the page the link opens ([presence.md](presence.md#setting-it-up-one-shop-at-a-time)).
 
 "Places" lists what the assistant knows by name: the shops said during setup, anything added
 here, and any name a phone has sent. Only a place of kind `store` sends its list on arrival, and
