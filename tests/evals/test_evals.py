@@ -8,6 +8,9 @@ same date whenever the suite runs. Skipped unless RUN_EVALS=1:
     RUN_EVALS=1 EVAL_API_KEY=... EVAL_OPENAI_BASE_URL=... EVAL_ANTHROPIC_BASE_URL=... \
         EVAL_MODEL=... uv run pytest tests/evals -m eval
 
+EVAL_CLAUDE_CODE_MODEL and EVAL_CODEX_CLI_MODEL add the subscription providers: the same cases
+through the `claude` and `codex` CLIs on this machine's sign-in, with no key and no endpoint.
+
 With EVAL_RUNTIME=letta the same cases run once through LettaRuntime against the Letta server at
 EVAL_LETTA_BASE_URL, whose tools call back into a bridge this process serves (docs/evals.md).
 """
@@ -33,6 +36,8 @@ from app.config import get_settings
 from app.core.envelope import MediaRef
 from app.db import execute, fetch_all, fetch_one, tx
 from app.llm.anthropic import AnthropicClient
+from app.llm.claude_code import ClaudeCodeClient
+from app.llm.codex_cli import CodexCliClient
 from app.llm.openai_compat import OpenAICompatClient
 from app.llm.types import Usage
 from app.pipeline.inbound import PLAYGROUND, _upsert_thread, simulate_turn
@@ -61,7 +66,10 @@ LETTA_MODEL = os.environ.get("EVAL_LETTA_MODEL")
 BRIDGE_PORT = int(os.environ.get("EVAL_BRIDGE_PORT", "8011"))
 BRIDGE_URL = os.environ.get("EVAL_BRIDGE_URL", f"http://host.docker.internal:{BRIDGE_PORT}")
 BRIDGE_TOKEN = "eval-internal-tool-token"
-PROVIDERS = ["letta"] if LETTA else list(ENDPOINTS)
+# The subscription providers: a provider is on when its model is named.
+CLI_MODELS = {"claude_code": os.environ.get("EVAL_CLAUDE_CODE_MODEL"),
+              "codex_cli": os.environ.get("EVAL_CODEX_CLI_MODEL")}
+PROVIDERS = ["letta"] if LETTA else [*ENDPOINTS, *CLI_MODELS]
 _letta: list[AgentRuntime] = []
 CASES = [
     (path.stem, case) for path in sorted(HERE.glob("*.yaml")) for case in yaml.safe_load(path.read_text())
@@ -92,6 +100,9 @@ def make_runtime(provider: str) -> AgentRuntime:
             _letta.append(LettaRuntime(AsyncLetta(base_url=LETTA_BASE_URL), tool_url=BRIDGE_URL,
                                        tool_token=BRIDGE_TOKEN, model=LETTA_MODEL, media=FixtureStore()))   # type: ignore[arg-type]
         return _letta[0]
+    if model := CLI_MODELS.get(provider):
+        cli_class = ClaudeCodeClient if provider == "claude_code" else CodexCliClient
+        return LoopRuntime(cli_class(model=model), media=FixtureStore())   # type: ignore[arg-type]
     client_class = AnthropicClient if provider == "anthropic" else OpenAICompatClient
     return LoopRuntime(client_class(api_key=API_KEY, model=MODEL, base_url=ENDPOINTS[provider]),
                        media=FixtureStore())   # type: ignore[arg-type]
@@ -350,7 +361,7 @@ async def _bridge():
 @pytest.mark.parametrize("provider", PROVIDERS)
 @pytest.mark.parametrize("suite,case", CASES, ids=[f"{suite}:{case['name']}" for suite, case in CASES])
 async def test_case(provider: str, suite: str, case: dict[str, Any], sample: int) -> None:
-    if not LETTA and not (API_KEY and ENDPOINTS[provider]):
+    if not (LETTA or CLI_MODELS.get(provider) or (API_KEY and ENDPOINTS.get(provider))):
         pytest.skip(f"no credentials for {provider}")
     now = london(case.get("now", NOW))
     home = await seed(case, now)
@@ -385,6 +396,7 @@ def _write_results():
     for provider, cases in outcomes.items():
         passed = sum(1 for outcome in cases.values() if outcome == "passed")
         (RESULTS / f"{provider}.json").write_text(json.dumps({
-            "provider": provider, "model": LETTA_MODEL if LETTA else MODEL, "passed": passed, "total": len(cases),
+            "provider": provider, "model": LETTA_MODEL if LETTA else CLI_MODELS.get(provider) or MODEL,
+            "passed": passed, "total": len(cases),
             "usage": usage_by_provider.get(provider, Usage()).model_dump(), "cases": cases,
         }, indent=2) + "\n")
