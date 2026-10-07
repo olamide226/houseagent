@@ -1,8 +1,10 @@
 # Agent evals
 
-Agent quality is judged by database state, never by wording. Each case in `tests/evals/*.yaml`
+Agent quality is judged by database state, not by wording. Each case in `tests/evals/*.yaml`
 seeds a household, sends its turns through `simulate_turn()` (the service the dashboard's Practice chat
-uses), and asserts on rows.
+uses), and asserts on rows. The one exception is `product.yaml`, the questions about the product
+itself, where the answer is the reply: those cases assert that nothing was written and check the
+reply only for a word that has to be in it, and for words that must not be.
 
 The clock is pinned: every case starts on Monday 5 October 2026 at 12:00 in London, and each
 further turn is a minute later. "On Wednesday" is therefore always 7 October, whenever the suite
@@ -74,7 +76,10 @@ it, by default `http://host.docker.internal:8011`. The result is written as `let
 | `stock` | Per item: `status`, and `qty` and `location` when given |
 | `writes: 0` | No events, no logged actions, and the list is unchanged from the seed |
 | `reply` | The last turn's outcome: `ACK`, `NOOP`, or `text` for any other reply |
-| `reply_mentions` | Each of these texts is in the last reply. The one place wording is checked: a reply that reads the list back has to name what is on it |
+| `reply_mentions` | Each of these texts is in the last reply: a reply that reads the list back has to name what is on it, and an answer about the product has to name the word to send or the page |
+| `reply_says_any` | At least one of these is in the last reply as a whole word, so `not` is not found in "note". For answers that have to say no |
+| `reply_avoids` | None of these texts is in the last reply |
+| `plain: true` | The last reply has no word from `TECHNICAL` in `tests/helpers.py` (api, url, token, database, webhook, endpoint, json, backend, server, config), no link, and no name_with_underscores such as a tool or a setting |
 | `calendar` | Exactly these active events, in any order. Each may give `title_contains`, `participants`, `local_start` ("Wed 7 Oct 11:00"), `location_contains`, `rrule_contains`, `repeats: false`, `exdates` |
 | `calendar_cancelled` | How many events are cancelled |
 | `reminders_scheduled` | How many reminder rows are scheduled, for events and standalone |
@@ -118,16 +123,33 @@ A case about something the assistant said first seeds that message, and any gues
     shopping_list_asked_for: [milk]
 ```
 
+A case about the product can say what the installation has switched on. Without `setup` there is
+Telegram only, photos are read, voice notes are not, and the shared Shortcut is not set:
+
+```yaml
+- name: photos cannot be read where they are not switched on
+  seed: {setup: {photos: false}}     # also chat_apps: [telegram, whatsapp], voice_notes, shop_shortcut
+  turns: [{from: Ola, text: "can you read photos?"}]
+  expect: {writes: 0, plain: true, reply_says_any: ["can't", cannot, not, unable], reply_avoids: ["yes"]}
+```
+
 Seeded events go through the calendar service, so they have their reminders, but leave no undo
 record. The spec's example uses the key `events` for calendar events; that key already meant
 inventory events here, so calendar expectations are under `calendar`.
 
 ## Suite
 
-61 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (7), reminders (4),
+71 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (7), reminders (4),
 photos (6: four receipts, two fridge or freezer photos), onboarding, family and settings (13),
-and presence (4: answers to the low-stock prompt and the "out and about" offer).
+presence (4: answers to the low-stock prompt and the "out and about" offer), and product (10:
+what the assistant says about itself, [ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)).
 The spec's target is 40.
+
+The product cases ask what a family member asks: "what can you do?", "how do I see the list on my
+laptop?", "how do I add my wife?", "how does the shop thing work?", "can you read photos?" where
+photos are on and where they are not, "switch me to WhatsApp" where it is set up and where it is
+not, a feature that does not exist (ordering the shopping online), and a how-to question in the
+family group. Each asserts no writes, plain words, and the word or page that has to be named.
 
 Eleven of them are variants written for the pass on repeat mistakes
 ([ADR 0031](adr/0031-rules-the-model-kept-breaking.md)): the same mistake asked for with other
@@ -143,6 +165,74 @@ photo case reads its image through a read-only `MediaStore` over that folder, so
 the same path into the model as a stored Telegram photo.
 
 ## Latest results
+
+One run of the whole suite with the loop runtime, 7 Oct 2026, before and after the product guide
+([ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)), model `deepseek-flash` through
+both adapters. Before: the 61 cases, 366 seconds. After: the same 61 and the 10 product cases, 433
+seconds.
+
+| Adapter | Before | After | NOOP | Undo | Input tokens after (cached) | Output tokens after |
+| --- | --- | --- | --- | --- | --- | --- |
+| `openai_compat` | 61/61 | **71/71** | 3/3 | 7/7 | 790,196 (623,232) | 17,249 |
+| `anthropic` | 60/61 | **70/71** | 3/3 | 7/7 | 774,443 (739,049) | 17,484 |
+
+| Category | `openai_compat` before | after | `anthropic` before | after |
+| --- | --- | --- | --- | --- |
+| inventory | 12/12 | 12/12 | 12/12 | 12/12 |
+| shopping list | 5/5 | 5/5 | 4/5 | 4/5 |
+| NOOP | 3/3 | 3/3 | 3/3 | 3/3 |
+| undo | 7/7 | 7/7 | 7/7 | 7/7 |
+| calendar | 7/7 | 7/7 | 7/7 | 7/7 |
+| reminders | 4/4 | 4/4 | 4/4 | 4/4 |
+| photos | 6/6 | 6/6 | 6/6 | 6/6 |
+| onboarding | 13/13 | 13/13 | 13/13 | 13/13 |
+| presence | 4/4 | 4/4 | 4/4 | 4/4 |
+| product (new) | not run | 10/10 | not run | 10/10 |
+
+Nothing that passed before failed after. The one failure is the same case in both runs, on the
+`anthropic` endpoint only: "bought one thing off the list". After "I got the eggs" the model
+logged the eggs as `added` where the case expects `restocked`; the stock and the list ended
+right both times. The release bar (95% overall and 100% on NOOP and undo, on at least two
+providers) is met on both endpoints in both runs. It is one sample per case, and the two
+endpoints are one model on two wire formats.
+
+**What the guide costs.** The same 61 cases took 579,853 input tokens before and about 740,500
+after on `openai_compat` (the after-run's total less the product cases), which is 2,330 more per
+turn over their 69 turns. A turn is two or three model steps, and one step reads 990 more tokens
+than before (4,987 against 3,995, measured on the three one-step NOOP cases): about 945 for the
+guide, which is in the cached part of the prompt, and about 45 for the brief's three lines. The
+account balance, shown to the cent, read $4.32 before the first run and $4.15 after the last, so
+every run for this change together cost 17 cents: the whole suite twice, and the product cases
+about fifteen times over. The first whole-suite run moved it by 2.
+
+**The product cases, three samples each**, with the guide left out, in the prompt (as built),
+and behind a tool. The tool was a `how_to` call that returned the same guide; it was written for
+this comparison and is not in the code.
+
+| | `openai_compat` | `anthropic` | Seconds for the 60 runs | Input tokens for the 60 runs |
+| --- | --- | --- | --- | --- |
+| No guide (one sample, 20 runs) | 5/10 | 5/10 | | |
+| Guide in the prompt | 30/30 | 30/30 | 116 | 298,398 |
+| Guide behind a `how_to` tool | 30/30 | 29/30 | 171 | 559,838 |
+
+Without the guide the assistant answered "switch me to WhatsApp" with "Switched — I'll message
+you on WhatsApp from now on", said yes to reading photos in a household where it cannot, took
+"the shop thing" for the shopping list, told one person the list is at "the same link as the ICS
+feed your calendar uses" and another to look for a calendar called "Home" in their calendar app,
+and said the list was on "the dashboard" without saying how to get there. With the tool the model
+called it in all 60 runs; its one failure was an answer about the shopping list to "how does the
+shop thing work?". Sixty runs do not tell 60 from 59 apart: the choice rests on the extra model
+step and on rules that have to be read on turns that are not how-to questions (ADR 0034).
+
+One more run of the product cases, twice each, through `claude_code` with `claude-sonnet-5-5`,
+the provider and model this household runs on: **20/20**, 52 seconds, 153,311 input tokens
+(129,914 cached). Nothing was billed for it.
+
+What the product cases do not show: whether a reply was right beyond the word they check. Of the
+60 replies in the three-sample run above, one said a chat app is added "on the Chat apps page",
+which no page does; the guide says so, and five of the six answers to that question got it right.
+
+## Previous full run (the pass on repeat mistakes)
 
 One run of the whole suite with the loop runtime, 6 Oct 2026, after the pass on repeat mistakes
 ([ADR 0031](adr/0031-rules-the-model-kept-breaking.md)), 61 cases, model `deepseek-flash`
@@ -165,7 +255,7 @@ through both adapters, 432 seconds.
 | onboarding | 13/13 | 13/13 |
 | presence | 4/4 | 4/4 |
 
-The release bar (95% overall and 100% on NOOP and undo, on at least two providers) is **met on
+The release bar (95% overall and 100% on NOOP and undo, on at least two providers) was **met on
 both endpoints in this run**, for the first time. The 50 cases of the earlier runs are all in
 the 61, so they stand at 50/50 on both. Two things limit what that says. It is one sample per
 case, and the two endpoints are one model on two wire formats, not two providers' models.

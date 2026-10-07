@@ -47,7 +47,7 @@ rendered but not installed. Each page below says what has been checked and what 
 | [data-model.md](data-model.md) | Tables, stock transitions, calendar rows, invariants |
 | [channels.md](channels.md) | The adapter contract; Telegram, WhatsApp and iMessage setup, template approval, payload notes, what happens when BlueBubbles is down, limits |
 | [llm.md](llm.md) | Provider layer, the subscription providers and what the vendors' terms say about them, adding an adapter, tested models |
-| [agent-and-tools.md](agent-and-tools.md) | Runtime loop, the optional Letta runtime, photos, onboarding, tools, calendar rules, resolution rules, undo |
+| [agent-and-tools.md](agent-and-tools.md) | Runtime loop, the product guide the assistant answers "how do I..." from, the optional Letta runtime, photos, onboarding, tools, calendar rules, resolution rules, undo |
 | [presence.md](presence.md) | iPhone Shortcut setup, the presence rules, the consumption model, "probably" list entries, the low-stock prompt |
 | [dashboard.md](dashboard.md) | Pages, the login flow, invites, channels and the family group, the System page, the calendar feed |
 | [operations.md](operations.md) | Environment variables, running, Helm, the subscription providers' CLIs and sign-in, media storage, worker jobs, the BlueBubbles outage and WhatsApp template runbooks, logs |

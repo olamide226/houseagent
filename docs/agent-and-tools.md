@@ -6,8 +6,8 @@
 `LoopRuntime` (`app/agent/loop.py`) is the default, and the one in use. `LettaRuntime` is an
 optional second implementation ([below](#the-letta-runtime-optional)). The loop:
 
-1. System prompt = the static prompt + the household brief, + the onboarding section while the
-   household is being set up.
+1. System prompt = the static prompt + [the product guide](#the-product-guide) + the household
+   brief, + the onboarding section while the household is being set up.
 2. Messages = the thread's last 20 messages from the past 48 hours (member messages as
    `"{name}: {text}"`, agent messages as assistant turns, a bare reaction as `ACK`), then the
    current turn: its text and up to four photos.
@@ -23,6 +23,58 @@ facts, the shopping list, low or out items, items expiring within 3 days and the
 next 7 days, each list capped at 25 entries with "+N more". Its last line is the speaker's most
 recent change that can still be undone, as the tool reported it: thread history holds what was
 said, not what was recorded ([ADR 0031](adr/0031-rules-the-model-kept-breaking.md)).
+
+Three of the brief's lines are there for questions about the product itself. The family line
+says which chat apps each adult is on, or that they are not connected yet, and who set the
+installation up; the next line says whether the speaker has their link for the shops, and where
+they are messaged if they are on more than one app; the third gives the morning brief time and
+each adult's quiet hours:
+
+```text
+Family: Ola (adult, set this up, on Telegram); Ada (adult, on Telegram and WhatsApp); Grace (adult, not connected yet); Tobi (child)
+Ada's setup: messaged on WhatsApp; has a personal link for the shops
+Morning brief: 07:30. Quiet hours: Ola 21:30-07:00, Ada off, Grace 21:30-07:00
+```
+
+## The product guide
+
+`app/agent/guide.py` is what the assistant is told about its own product, so that "what can you
+do?", "how do I see the list on my laptop?" or "switch me to WhatsApp" is answered from what is
+built and not made up ([ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)). It follows
+the static prompt, before the cache break, and says: what people do by talking, the two words
+answered by code (`dashboard`, `shops`), each web page by the name in its menu, invites, chat
+apps, the family group, photos and voice notes, and what the assistant sends by itself. It opens
+with three rules: answer such a question in a DM or the group, in a line or two with the exact
+word or page; say "I can't do that yet" for anything not listed; never make up a feature, a page,
+a word or a link.
+
+**It is written for the installation.** `Setup` (built by `setup_of` in `app/agent/runtime.py`)
+holds what is switched on, and the guide only says what is true there:
+
+| `Setup` field | From | Changes |
+| --- | --- | --- |
+| `chat_apps` | `TG_*`, `WA_*`, `BB_*` being set | Which apps the household can use; how to move to another is only described when there is one |
+| `photos` | `LLM_SUPPORTS_IMAGES` and a media backend | "A receipt or the fridge", or "you cannot read photos in this household yet" |
+| `voice_notes` | `STT_*` being set | The same for voice notes |
+| `shop_shortcut` | `PRESENCE_SHORTCUT_URL` | Without it, the list at the shop "is not ready for everyone yet" |
+
+**It cannot drift without a test failing.** Each part of the guide is a dict keyed by the code
+it describes, and `tests/unit/test_guide.py` compares the keys both ways:
+
+| Guide | Must equal |
+| --- | --- |
+| `WORDS` | `KEYWORDS` in `app/pipeline/inbound.py`, the words answered by code |
+| `PAGES` | the pages and names in the menu of `app/dashboard/templates/base.html` |
+| `TALK` | the tools in `REGISTRY`, except the setup-only one |
+| `SENDS` | the worker's scheduled jobs that send something (`SCHEDULED` in `app/worker/main.py`) |
+
+A new page, word, tool or scheduled message therefore fails the suite until the guide has a line
+for it, and a removed or renamed one fails until its line goes. The numbers in the guide (10
+minutes, 7 days, 5 changes in 24 hours, 4 photos, 18:00, 17:30) are checked against the constants
+they repeat. What the test cannot check is that a line describes its page or tool truthfully.
+
+Adding a feature: add the line to the dict the test names, in the words a family member would
+use. Tool names, setting names and addresses never appear in it; a test checks that as well.
 
 A turn's clock is the time its message arrived (`Ctx.now`), not the time the worker got to it.
 "In two hours" and "tomorrow" count from when it was said. See
@@ -40,9 +92,9 @@ Letta server names it.
 - **One Letta agent per household**, created on its first turn; its id is kept in
   `households.letta_agent_id`. Letta's own memory tools are not attached.
 - **Postgres stays the source of truth.** Before every turn the runtime rewrites the agent's two
-  memory blocks: `persona` (the static prompt) and `household` (the brief, and the setup section
-  while setup is open). Thread history is not sent; Letta keeps its own, one for the whole
-  household, DMs and group together.
+  memory blocks: `persona` (the static prompt and the product guide) and `household` (the brief,
+  and the setup section while setup is open). Thread history is not sent; Letta keeps its own,
+  one for the whole household, DMs and group together.
 - **Tools** are the same twelve, registered with Letta as functions whose whole body posts the
   arguments to `POST /internal/tools/{name}` with `Authorization: Bearer INTERNAL_TOOL_TOKEN`.
   The household id, the address to call and the token come from the agent's tool environment,
