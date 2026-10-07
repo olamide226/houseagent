@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}More{% endblock %}
+{% macro page_link(page, name, label, about) %}
+<li><a class="row" href="/dashboard/{{ page }}"><span class="avatar">{{ icon(name) }}</span>
+  <span class="grow"><span class="title">{{ label }}</span><span class="sub">{{ about }}</span></span>{{ icon("right", "chev") }}</a></li>
+{% endmacro %}
+{% block main %}
+<h1>More</h1>
+<div class="card rows">
+  <ul class="list">
+    {{ page_link("family", "people", "Family", "Who lives here, and invites for the other adults") }}
+    {{ page_link("channels", "chat", "Chat apps", "Where the assistant talks to you, and the family group") }}
+    {{ page_link("settings", "settings", "Settings", "Morning brief, quiet hours, shops and things to remember") }}
+  </ul>
+</div>
+<h2>Behind the scenes</h2>
+<div class="card rows">
+  <ul class="list">
+    {{ page_link("activity", "clock", "Activity", "What was said and what changed, with undo") }}
+    {{ page_link("playground", "spark", "Practice chat", "Try a message without changing anything") }}
+    {% if session.is_admin %}{{ page_link("system", "pulse", "System", "Whether everything is running, and your data") }}{% endif %}
+  </ul>
+</div>
+<form method="post" action="/logout">
+  <input type="hidden" name="csrf" value="{{ session.csrf }}">
+  <p class="sub center">Signed in as {{ session.name }}</p>
+  <button class="quiet big">{{ icon("logout") }}Log out</button>
+</form>
+{% endblock %}

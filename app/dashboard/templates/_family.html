@@ -1,45 +1,61 @@
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 {% if invite %}
-<h2>Invite for {{ invite.name }}</h2>
-<p>Pass this on to {{ invite.name }}. It works once per channel, expires in 7 days, and is shown only this once.</p>
-{% include "_invite.html" %}
+<section class="card">
+  <h2>Invite for {{ invite.name }}</h2>
+  <p class="hint">Pass this on to {{ invite.name }}. It is shown only this once and works for 7 days.</p>
+  {% include "_invite.html" %}
+</section>
 {% endif %}
-<div class="card">
-  <ul class="rows">
+<div class="card rows">
+  <ul class="list">
   {% for member in family %}
-    <li>
-      <span class="grow"><strong>{{ member.name }}</strong>
-        <span class="muted">{{ member.role }}{% if member.is_admin %}, admin{% endif %}{% if member.role == "adult" %},
-          {{ member.channels | join(", ") or "not connected" }}{% endif %}</span></span>
-      {% if member.channels | length > 1 %}
-      <form hx-post="/dashboard/family/{{ member.id }}/channel" hx-target="#family">
-        <select name="channel" aria-label="Message {{ member.name }} on">
-          {% for channel in member.channels %}
-          <option value="{{ channel }}"{% if channel == member.preferred_channel %} selected{% endif %}>{{ channel }}</option>
-          {% endfor %}
-        </select>
-        <button class="quiet">Message here</button>
-      </form>
-      {% endif %}
+    <li class="row top">
+      <span class="avatar">{{ member.name[:1] }}</span>
       {% if member.role == "adult" %}
-      {% if member.invite_open_until %}
-      <span class="muted">invite open until {{ local(member.invite_open_until, session.timezone).strftime("%a %-d %b") }}</span>
-      <button class="quiet" hx-post="/dashboard/family/{{ member.id }}/revoke" hx-target="#family">Revoke</button>
-      {% endif %}
-      <button class="quiet" hx-post="/dashboard/family/{{ member.id }}/invite" hx-target="#family">New invite</button>
+      <details class="more grow">
+        <summary>
+          <span class="grow"><span class="title">{{ member.name }}{% if member.is_admin %} <span class="pill">Admin</span>{% endif %}</span>
+            <span class="sub">{{ member.channels | map("channel") | join(", ") or "Not connected yet" }}{% if member.invite_open_until %} · invite open until {{ local(member.invite_open_until, session.timezone).strftime("%a %-d %b") }}{% endif %}</span></span>
+          {{ icon("down", "chev") }}
+        </summary>
+        <div class="more-body">
+          {% if member.channels | length > 1 %}
+          <form class="field" hx-post="/dashboard/family/{{ member.id }}/channel" hx-target="#family">
+            <label for="channel-{{ member.id }}">Message {{ member.name }} on</label>
+            <span class="inline">
+              <select id="channel-{{ member.id }}" name="channel">
+                {% for channel in member.channels %}
+                <option value="{{ channel }}"{% if channel == member.preferred_channel %} selected{% endif %}>{{ channel | channel }}</option>
+                {% endfor %}
+              </select>
+              <button class="quiet">Save</button>
+            </span>
+          </form>
+          {% endif %}
+          <button class="quiet" hx-post="/dashboard/family/{{ member.id }}/invite" hx-target="#family">New invite</button>
+          {% if member.invite_open_until %}
+          <button class="danger" hx-post="/dashboard/family/{{ member.id }}/revoke" hx-target="#family">Cancel the invite</button>
+          {% endif %}
+          <span class="sub">An invite connects {{ member.name }}'s own chat. A new one replaces the one before.</span>
+        </div>
+      </details>
+      {% else %}
+      <span class="grow"><span class="title">{{ member.name }}</span><span class="sub">Child</span></span>
       {% endif %}
     </li>
   {% endfor %}
   </ul>
 </div>
-<h2>Add someone</h2>
-<form class="card" hx-post="/dashboard/family/add" hx-target="#family">
-  <input type="text" name="name" placeholder="Name" required>
-  <select name="role" aria-label="Role">
-    <option value="adult">adult</option>
-    <option value="child">child</option>
-  </select>
-  <button>Add</button>
-</form>
-<p class="muted">An adult gets an invite to connect their own chat. A new invite replaces the earlier one.
-   Children have no chat and no login.</p>
+<details class="card fold add"{% if error %} open{% endif %}>
+  <summary>{{ icon("plus") }}<span class="grow">Add someone</span>{{ icon("down", "chev") }}</summary>
+  <form class="stack" hx-post="/dashboard/family/add" hx-target="#family">
+    <label class="field">Name <input type="text" name="name" autocomplete="off" required></label>
+    <fieldset class="segmented" aria-label="Adult or child">
+      <label><input type="radio" name="role" value="adult" checked>Adult</label>
+      <label><input type="radio" name="role" value="child">Child</label>
+    </fieldset>
+    <span class="sub">An adult gets an invite to connect their own chat. A child is someone the assistant knows about:
+      no chat and no login.</span>
+    <button>Add</button>
+  </form>
+</details>

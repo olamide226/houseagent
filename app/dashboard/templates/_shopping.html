@@ -1,28 +1,47 @@
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 <form class="card" hx-post="/dashboard/shopping/add" hx-target="#shopping">
-  <input type="text" name="item" placeholder="Item" required>
-  <input type="text" name="store_hint" placeholder="Shop (optional)">
-  <button>Add</button>
+  <div class="inline">
+    <input type="text" name="item" placeholder="Add an item" aria-label="Item" autocomplete="off" enterkeyhint="done" required>
+    <button>Add</button>
+  </div>
+  <details class="opt">
+    <summary>From a particular shop?</summary>
+    <input type="text" name="store_hint" placeholder="e.g. Tesco" aria-label="Shop">
+  </details>
 </form>
 {% macro rows(entries) %}
-<ul class="rows">
+<ul class="list">
 {% for entry in entries %}
-  <li>
-    <span class="grow">{{ entry.item }}{% if entry.quantity %} x {{ entry.quantity.normalize() }}{% if entry.unit %} {{ entry.unit }}{% endif %}{% endif %}
-      <span class="muted">{{ entry.category }}{% if entry.reason != "explicit" %}, {{ entry.reason }}{% endif %}</span></span>
-    <form hx-post="/dashboard/shopping/{{ entry.id }}/store" hx-target="#shopping">
-      <input type="text" name="store_hint" value="{{ entry.store_hint or '' }}" placeholder="Shop" size="8">
-    </form>
-    <button hx-post="/dashboard/shopping/{{ entry.id }}/bought" hx-target="#shopping">Bought</button>
-    <button class="quiet" hx-post="/dashboard/shopping/{{ entry.id }}/remove" hx-target="#shopping">Remove</button>
+  <li class="row top">
+    <button class="tick" hx-post="/dashboard/shopping/{{ entry.id }}/bought" hx-target="#shopping"
+            aria-label="Bought {{ entry.item }}" title="Bought"><span>{{ icon("check") }}</span></button>
+    <details class="more grow">
+      <summary>
+        <span class="grow"><span class="title cap">{{ entry.item }}{% if entry.quantity %} × {{ entry.quantity.normalize() }}{% if entry.unit %} {{ entry.unit }}{% endif %}{% endif %}</span>
+          <span class="sub">{{ [entry.category if entry.category != "other", entry.reason | reason, entry.store_hint] | select | join(" · ") }}</span></span>
+        {{ icon("down", "chev") }}
+      </summary>
+      <div class="more-body">
+        <form class="inline" hx-post="/dashboard/shopping/{{ entry.id }}/store" hx-target="#shopping">
+          <input type="text" name="store_hint" value="{{ entry.store_hint or '' }}" placeholder="Which shop?"
+                 aria-label="Shop for {{ entry.item }}">
+          <button class="quiet">Save</button>
+        </form>
+        <button class="danger" hx-post="/dashboard/shopping/{{ entry.id }}/remove" hx-target="#shopping">Remove from the list</button>
+      </div>
+    </details>
   </li>
 {% endfor %}
 </ul>
 {% endmacro %}
-<div class="card">
-  {% if needed %}{{ rows(needed) }}{% else %}<p class="muted">The list is empty.</p>{% endif %}
-</div>
+{% if needed %}
+<p class="hint">Tap the circle when something is bought. Tap a name to set its shop or remove it.</p>
+<div class="card rows">{{ rows(needed) }}</div>
+{% else %}
+<div class="card"><p class="empty">The list is empty. Add something above, or just tell the assistant what you need.</p></div>
+{% endif %}
 {% if predicted %}
-<h2>Probably needed</h2>
-<div class="card">{{ rows(predicted) }}</div>
+<h2>You might also need</h2>
+<p class="hint">Going by how quickly you usually get through these.</p>
+<div class="card rows">{{ rows(predicted) }}</div>
 {% endif %}

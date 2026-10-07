@@ -1,103 +1,153 @@
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 <h2>Morning brief</h2>
-<form class="card" hx-post="/dashboard/settings/brief" hx-target="#settings">
-  <input type="time" name="at" value="{{ digest_time.strftime('%H:%M') }}" aria-label="Morning brief time" required>
-  <button>Save</button>
-  <span class="muted">Sent only on days with something due. {{ session.timezone }} time.</span>
-</form>
-<h2>Quiet hours</h2>
 <div class="card">
-  <ul class="rows">
+  <p class="hint">A short message about the day ahead, sent only on days with something due.</p>
+  <form class="inline" hx-post="/dashboard/settings/brief" hx-target="#settings">
+    <input type="time" name="at" value="{{ digest_time.strftime('%H:%M') }}" aria-label="Morning brief time" required>
+    <button class="quiet">Save</button>
+    <span class="sub grow">{{ session.timezone | replace("_", " ") }} time</span>
+  </form>
+</div>
+<h2>Quiet hours</h2>
+<p class="hint">Reminders wait until quiet hours are over, unless they are urgent.</p>
+<div class="card rows">
+  <ul class="list">
   {% for member in family if member.role == "adult" %}
-    <li>
-      <span class="grow">{{ member.name }}</span>
-      <form hx-post="/dashboard/settings/quiet/{{ member.id }}" hx-target="#settings">
-        <input type="time" name="start" value="{{ member.quiet_start.strftime('%H:%M') if member.quiet_start else '' }}" aria-label="Quiet from">
-        <span class="muted">to</span>
-        <input type="time" name="end" value="{{ member.quiet_end.strftime('%H:%M') if member.quiet_end else '' }}" aria-label="Quiet until">
-        <button class="quiet">Save</button>
-      </form>
+    <li class="row top">
+      <span class="avatar">{{ member.name[:1] }}</span>
+      <details class="more grow">
+        <summary>
+          <span class="grow"><span class="title">{{ member.name }}</span>
+            <span class="sub">{% if member.quiet_start and member.quiet_end %}{{ member.quiet_start.strftime("%H:%M") }} to {{ member.quiet_end.strftime("%H:%M") }}{% else %}Off{% endif %}</span></span>
+          {{ icon("down", "chev") }}
+        </summary>
+        <div class="more-body">
+          <form class="inline wrap" hx-post="/dashboard/settings/quiet/{{ member.id }}" hx-target="#settings">
+            <input type="time" name="start" value="{{ member.quiet_start.strftime('%H:%M') if member.quiet_start else '' }}" aria-label="Quiet from">
+            <span class="sub">to</span>
+            <input type="time" name="end" value="{{ member.quiet_end.strftime('%H:%M') if member.quiet_end else '' }}" aria-label="Quiet until">
+            <button class="quiet">Save</button>
+          </form>
+          <span class="sub">Clear both times to turn quiet hours off.</span>
+        </div>
+      </details>
     </li>
   {% endfor %}
   </ul>
-  <p class="muted">Reminders wait until quiet hours end, unless urgent. Clear both times to turn them off.</p>
 </div>
-<h2>Arriving at the shops</h2>
+<h2>The list when you reach a shop</h2>
+<p class="hint">A phone can say when its owner arrives at a shop, and they are sent the list for that shop. Each adult
+  puts their own personal link into their phone.</p>
+{% if presence %}
 <div class="card">
-  {% if presence %}
-  <p>{{ presence.name }}'s personal link. It is shown only this once, so copy it now and keep it private:</p>
-  <p><input type="text" readonly value="{{ presence.url }}" onfocus="this.select()"></p>
-  <p>In the Shortcuts app on {{ presence.name }}'s iPhone, make an automation for each place: the trigger is
-    <strong>Arrive</strong> at the place, set to run without asking, and its one action is
-    <strong>Get Contents of URL</strong> with this link, method <strong>POST</strong>, and a <strong>JSON</strong>
-    request body with two text fields: <code class="plain">event</code> = <code class="plain">enter</code> and
-    <code class="plain">place</code> = the place's name exactly as listed under Places. For home, add one more with
-    the trigger <strong>Leave</strong> and <code class="plain">event</code> = <code class="plain">exit</code>.</p>
-  {% endif %}
-  <ul class="rows">
+  <p><strong>{{ presence.name }}'s personal link.</strong> It is shown only this once, so copy it now and keep it private.</p>
+  <div class="copy"><input type="text" readonly value="{{ presence.url }}" aria-label="{{ presence.name }}'s personal link" onfocus="this.select()">
+    <button type="button" class="quiet" data-copy="{{ presence.url }}" hidden>Copy</button></div>
+  <details class="opt" open>
+    <summary>How to set up the phone</summary>
+    <ol class="numbered">
+      <li><span>In the Shortcuts app on {{ presence.name }}'s iPhone, make an automation for each place. The trigger is
+        <strong>Arrive</strong> at the place, set to run without asking.</span></li>
+      <li><span>Its one action is <strong>Get Contents of URL</strong> with this link, method <strong>POST</strong>, and a
+        <strong>JSON</strong> request body with two text fields: <code class="plain">event</code> =
+        <code class="plain">enter</code> and <code class="plain">place</code> = the place's name exactly as listed
+        under Places.</span></li>
+      <li><span>For home, add one more with the trigger <strong>Leave</strong> and <code class="plain">event</code> =
+        <code class="plain">exit</code>.</span></li>
+    </ol>
+  </details>
+</div>
+{% endif %}
+<div class="card rows">
+  <ul class="list">
   {% for member in family if member.role == "adult" %}
-    <li>
-      <span class="grow">{{ member.name }}
-        <span class="muted">{{ "has a link" if member.has_presence_link else "no link yet" }}</span></span>
+    <li class="row">
+      <span class="avatar">{{ member.name[:1] }}</span>
+      <span class="grow"><span class="title">{{ member.name }}</span>
+        <span class="sub">{{ "has a link" if member.has_presence_link else "no link yet" }}</span></span>
       <button class="quiet" hx-post="/dashboard/settings/presence/{{ member.id }}" hx-target="#settings">
         {{ "Replace link" if member.has_presence_link else "Make link" }}</button>
     </li>
   {% endfor %}
   </ul>
-  <p class="muted">A phone automation calls a person's link when they reach a shop, and they are sent the list
-    for that shop. Replacing a link stops the old one working, so the phone's automations need the new one.</p>
 </div>
+<p class="hint">Replacing a link stops the old one working, so the phone's automations need the new one.</p>
 <h2>Places</h2>
-<div class="card">
-  <ul class="rows">
+<p class="hint">Only a shop sends its list on arrival. A phone names a place exactly as it is written here.</p>
+<div class="card rows">
+  <ul class="list">
   {% for place in places %}
     <li>
-      <span class="grow">{{ place.name }}</span>
-      <form hx-post="/dashboard/settings/places" hx-target="#settings">
-        <input type="hidden" name="name" value="{{ place.name }}">
-        <select name="kind" aria-label="Kind of place">
-          {% for kind in kinds %}<option value="{{ kind }}"{% if kind == place.kind %} selected{% endif %}>{{ kind }}</option>{% endfor %}
-        </select>
-        <button class="quiet">Save</button>
-      </form>
+      <details class="more">
+        <summary>
+          <span class="grow"><span class="title">{{ place.name }}</span><span class="sub">{{ place.kind | place }}</span></span>
+          {{ icon("down", "chev") }}
+        </summary>
+        <div class="more-body">
+          <form class="inline" hx-post="/dashboard/settings/places" hx-target="#settings">
+            <input type="hidden" name="name" value="{{ place.name }}">
+            <select name="kind" aria-label="What kind of place {{ place.name }} is">
+              {% for kind in kinds %}<option value="{{ kind }}"{% if kind == place.kind %} selected{% endif %}>{{ kind | place }}</option>{% endfor %}
+            </select>
+            <button class="quiet">Save</button>
+          </form>
+        </div>
+      </details>
     </li>
-  {% else %}<li class="muted">No places yet. Tell the assistant where you shop, or add a place here.</li>{% endfor %}
+  {% else %}<li class="empty">No places yet. Tell the assistant where you shop, or add a place here.</li>{% endfor %}
   </ul>
-  <form hx-post="/dashboard/settings/places" hx-target="#settings">
-    <input type="text" name="name" placeholder="Place, e.g. Tesco Extra" required>
-    <select name="kind" aria-label="Kind of place">
-      {% for kind in kinds %}<option value="{{ kind }}"{% if kind == "store" %} selected{% endif %}>{{ kind }}</option>{% endfor %}
-    </select>
+</div>
+<details class="card fold add">
+  <summary>{{ icon("plus") }}<span class="grow">Add a place</span>{{ icon("down", "chev") }}</summary>
+  <form class="stack" hx-post="/dashboard/settings/places" hx-target="#settings">
+    <label class="field">Name <input type="text" name="name" placeholder="e.g. Tesco Extra" required></label>
+    <label class="field">What kind of place
+      <select name="kind">
+        {% for kind in kinds %}<option value="{{ kind }}"{% if kind == "store" %} selected{% endif %}>{{ kind | place }}</option>{% endfor %}
+      </select>
+    </label>
     <button>Add</button>
   </form>
-  <p class="muted">A phone names a place exactly as it is written here. Only a <em>store</em> sends its list on
-    arrival; a name a phone sends that is not here yet appears as <em>other</em>.</p>
-</div>
-<h2>Facts</h2>
-<div class="card">
-  <ul class="rows">
+</details>
+<h2>Things to remember</h2>
+<p class="hint">What the assistant keeps in mind about your household, like the milk you buy or an allergy.</p>
+<div class="card rows">
+  <ul class="list">
   {% for fact in facts %}
     <li>
-      <span class="grow">{{ fact.key }}{% if fact.member %} <span class="muted">{{ fact.member }}</span>{% endif %}</span>
-      <form hx-post="/dashboard/settings/facts" hx-target="#settings">
-        <input type="hidden" name="key" value="{{ fact.key }}">
-        <input type="hidden" name="member_id" value="{{ fact.member_id or '' }}">
-        <input type="text" name="value" value="{{ fact.value }}" aria-label="{{ fact.key }}" required>
-        <button class="quiet">Save</button>
-      </form>
-      <button class="quiet" hx-post="/dashboard/settings/facts" hx-target="#settings"
-              hx-vals='{{ {"key": fact.key, "member_id": fact.member_id or "", "value": ""} | tojson }}'>Forget</button>
+      <details class="more">
+        <summary>
+          <span class="grow"><span class="title cap">{{ fact.key | replace("_", " ") }}{% if fact.member %} <span class="pill">{{ fact.member }}</span>{% endif %}</span>
+            <span class="sub">{{ fact.value }}</span></span>
+          {{ icon("down", "chev") }}
+        </summary>
+        <div class="more-body">
+          <form class="inline" hx-post="/dashboard/settings/facts" hx-target="#settings">
+            <input type="hidden" name="key" value="{{ fact.key }}">
+            <input type="hidden" name="member_id" value="{{ fact.member_id or '' }}">
+            <input type="text" name="value" value="{{ fact.value }}" aria-label="{{ fact.key }}" required>
+            <button class="quiet">Save</button>
+          </form>
+          <button class="danger" hx-post="/dashboard/settings/facts" hx-target="#settings"
+                  hx-vals='{{ {"key": fact.key, "member_id": fact.member_id or "", "value": ""} | tojson }}'>Forget this</button>
+        </div>
+      </details>
     </li>
-  {% else %}<li class="muted">Nothing remembered yet. Tell the assistant, or add a fact here.</li>{% endfor %}
+  {% else %}<li class="empty">Nothing remembered yet. Tell the assistant, or add something here.</li>{% endfor %}
   </ul>
-  <form hx-post="/dashboard/settings/facts" hx-target="#settings">
-    <input type="text" name="key" placeholder="Fact, e.g. milk brand" required>
-    <input type="text" name="value" placeholder="Value" required>
-    <select name="member_id" aria-label="About">
-      <option value="">everyone</option>
-      {% for member in family %}<option value="{{ member.id }}">{{ member.name }}</option>{% endfor %}
-    </select>
+</div>
+<details class="card fold add">
+  <summary>{{ icon("plus") }}<span class="grow">Add something to remember</span>{{ icon("down", "chev") }}</summary>
+  <form class="stack" hx-post="/dashboard/settings/facts" hx-target="#settings">
+    <label class="field">What <input type="text" name="key" placeholder="e.g. milk brand" required></label>
+    <label class="field">Answer <input type="text" name="value" placeholder="e.g. Arla semi-skimmed" required></label>
+    <label class="field">About
+      <select name="member_id">
+        <option value="">Everyone</option>
+        {% for member in family %}<option value="{{ member.id }}">{{ member.name }}</option>{% endfor %}
+      </select>
+    </label>
     <button>Add</button>
   </form>
-</div>
-<p class="muted">The phone calendar subscribe link is on the <a href="/dashboard/calendar">Calendar</a> page.</p>
+</details>
+<p class="hint">The link for your phone's calendar is on the <a href="/dashboard/calendar">Calendar</a> page.</p>

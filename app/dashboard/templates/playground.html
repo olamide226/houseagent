@@ -1,13 +1,16 @@
 {% extends "base.html" %}
-{% block title %}Playground{% endblock %}
+{% block title %}Practice chat{% endblock %}
 {% block main %}
-<h1>Playground</h1>
-<p class="muted">Talk to the assistant here. Dry run by default: the whole turn is rolled back, so nothing is saved
-  and each message starts fresh.</p>
+<h1>Practice chat</h1>
+<p class="lead">Try a message and see what the assistant would do. Nothing is saved unless you ask, and each message starts fresh.</p>
 <form class="card" hx-post="/dashboard/playground" hx-target="#turns" hx-swap="afterbegin" hx-on::after-request="this.text.value = ''">
-  <input type="text" name="text" placeholder="e.g. we're out of eggs" required autofocus>
-  <label><input type="checkbox" name="apply" value="true"> Apply for real</label>
-  <button>Send</button>
+  <div class="inline">
+    <input type="text" name="text" placeholder="e.g. we're out of eggs" aria-label="Message" autocomplete="off" required autofocus>
+    <button>Send</button>
+  </div>
+  <label class="check"><input type="checkbox" name="apply" value="true">
+    <span>Save it for real<span class="sub">Leave this off to practise.</span></span></label>
+  <p class="sub htmx-indicator" role="status">Thinking…</p>
 </form>
-<div id="turns"></div>
+<div id="turns" aria-live="polite"></div>
 {% endblock %}

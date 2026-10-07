@@ -1,46 +1,67 @@
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
-{% macro action_row(action) %}
-<li><span class="grow"><strong>{{ action.tool }}</strong>{% if action.undone_at %} <span class="muted">(undone)</span>{% endif %}
-      <pre>{{ action.result }}</pre></span>
-  {% if action.undoable and not action.undone_at %}
-  <button class="quiet" hx-post="/dashboard/activity/actions/{{ action.id }}/undo" hx-target="#activity">Undo</button>
-  {% endif %}</li>
+{% macro when(at) %}{{ local(at, session.timezone).strftime("%-d %b, %H:%M") }}{% endmacro %}
+{% macro changes(action) %}
+{% for kind, words in action.result | lines %}
+<li class="{{ 'was-undone' if action.undone_at else 'note' if kind == 'note' }}">{% if kind != "note" %}{{ icon("check") }}{% endif %}<span class="cap">{{ words }}</span></li>
+{% else %}
+<li class="{{ 'was-undone' if action.undone_at }}">{{ icon("check") }}<span class="cap">{{ action.tool | replace(".", ": ") | replace("_", " ") }}</span></li>
+{% endfor %}
 {% endmacro %}
+{% macro undo(action) %}
+{% if action.undone_at %}<span class="pill">Undone</span>
+{% elif action.undoable %}
+<button class="quiet" hx-post="/dashboard/activity/actions/{{ action.id }}/undo" hx-target="#activity">{{ icon("undo") }}Undo</button>
+{% endif %}
+{% endmacro %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 {% for entry in feed %}
-<div class="card">
-  <div class="muted">{{ entry.at.strftime("%-d %b %H:%M") }} UTC &middot; {{ entry.member or "system" }}
-    &middot; {% if entry.kind == "turn" %}{{ entry.channel }} {{ entry.scope }}{% else %}{{ "dashboard" if entry.source == "dashboard" else "chat" }}{% endif %}</div>
+<article class="card">
+  <div class="entry-head">
+    <span class="avatar">{{ (entry.member or "?")[:1] }}</span>
+    <span class="grow"><span class="title">{{ entry.member or "Someone not yet connected" }}</span>
+      <span class="sub">{{ when(entry.at) }} · {% if entry.kind == "turn" %}{{ entry.channel | channel }}{{ ", family group" if entry.scope == "group" }}{% else %}{{ "dashboard" if entry.source == "dashboard" else "in chat" }}{% endif %}</span></span>
+    {% if entry.kind != "turn" %}{{ undo(entry) }}{% endif %}
+  </div>
   {% if entry.kind == "turn" %}
   {% set turn = entry.meta.get("turn") %}
-  <div>{{ entry.text or "" }}{% for media in entry.media %} <span class="muted">[{{ media.kind }}]</span>{% endfor %}
-    {% if entry.meta.get("reaction_emoji") %}<span class="muted">reacted {{ entry.meta.reaction_emoji }}</span>{% endif %}</div>
-  {% if entry.status == "failed" %}<div class="error">Failed: {{ entry.meta.get("error", "") }}</div>{% endif %}
+  <p class="bubble said">{{ entry.text or "" }}{% for media in entry.media %} <span class="sub">[{{ media.kind }}]</span>{% endfor %}{% if entry.meta.get("reaction_emoji") %}<span class="sub">reacted {{ entry.meta.reaction_emoji }}</span>{% endif %}</p>
+  {% if entry.status == "failed" %}<p class="error">The assistant could not answer this.</p>{% endif %}
   {% if turn %}
-  <ul class="rows">
-    {% for call in turn.tool_calls %}
-    <li><span class="grow"><strong>{{ call.name }}</strong> <span class="muted">{{ call.args | tojson }}</span>
-          <pre{% if call.is_error %} class="error"{% endif %}>{{ call.result }}</pre></span></li>
-    {% endfor %}
-    {% for action in entry.actions %}{% if action.undoable and not action.undone_at %}
-    <li><span class="grow muted">{{ action.tool }} can be undone</span>
-        <button class="quiet" hx-post="/dashboard/activity/actions/{{ action.id }}/undo" hx-target="#activity">Undo</button></li>
-    {% elif action.undone_at %}<li class="muted">{{ action.tool }} was undone</li>{% endif %}{% endfor %}
-  </ul>
-  <div>&rarr; {% if turn.outcome == "noop" %}<span class="muted">no reply</span>
-       {% elif turn.outcome == "ack" %}{{ entry.react_emoji or "ack" }}
-       {% else %}{{ entry.reply or "" }}{% endif %}
-    {% if entry.outbox_status %}<span class="muted">({{ entry.outbox_status }})</span>{% endif %}
+  {% if turn.outcome == "noop" %}<p class="sub">No reply was needed.</p>
+  {% else %}
+  <p class="bubble reply">{% if turn.outcome == "ack" %}{{ entry.react_emoji if entry.react_emoji and entry.react_emoji != "ack" else "👍" }}{% else %}{{ entry.reply or "" }}{% endif %}</p>
+  {% if entry.outbox_status %}
+  <div class="act end"><span class="sub{{ ' bad' if entry.outbox_status == 'failed' }}">{{ entry.outbox_status | send }}</span>
     {% if entry.outbox_status == "failed" %}
-    <span class="error">{{ entry.last_error }}</span>
-    <button class="quiet" hx-post="/dashboard/activity/outbox/{{ entry.outbox_id }}/retry" hx-target="#activity">Retry send</button>
+    <button class="quiet" hx-post="/dashboard/activity/outbox/{{ entry.outbox_id }}/retry" hx-target="#activity">Send again</button>
     {% endif %}</div>
-  <div class="muted">{{ turn.usage.input_tokens }} in ({{ turn.usage.cached_tokens }} cached), {{ turn.usage.output_tokens }} out
-    &middot; {{ turn.latency_ms }} ms</div>
+  {% endif %}
+  {% endif %}
+  {% for action in entry.actions %}
+  <div class="act did"><ul class="changes grow">{{ changes(action) }}</ul>{{ undo(action) }}</div>
+  {% endfor %}
+  {% endif %}
+  {% if session.is_admin and (turn or entry.status == "failed") %}
+  <details class="tech">
+    <summary>Technical details</summary>
+    {% if entry.status == "failed" %}<pre class="error">Failed: {{ entry.meta.get("error", "") }}</pre>{% endif %}
+    {% if turn %}
+    <ul class="list">
+      {% for call in turn.tool_calls %}
+      <li><strong>{{ call.name }}</strong> {{ call.args | tojson }}
+        <pre{% if call.is_error %} class="error"{% endif %}>{{ call.result }}</pre></li>
+      {% endfor %}
+    </ul>
+    {% if entry.last_error %}<pre class="error">{{ entry.last_error }}</pre>{% endif %}
+    <p>{{ entry.channel }} {{ entry.scope }}{% if entry.outbox_status %} · send {{ entry.outbox_status }}{% endif %} ·
+      {{ turn.usage.input_tokens }} in ({{ turn.usage.cached_tokens }} cached), {{ turn.usage.output_tokens }} out
+      · {{ turn.latency_ms }} ms</p>
+    {% endif %}
+  </details>
   {% endif %}
   {% else %}
-  <ul class="rows">{{ action_row(entry) }}</ul>
+  <ul class="changes">{{ changes(entry) }}</ul>
   {% endif %}
-</div>
+</article>
 {% else %}
-<p class="muted">Nothing has happened yet.</p>
+<div class="card"><p class="empty">Nothing has happened yet. What you say to the assistant, and what changes, shows up here.</p></div>
 {% endfor %}

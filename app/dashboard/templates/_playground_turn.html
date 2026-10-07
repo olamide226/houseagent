@@ -1,17 +1,30 @@
-<div class="card">
-  <div><strong>{{ session.name }}:</strong> {{ text }}</div>
+<article class="card">
+  <p class="bubble said">{{ text }}</p>
   {% if error %}
-  <div class="error">{{ error }}</div>
+  <p class="error">The assistant could not answer this.</p>
+  <pre class="error">{{ error }}</pre>
   {% else %}
-  <ul class="rows">
-    {% for call in result.tool_calls %}
-    <li><span class="grow"><strong>{{ call.name }}</strong> <span class="muted">{{ call.args | tojson }}</span>
-          <pre{% if call.is_error %} class="error"{% endif %}>{{ call.result }}</pre></span></li>
-    {% endfor %}
+  {% if result.noop %}<p class="sub">No reply was needed.</p>
+  {% else %}<p class="bubble reply">{{ "👍" if result.ack_only else result.reply }}</p>{% endif %}
+  {% if result.tool_calls %}
+  <ul class="changes">
+    {% for call in result.tool_calls %}{% for kind, words in call.result | lines %}
+    <li class="{{ 'note' if kind == 'note' }}">{% if call.is_error or kind == "error" %}{{ icon("alert") }}{% elif kind != "note" %}{{ icon("check") }}{% endif %}<span class="cap">{{ words }}</span></li>
+    {% endfor %}{% endfor %}
   </ul>
-  <div>&rarr; {% if result.noop %}<span class="muted">NOOP (no reply)</span>{% elif result.ack_only %}ACK (a reaction)
-       {% else %}{{ result.reply }}{% endif %}</div>
-  <div class="muted">{{ "applied" if applied else "dry run, nothing saved" }} &middot;
-    {{ result.usage.input_tokens }} in, {{ result.usage.output_tokens }} out</div>
   {% endif %}
-</div>
+  <p class="sub act">{{ "Saved for real." if applied else "Practice only: nothing was saved." }}</p>
+  {% if session.is_admin %}
+  <details class="tech">
+    <summary>Technical details</summary>
+    <ul class="list">
+      {% for call in result.tool_calls %}
+      <li><strong>{{ call.name }}</strong> {{ call.args | tojson }}
+        <pre{% if call.is_error %} class="error"{% endif %}>{{ call.result }}</pre></li>
+      {% endfor %}
+    </ul>
+    <p>{{ "applied" if applied else "dry run" }} · {{ result.usage.input_tokens }} in, {{ result.usage.output_tokens }} out</p>
+  </details>
+  {% endif %}
+  {% endif %}
+</article>

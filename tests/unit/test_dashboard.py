@@ -85,7 +85,7 @@ async def test_pages_need_a_session_and_a_magic_link_works_exactly_once(client):
         token = await members.create_login_token(conn, home.ola, utcnow())
     for path in ("/dashboard", "/dashboard/shopping", "/dashboard/inventory", "/dashboard/calendar",
                  "/dashboard/activity", "/dashboard/playground", "/dashboard/family", "/dashboard/settings",
-                 "/dashboard/channels"):
+                 "/dashboard/channels", "/dashboard/more"):
         refused = await client.get(path)
         assert refused.status_code == 401 and "login link" in refused.text
 
@@ -154,6 +154,23 @@ async def test_every_post_needs_the_csrf_token(client):
 
 
 # ---------------------------------------------------------------- pages and writes
+async def test_the_tab_bar_marks_the_page_and_more_leads_to_the_rest(client):
+    async with tx() as conn:
+        home = await seed_home(conn)
+        item = await add_item(conn, home, "rice", qty=1)
+    await login(client, home)
+    current = re.compile(r'<a (?:class="only-phone" )?href="(/dashboard[\w/]*)" aria-current="page">')
+    for path, marked in (("/dashboard", ["/dashboard"]), ("/dashboard/shopping", ["/dashboard/shopping"]),
+                         (f"/dashboard/inventory/items/{item}", ["/dashboard/inventory"]),
+                         ("/dashboard/family", ["/dashboard/more", "/dashboard/family"]),
+                         ("/dashboard/more", ["/dashboard/more"])):
+        assert current.findall((await client.get(path)).text) == marked
+    more = (await client.get("/dashboard/more")).text
+    for page in ("family", "channels", "settings", "activity", "playground"):
+        assert f'<a class="row" href="/dashboard/{page}">' in more
+    assert 'action="/logout"' in more
+
+
 def test_stored_values_are_shown_in_plain_words():
     assert [words.repeat_text(rule) for rule in (
         "FREQ=DAILY", "FREQ=WEEKLY;BYDAY=TU,TH", "RRULE:FREQ=MONTHLY;INTERVAL=2", "FREQ=DAILY;BYHOUR=18",
@@ -176,7 +193,7 @@ async def test_today_shows_list_count_low_and_expiring_items(client):
     csrf = await login(client, home)
     await client.post("/dashboard/shopping/add", data={"item": "eggs"}, headers=csrf)
     page = (await client.get("/dashboard")).text
-    assert ">1</a>" in page and "rice" in page and "bread" not in page
+    assert 'class="stat">1</span>' in page and "rice" in page and "bread" not in page
 
 
 async def test_shopping_page_writes_go_through_the_services_and_are_logged_as_dashboard(client):
@@ -281,18 +298,23 @@ async def test_activity_shows_turns_and_dashboard_actions_and_can_undo(client):
     csrf = await login(client, home, home.members["Ada"])                    # any adult can look and fix
     await client.post("/dashboard/shopping/add", data={"item": "bleach"}, headers=csrf)
     page = (await client.get("/dashboard/activity")).text
-    assert "finished the rice" in page and "log_inventory" in page and "OK: rice finished" in page
-    assert "200 in" in page and "shopping.add" in page and "pending" in page
+    assert "finished the rice" in page and ">rice finished (store)<" in page and "Waiting to send" in page
+    assert ">bleach added to shopping list<" in page
+    assert "log_inventory" not in page and "200 in" not in page             # how it was done is the admin's to see
 
     async with tx() as conn:
         action = await fetch_one(conn, "select id from agent_actions where tool = 'log_inventory'")
     undone = await client.post(f"/dashboard/activity/actions/{action['id']}/undo", headers=csrf)
-    assert undone.status_code == 200 and "was undone" in undone.text
+    assert undone.status_code == 200 and "Undone" in undone.text
     async with tx() as conn:
         assert (await stock_of(conn, home))[("rice", "store")] == (3, "in_stock")
         assert await active_list(conn, home) == {"bleach": "explicit"}
     again = await client.post(f"/dashboard/activity/actions/{action['id']}/undo", headers=csrf)
     assert "already undone" in again.text
+
+    await login(client, home)
+    page = (await client.get("/dashboard/activity")).text
+    assert "log_inventory" in page and "OK: rice finished" in page and "200 in" in page and "send pending" in page
 
 
 async def test_playground_is_a_dry_run_unless_apply_is_ticked(client):
@@ -304,7 +326,8 @@ async def test_playground_is_a_dry_run_unless_apply_is_ticked(client):
 
     app.state.runtime = LoopRuntime(FakeLLM(*script))
     dry = await client.post("/dashboard/playground", data={"text": "finished the rice"}, headers=csrf)
-    assert "OK: rice finished" in dry.text and "dry run, nothing saved" in dry.text
+    assert ">rice finished (store)<" in dry.text and "OK: rice finished" in dry.text
+    assert "Practice only: nothing was saved." in dry.text
     async with tx() as conn:
         assert (await stock_of(conn, home))[("rice", "store")] == (3, "in_stock")
         for table in ("messages", "outbox", "agent_actions", "inventory_events", "threads"):
@@ -312,7 +335,7 @@ async def test_playground_is_a_dry_run_unless_apply_is_ticked(client):
 
     app.state.runtime = LoopRuntime(FakeLLM(*script))
     real = await client.post("/dashboard/playground", data={"text": "finished the rice", "apply": "true"}, headers=csrf)
-    assert "applied" in real.text
+    assert "Saved for real." in real.text
     async with tx() as conn:
         assert (await stock_of(conn, home))[("rice", "store")] == (0, "out")
         assert await active_list(conn, home) == {"rice": "finished"}
@@ -429,7 +452,8 @@ async def test_calendar_page_lists_and_cancels_reminders_and_today_shows_what_is
     assert "Next week" not in today
 
     page = (await client.get("/dashboard/calendar")).text
-    assert "call the landlord" in page and page.count("bins out") == 1 and "Next week" in page
+    assert "call the landlord" in page and "Next week" in page
+    assert page.count(">bins out<") == 1 and "for everyone · every day" in page
     async with tx() as conn:
         reminder = await fetch_one(conn, "select id from reminders where text = 'call the landlord'")
     await client.post(f"/dashboard/calendar/reminders/{reminder['id']}/cancel", headers=csrf)
@@ -514,9 +538,9 @@ async def test_family_page_adds_an_adult_whose_invite_connects_them_without_anyo
         logged = await fetch_all(conn, "select source, tool, member_id, inverse <> '[]' as undoable "
                                        "from agent_actions order by created_at")
     assert linked == {"name": "Ada", "preferred_channel": "telegram"}
-    assert page.count("telegram") == 2 and "not connected" not in page       # both adults show their channel
+    assert page.count("Telegram") == 2 and "Not connected" not in page       # both adults show their channel
     activity = (await client.get("/dashboard/activity")).text
-    assert "invite.redeem" in activity and "family.add" in activity          # connecting shows up beside the add
+    assert "Ada connected on telegram" in activity and "new invite for Ada" in activity   # beside the add
     assert [(a["source"], a["tool"], a["undoable"]) for a in logged] == [
         ("dashboard", "family.add", True), ("dashboard", "family.add", True), ("agent", "invite.redeem", False)]
     # And Ada, now an adult with a chat, can log in herself.
@@ -655,7 +679,7 @@ async def test_settings_makes_and_replaces_a_presence_link_that_is_shown_once_an
     link = re.compile(r'value="(http://testserver/presence/([\w-]{43}))"')
     page = (await client.get("/dashboard/settings")).text
     assert page.count("no link yet") == 2 and "Make link" in page and "testserver/presence/" not in page and "Tobi" not in \
-        page.split("Arriving at the shops")[1].split("<h2>Places")[0]
+        page.split("The list when you reach a shop")[1].split("<h2>Places")[0]
 
     made = (await client.post(f"/dashboard/settings/presence/{ada}", headers=csrf)).text
     (url, token), = link.findall(made)
@@ -777,16 +801,16 @@ async def test_channels_page_shows_each_channel_its_chats_and_what_whatsapp_will
     await login(client, home)
 
     page = re.sub(r"\s+", " ", (await client.get("/dashboard/channels")).text)
-    assert "<strong>telegram</strong> <span class=\"muted\">on, last heard from" in page
-    assert "<strong>whatsapp</strong> <span class=\"muted\">on, last heard from" in page
-    assert "1 failed send in the last day" in page
-    assert page.count("Family group") == 1 and "main family chat" in page         # the other household's is not here
-    assert "<strong>Ola</strong> <span class=\"muted\">telegram" in page
-    assert page.count("template messages only until they next write") == 1          # Ola's WhatsApp DM
-    assert page.count("ordinary messages until") == 1                               # Ada's
-    assert "Create a whatsapp group" in page and "household_reminder" in page
-    assert "<strong>imessage</strong> <span class=\"muted\">on, last heard from never" in page
-    assert "not reachable since" not in page
+    assert 'Telegram</span> <span class="sub">Last heard from' in page
+    assert 'WhatsApp</span> <span class="sub">Last heard from' in page
+    assert "1 message could not be sent in the last day" in page
+    assert page.count("Family group") == 1 and "Main family chat" in page         # the other household's is not here
+    assert 'Ola</span> <span class="sub">Telegram' in page
+    assert page.count("Only the standard reminder gets through until they next write") == 1    # Ola's WhatsApp DM
+    assert page.count("Any message gets through until") == 1                                   # Ada's
+    assert "Create a WhatsApp group" in page and "household_reminder" in page
+    assert 'iMessage</span> <span class="sub">Last heard from never' in page
+    assert "Not reachable since" not in page
 
     # The worker's five-minute check finds BlueBubbles down at 12:00; this household uses iMessage.
     async with tx() as conn:
@@ -795,8 +819,8 @@ async def test_channels_page_shows_each_channel_its_chats_and_what_whatsapp_will
         respx.get("http://mac-mini.test:1234/api/v1/ping").respond(502)
         await jobs.imessage_health(ADAPTERS[Channel.imessage], london("2026-10-06 12:00"))
     page = re.sub(r"\s+", " ", (await client.get("/dashboard/channels")).text)
-    assert "not reachable since Tue 6 Oct 12:00; messages go to people's other channel" in page
-    assert page.count("not reachable since") == 1                                   # said of iMessage only
+    assert "Not reachable since Tue 6 Oct 12:00; messages go to people's other chat app" in page
+    assert page.count("Not reachable since") == 1                                   # said of iMessage only
 
 
 async def test_a_chat_that_has_only_just_connected_counts_as_heard_from(client):
@@ -806,8 +830,8 @@ async def test_a_chat_that_has_only_just_connected_counts_as_heard_from(client):
         await a_thread(conn, home, "whatsapp", OLA_WA)                          # ...and has not written since
     await login(client, home)
     page = (await client.get("/dashboard/channels")).text
-    assert "ordinary messages until" in page and "template messages only" not in page
-    assert page.count("last heard from never") == 2                             # Telegram and iMessage; not Ola's chat
+    assert "Any message gets through until" in page and "Only the standard reminder" not in page
+    assert page.count("Last heard from never") == 2                             # Telegram and iMessage; not Ola's chat
 
 
 async def test_channels_page_without_whatsapp_offers_no_group_and_refuses_the_request(client):
@@ -816,7 +840,7 @@ async def test_channels_page_without_whatsapp_offers_no_group_and_refuses_the_re
     csrf = await login(client, home)
     del ADAPTERS[Channel.whatsapp]
     page = await client.get("/dashboard/channels")
-    assert "Create a whatsapp group" not in page.text and "not set up" in page.text
+    assert "Create a WhatsApp group" not in page.text and "Not set up" in page.text
     for channel in ("whatsapp", "telegram", "carrier-pigeon"):
         refused = await client.post(f"/dashboard/channels/{channel}/group", data={"subject": "Family"}, headers=csrf)
         assert "cannot create groups" in refused.text

@@ -253,7 +253,7 @@ async def _calendar(request: Request, session: Session, template: str = "_calend
             "series": await calendar.active_events(conn, session.household_id, recurring=True),
             "reminders": await calendar.standalone_reminders(conn, session.household_id, now, until, expand=False),
         }
-    return _page(request, template, session, error=error, feed=feed, local=local, repeats=REPEATS, **context)
+    return _page(request, template, session, error=error, feed=feed, repeats=REPEATS, **context)
 
 
 def _when(value: str, timezone: str) -> datetime:
@@ -332,7 +332,7 @@ async def _family(request: Request, session: Session, template: str = "_family.h
                   invite: dict[str, str | None] | None = None) -> Response:
     async with tx() as conn:
         family = await members.family(conn, session.household_id, utcnow())
-    return _page(request, template, session, family=family, error=error, invite=invite, local=local)
+    return _page(request, template, session, family=family, error=error, invite=invite)
 
 
 @router.get("/family")
@@ -412,7 +412,7 @@ async def _channels(request: Request, session: Session, template: str = "_channe
         # Found by the worker's five-minute check of the BlueBubbles server.
         "down_since": imessage_down if channel == Channel.imessage else None,
     } for channel in Channel]
-    return _page(request, template, session, health=health, chats=chats, error=error, invite=invite, local=local)
+    return _page(request, template, session, health=health, chats=chats, error=error, invite=invite)
 
 
 def _group_host(channel: str) -> GroupHost:
@@ -617,7 +617,7 @@ async def _system(request: Request, session: Session, template: str = "_system.h
            "subscription": settings.llm_provider in ("claude_code", "codex_cli"),
            "failed": last if last and last["status"] == "failed" else None}
     return templates.TemplateResponse(request, template, {
-        "session": session, "error": error, "notice": notice, "llm": llm, "version": _version(), "local": local,
+        "session": session, "error": error, "notice": notice, "llm": llm, "version": _version(),
         "evals": _eval_results(settings.eval_results_dir), "quantity_text": inventory.quantity_text, **context,
     }, status_code=status_code)
 
@@ -713,6 +713,13 @@ async def activity_retry(request: Request, outbox_id: str, session: Session = De
     async with tx() as conn:
         await outbound.retry(conn, session.household_id, outbox_id)
     return await _activity(request, session, "_activity.html")
+
+
+# ---------------------------------------------------------------- More
+@router.get("/more")
+async def more_page(request: Request, session: Session = Depends(current_session)) -> Response:
+    """Where a phone finds the pages that are not on its tab bar."""
+    return _page(request, "more.html", session)
 
 
 # ---------------------------------------------------------------- Playground

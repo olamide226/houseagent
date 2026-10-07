@@ -2,33 +2,50 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111311" media="(prefers-color-scheme: dark)">
   <title>{% block title %}Home{% endblock %}</title>
-  <link rel="stylesheet" href="/static/app.css">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css?v=2">
   <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/app.js?v=2" defer></script>
 </head>
-<body{% if session %} hx-headers='{"X-CSRF-Token": "{{ session.csrf }}"}'{% endif %}>
+<body class="{{ 'app' if session else 'bare' }}"{% if session %} hx-headers='{"X-CSRF-Token": "{{ session.csrf }}"}'{% endif %}>
 {% if session %}
-<header>
-  <strong>{{ session.household }}</strong>
-  <nav>
-    <a href="/dashboard">Today</a>
-    <a href="/dashboard/shopping">Shopping</a>
-    <a href="/dashboard/inventory">Inventory</a>
-    <a href="/dashboard/calendar">Calendar</a>
-    <a href="/dashboard/family">Family</a>
-    <a href="/dashboard/channels">Channels</a>
-    <a href="/dashboard/activity">Activity</a>
-    <a href="/dashboard/playground">Playground</a>
-    <a href="/dashboard/settings">Settings</a>
-    {% if session.is_admin %}<a href="/dashboard/system">System</a>{% endif %}
-  </nav>
-  <form method="post" action="/logout">
-    <input type="hidden" name="csrf" value="{{ session.csrf }}">
-    <button class="quiet" title="Signed in as {{ session.name }}">Log out</button>
-  </form>
+{# The part of the path after /dashboard says which page this is: "" is Today. #}
+{% set here = (request.url.path ~ "/").split("/")[2] %}
+{% macro to(page, name, label) %}
+<a href="/dashboard{{ '/' ~ page if page }}"{% if here == page %} aria-current="page"{% endif %}>{{ icon(name) }}<span>{{ label }}</span></a>
+{% endmacro %}
+<a class="skip" href="#main">Skip to the page</a>
+<header class="topbar">
+  <a class="brand" href="/dashboard"><span class="logo">{{ icon("home") }}</span><span>{{ session.household }}</span></a>
 </header>
+<nav class="nav" aria-label="Pages">
+  {{ to("", "home", "Today") }}
+  {{ to("shopping", "cart", "Shopping") }}
+  {{ to("inventory", "fridge", "Pantry") }}
+  {{ to("calendar", "calendar", "Calendar") }}
+  <a class="only-phone" href="/dashboard/more"{% if here not in ("", "shopping", "inventory", "calendar") %} aria-current="page"{% endif %}>{{ icon("more") }}<span>More</span></a>
+  <div class="nav-more">
+    <span class="nav-label">Household</span>
+    {{ to("family", "people", "Family") }}
+    {{ to("channels", "chat", "Chat apps") }}
+    {{ to("settings", "settings", "Settings") }}
+    <span class="nav-label">Behind the scenes</span>
+    {{ to("activity", "clock", "Activity") }}
+    {{ to("playground", "spark", "Practice chat") }}
+    {% if session.is_admin %}{{ to("system", "pulse", "System") }}{% endif %}
+  </div>
+  <form class="nav-foot" method="post" action="/logout">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <span class="sub">Signed in as {{ session.name }}</span>
+    <button>{{ icon("logout") }}Log out</button>
+  </form>
+</nav>
 {% endif %}
-<main>{% block main %}{% endblock %}</main>
+<main id="main">{% block main %}{% endblock %}</main>
+<div id="toast" role="status"></div>
 </body>
 </html>

@@ -43,10 +43,12 @@ async def test_only_an_admin_sees_the_system_page_its_export_and_its_rebuild(cli
     assert (await client.get("/dashboard/system/export")).status_code == 403
     assert (await client.post("/dashboard/system/rebuild-stock", headers=csrf)).status_code == 403
     assert 'href="/dashboard/system"' not in (await client.get("/dashboard")).text
+    assert 'href="/dashboard/system"' not in (await client.get("/dashboard/more")).text
 
     await login(client, home)
     assert (await client.get("/dashboard/system")).status_code == 200
     assert 'href="/dashboard/system"' in (await client.get("/dashboard")).text
+    assert '<a class="row" href="/dashboard/system">' in (await client.get("/dashboard/more")).text
 
 
 # ---------------------------------------------------------------- worker, jobs, model, version

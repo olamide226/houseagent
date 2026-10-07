@@ -2,60 +2,75 @@
 {% block title %}{{ item.canonical_name }}{% endblock %}
 {% block main %}
 <div id="item">
-<p><a href="/dashboard/inventory">&larr; Inventory</a></p>
-<h1>{{ item.canonical_name }}</h1>
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
-<div class="card">
-  <ul class="rows">
+{% set swap %}hx-target="#item" hx-select="#item" hx-swap="outerHTML"{% endset %}
+<p><a class="inline" href="/dashboard/inventory">{{ icon("left", "chev") }}Pantry</a></p>
+<h1 class="cap">{{ item.canonical_name }}</h1>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<div class="card rows">
+  <ul class="list">
   {% for row in stock %}
-    <li><span class="grow">{{ row.location }}: {{ quantity_text(row.qty_estimate, row.unit) }}
-          <span class="{{ row.status }}">{{ row.status | replace("_", " ") }}</span></span>
-      <form hx-post="/dashboard/inventory/items/{{ item.id }}/stock" hx-target="#item" hx-select="#item" hx-swap="outerHTML">
-        <input type="hidden" name="location_id" value="{{ row.location_id }}">
-        <input type="hidden" name="action" value="adjusted">
-        <input type="text" name="quantity" placeholder="Count" size="5" required>
-        <button>Set</button>
-      </form>
-      <form hx-post="/dashboard/inventory/items/{{ item.id }}/stock" hx-target="#item" hx-select="#item" hx-swap="outerHTML">
-        <input type="hidden" name="location_id" value="{{ row.location_id }}">
-        <input type="hidden" name="action" value="finished">
-        <button class="quiet">Finished</button>
-      </form></li>
-  {% else %}<li class="muted">No stock recorded.</li>{% endfor %}
+    <li class="row wrap">
+      <span class="grow"><span class="title cap">{{ row.location }}</span>
+        <span class="sub">{{ quantity_text(row.qty_estimate, row.unit) or "Amount not known" }}{% if row.expires_on %} · use by {{ row.expires_on.strftime("%a %-d %b") }}{% endif %}</span></span>
+      <span class="pill {{ row.status }}">{{ row.status | stock }}</span>
+      <div class="inline wrap full">
+        <form class="inline grow" hx-post="/dashboard/inventory/items/{{ item.id }}/stock" {{ swap }}>
+          <input type="hidden" name="location_id" value="{{ row.location_id }}">
+          <input type="hidden" name="action" value="adjusted">
+          <input type="text" name="quantity" inputmode="decimal" placeholder="How many?"
+                 aria-label="How many in the {{ row.location }} now" required>
+          <button class="quiet">Update</button>
+        </form>
+        <form hx-post="/dashboard/inventory/items/{{ item.id }}/stock" {{ swap }}>
+          <input type="hidden" name="location_id" value="{{ row.location_id }}">
+          <input type="hidden" name="action" value="finished">
+          <button class="quiet">None left</button>
+        </form>
+      </div>
+    </li>
+  {% else %}<li class="empty">Nothing recorded for this yet.</li>{% endfor %}
   </ul>
 </div>
-<h2>Details</h2>
-<form class="stack card" hx-post="/dashboard/inventory/items/{{ item.id }}/edit" hx-target="#item" hx-select="#item" hx-swap="outerHTML">
-  <label>Also known as (comma separated) <input type="text" name="aliases" value="{{ item.aliases | join(', ') }}"></label>
-  <label>Low when at or below <input type="text" name="low_threshold" value="{{ item.low_threshold.normalize() if item.low_threshold is not none else '' }}"></label>
-  <label>Usual place
+<h2>About this item</h2>
+<form class="card stack" hx-post="/dashboard/inventory/items/{{ item.id }}/edit" {{ swap }}>
+  <label class="field">Other names for it
+    <input type="text" name="aliases" value="{{ item.aliases | join(', ') }}" placeholder="e.g. egg, free-range eggs">
+    <span class="sub">Separate names with commas.</span></label>
+  <label class="field">Running low at
+    <input type="text" name="low_threshold" inputmode="decimal" value="{{ item.low_threshold.normalize() if item.low_threshold is not none else '' }}">
+    <span class="sub">It counts as low when this many or fewer are left.</span></label>
+  <label class="field">Usually kept in
     <select name="default_location_id">
       {% for location in locations %}
       <option value="{{ location.id }}"{% if location.id == item.default_location_id %} selected{% endif %}>{{ location.name }}</option>
       {% endfor %}
     </select>
   </label>
-  <label><input type="checkbox" name="is_staple" value="true"{% if item.is_staple %} checked{% endif %}> Staple: goes on the list when it runs out</label>
+  <label class="check"><input type="checkbox" name="is_staple" value="true"{% if item.is_staple %} checked{% endif %}>
+    <span>Always keep this in<span class="sub">It goes on the shopping list when it runs out.</span></span></label>
   <button>Save</button>
 </form>
 {% if others %}
-<h2>Merge a duplicate into this item</h2>
-<form class="card" hx-post="/dashboard/inventory/items/{{ item.id }}/merge" hx-target="#item" hx-select="#item" hx-swap="outerHTML"
-      hx-confirm="Merge the selected item into {{ item.canonical_name }}? This cannot be undone.">
-  <select name="duplicate_id">
-    {% for other in others %}<option value="{{ other.id }}">{{ other.canonical_name }}</option>{% endfor %}
-  </select>
-  <button class="quiet">Merge</button>
-</form>
+<details class="card fold">
+  <summary><span class="grow">Recorded twice under two names?</span>{{ icon("down", "chev") }}</summary>
+  <p class="hint">Pick the duplicate and it is merged into {{ item.canonical_name }}. This cannot be undone.</p>
+  <form class="inline wrap" hx-post="/dashboard/inventory/items/{{ item.id }}/merge" {{ swap }}
+        hx-confirm="Merge the selected item into {{ item.canonical_name }}? This cannot be undone.">
+    <select name="duplicate_id" aria-label="The duplicate">
+      {% for other in others %}<option value="{{ other.id }}">{{ other.canonical_name }}</option>{% endfor %}
+    </select>
+    <button class="quiet">Merge</button>
+  </form>
+</details>
 {% endif %}
 <h2>History</h2>
-<div class="card">
-  <ul class="rows">
+<div class="card rows">
+  <ul class="list">
   {% for event in history %}
-    <li><span class="grow">{{ event.event_type }} {{ quantity_text(event.quantity, event.unit) }}
-          <span class="muted">{{ event.location or "" }}</span></span>
-        <span class="muted">{{ event.member or "" }} {{ event.source }}, {{ event.occurred_at.strftime("%-d %b %H:%M") }} UTC</span></li>
-  {% else %}<li class="muted">No history yet.</li>{% endfor %}
+    <li class="row"><span class="grow"><span class="title">{{ event.event_type | happened }}{% if event.quantity is not none %}: {{ quantity_text(event.quantity, event.unit) }}{% endif %}</span>
+          <span class="sub">{{ [event.location, event.member, event.source | source] | select | join(" · ") }}</span></span>
+        <span class="qty">{{ local(event.occurred_at, session.timezone).strftime("%-d %b, %H:%M") }}</span></li>
+  {% else %}<li class="empty">No history yet.</li>{% endfor %}
   </ul>
 </div>
 </div>

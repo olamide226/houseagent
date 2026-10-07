@@ -1,24 +1,23 @@
-<form hx-get="/dashboard/inventory" hx-target="#inventory" hx-trigger="change">
-  <label>Show
-    <select name="status">
-      {% for value, label in [("", "everything"), ("in_stock", "in stock"), ("low", "low"), ("out", "out"), ("unknown", "unknown")] %}
-      <option value="{{ value }}"{% if value == status %} selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </label>
-</form>
+<nav class="chips" aria-label="Show" data-scrolls>
+  {% for value, label in [("", "Everything"), ("low", "Running low"), ("out", "Run out"), ("in_stock", "In stock"), ("unknown", "Not sure")] %}
+  <a class="chip" href="/dashboard/inventory{{ '?status=' ~ value if value }}" hx-get="/dashboard/inventory?status={{ value }}"
+     hx-target="#inventory" hx-push-url="/dashboard/inventory{{ '?status=' ~ value if value }}"{% if value == status %} aria-current="true"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</nav>
 {% for location, rows in by_location.items() %}
-<h2>{{ location }}</h2>
-<div class="card">
-  <ul class="rows">
+<h2 class="cap">{{ location }}</h2>
+<div class="card rows">
+  <ul class="list">
   {% for row in rows %}
-    <li><a class="grow" href="/dashboard/inventory/items/{{ row.item_id }}">{{ row.item }}</a>
-        <span>{{ quantity_text(row.qty_estimate, row.unit) }}</span>
-        <span class="{{ row.status }}">{{ row.status | replace("_", " ") }}</span>
-        {% if row.expires_on %}<span class="muted">expires {{ row.expires_on.strftime("%-d %b") }}</span>{% endif %}</li>
+    <li><a class="row" href="/dashboard/inventory/items/{{ row.item_id }}">
+      <span class="grow"><span class="title cap">{{ row.item }}</span>
+        {% if row.expires_on %}<span class="sub">Use by {{ row.expires_on.strftime("%a %-d %b") }}</span>{% endif %}</span>
+      <span class="qty">{{ quantity_text(row.qty_estimate, row.unit) }}</span>
+      {% if row.status != "in_stock" %}<span class="pill {{ row.status }}">{{ row.status | stock }}</span>{% endif %}
+      {{ icon("right", "chev") }}</a></li>
   {% endfor %}
   </ul>
 </div>
 {% else %}
-<p class="muted">Nothing recorded yet. Tell the assistant what you have, or what you just bought.</p>
+<div class="card"><p class="empty">{% if status %}Nothing here.{% else %}Nothing recorded yet. Tell the assistant what you have, or what you just bought.{% endif %}</p></div>
 {% endfor %}

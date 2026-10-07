@@ -1,50 +1,59 @@
 {% extends "base.html" %}
 {% block title %}Today{% endblock %}
 {% block main %}
+<p class="eyebrow">Today</p>
 <h1>{{ today.strftime("%A %-d %B") }}</h1>
 <div class="card">
-  <div class="stat"><a href="/dashboard/shopping">{{ list_count }}</a></div>
-  <div class="muted">on the shopping list</div>
-  <form method="post" action="/dashboard/shopping/add">
+  <form class="inline" method="post" action="/dashboard/shopping/add">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">
-    <input type="text" name="item" placeholder="Add to the list" required>
+    <input type="text" name="item" placeholder="Add to the shopping list" aria-label="Add to the shopping list"
+           autocomplete="off" enterkeyhint="done" required>
     <button>Add</button>
   </form>
+  <a class="row under" href="/dashboard/shopping">
+    <span class="stat">{{ list_count }}</span>
+    <span class="grow">{{ "thing" if list_count == 1 else "things" }} on the shopping list</span>{{ icon("right", "chev") }}
+  </a>
 </div>
 {% for day, entries in days.items() %}
 <h2>{{ "Today" if day == today.date() else "Tomorrow" }}</h2>
-<div class="card">
-  <ul class="rows">
+<div class="card rows">
+  <ul class="list">
   {% for entry in entries %}
-    <li><span>{{ entry.at.strftime("%H:%M") }}</span>
+    <li class="row"><span class="time">{{ entry.at.strftime("%H:%M") }}</span>
     {% if entry.event %}
-      <span class="grow">{{ entry.event.title }}{% if entry.event.participants %} ({{ entry.event.participants | join(", ") }}){% endif %}</span>
-      <span class="muted">{{ entry.event.location or "" }}</span>
+      <span class="grow"><span class="title">{{ entry.event.title }}</span>
+        <span class="sub">{{ (entry.event.participants + ([entry.event.location] if entry.event.location else [])) | join(" · ") }}</span></span>
     {% else %}
-      <span class="grow">{{ entry.reminder.text }}</span><span class="muted">reminder, {{ entry.reminder.member or "everyone" }}</span>
+      <span class="grow"><span class="title">{{ entry.reminder.text }}</span>
+        <span class="sub">Reminder for {{ entry.reminder.member or "everyone" }}</span></span>{{ icon("bell") }}
     {% endif %}</li>
   {% endfor %}
   </ul>
 </div>
 {% else %}
-<p class="muted">Nothing on <a href="/dashboard/calendar">the calendar</a> today or tomorrow.</p>
+<h2>Coming up</h2>
+<div class="card"><p class="empty">Nothing planned for today or tomorrow.
+  <a href="/dashboard/calendar">Add something to the calendar</a></p></div>
 {% endfor %}
-<h2>Low or out</h2>
-<div class="card">
-  <ul class="rows">
+<h2>Running low</h2>
+<div class="card rows">
+  <ul class="list">
   {% for row in low %}
-    <li><a class="grow" href="/dashboard/inventory/items/{{ row.item_id }}">{{ row.item }}</a>
-        <span class="{{ row.status }}">{{ row.status }}</span><span class="muted">{{ row.location }}</span></li>
-  {% else %}<li class="muted">Nothing is running low.</li>{% endfor %}
+    <li><a class="row" href="/dashboard/inventory/items/{{ row.item_id }}">
+      <span class="grow"><span class="title cap">{{ row.item }}</span><span class="sub cap">{{ row.location }}</span></span>
+      <span class="pill {{ row.status }}">{{ row.status | stock }}</span>{{ icon("right", "chev") }}</a></li>
+  {% else %}<li class="empty">Nothing is running low.</li>{% endfor %}
   </ul>
 </div>
-<h2>Expiring within 3 days</h2>
-<div class="card">
-  <ul class="rows">
+<h2>Use soon</h2>
+<div class="card rows">
+  <ul class="list">
   {% for row in expiring %}
-    <li><a class="grow" href="/dashboard/inventory/items/{{ row.item_id }}">{{ row.item }}</a>
-        <span class="muted">{{ row.location }}, {{ row.expires_on.strftime("%-d %b") }}</span></li>
-  {% else %}<li class="muted">Nothing is about to expire.</li>{% endfor %}
+    <li><a class="row" href="/dashboard/inventory/items/{{ row.item_id }}">
+      <span class="grow"><span class="title cap">{{ row.item }}</span><span class="sub cap">{{ row.location }}</span></span>
+      <span class="qty">by {{ row.expires_on.strftime("%a %-d %b") }}</span>{{ icon("right", "chev") }}</a></li>
+  {% else %}<li class="empty">Nothing goes out of date in the next 3 days.</li>{% endfor %}
   </ul>
 </div>
 {% endblock %}

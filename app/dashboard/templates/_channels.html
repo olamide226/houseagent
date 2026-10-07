@@ -1,37 +1,42 @@
 {% macro when(at) %}{{ local(at, session.timezone).strftime("%a %-d %b %H:%M") if at else "never" }}{% endmacro %}
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 {% if invite %}
-<h2>Group invite</h2>
-<div class="card">
-  <p>Each adult opens this link, or scans the code, to join the family group. Anyone holding the link can join,
-     so pass it on privately.</p>
-  <p><a href="{{ invite.link }}">{{ invite.link }}</a></p>
-  <p class="qr">{{ invite.qr | safe }}</p>
-</div>
+<section class="card">
+  <h2>Group invite</h2>
+  <p class="hint">Each adult opens this link, or scans the code, to join the family group. Anyone holding the link can
+    join, so pass it on privately.</p>
+  <div class="invite">
+    <a class="btn big" href="{{ invite.link }}">Open the group invite</a>
+    <div class="qr">{{ invite.qr | safe }}</div>
+  </div>
+</section>
 {% endif %}
-<div class="card">
-  <ul class="rows">
+<div class="card rows">
+  <ul class="list">
   {% for channel in health %}
-    <li>
-      <span class="grow"><strong>{{ channel.channel }}</strong>
+    <li class="row">
+      <span class="dot {{ 'out' if channel.down_since or channel.failed else 'good' if channel.on }}"></span>
+      <span class="grow"><span class="title">{{ channel.channel | channel }}</span>
         {% if channel.on %}
-        <span class="muted">on, last heard from {{ when(channel.heard) }}, last sent {{ when(channel.last_sent) }}</span>
-        {% else %}<span class="muted">not set up</span>{% endif %}</span>
-      {% if channel.down_since %}<span class="out">not reachable since {{ when(channel.down_since) }}; messages go to people's other channel</span>{% endif %}
-      {% if channel.failed %}<span class="out">{{ channel.failed }} failed send{{ "" if channel.failed == 1 else "s" }} in the last day</span>{% endif %}
+        <span class="sub">Last heard from {{ when(channel.heard) }} · last sent {{ when(channel.last_sent) }}</span>
+        {% else %}<span class="sub">Not set up</span>{% endif %}
+        {% if channel.down_since %}<span class="sub bad">Not reachable since {{ when(channel.down_since) }}; messages go to people's other chat app</span>{% endif %}
+        {% if channel.failed %}<span class="sub bad">{{ channel.failed }} message{{ "" if channel.failed == 1 else "s" }} could not be sent in the last day</span>{% endif %}</span>
+      {% if channel.on %}<span class="pill good">On</span>{% endif %}
     </li>
   {% endfor %}
   </ul>
 </div>
 <h2>Chats</h2>
-<div class="card">
-  <ul class="rows">
+<p class="hint">Messages for the whole family go to the main family chat, or to each adult while there is none.</p>
+<div class="card rows">
+  <ul class="list">
   {% for chat in chats %}
-    <li>
-      <span class="grow"><strong>{% if chat.pending %}{{ chat.name }}{% elif chat.scope == "group" %}Family group{% else %}{{ chat.who or "Unlinked chat" }}{% endif %}</strong>
-        <span class="muted">{{ chat.channel }}{% if chat.pending %}, being created{% else %}, last heard from {{ when(chat.heard) }}{% endif %}{% if chat.is_primary %}, main family chat{% endif %}</span>
+    <li class="row wrap">
+      <span class="grow"><span class="title">{% if chat.pending %}{{ chat.name }}{% elif chat.scope == "group" %}Family group{% else %}{{ chat.who or "Someone not yet connected" }}{% endif %}{% if chat.is_primary %} <span class="pill good">Main family chat</span>{% endif %}</span>
+        <span class="sub">{{ chat.channel | channel }} · {% if chat.pending %}being created{% else %}last heard from {{ when(chat.heard) }}{% endif %}</span>
         {% if chat.window and not chat.pending %}
-        <span class="muted">{% if chat.window.open_until %}ordinary messages until {{ when(chat.window.open_until) }}{% else %}template messages only until they next write{% endif %}</span>
+        <span class="sub">{% if chat.window.open_until %}Any message gets through until {{ when(chat.window.open_until) }}{% else %}Only the standard reminder gets through until they next write{% endif %}</span>
         {% endif %}</span>
       {% if chat.pending %}
       <button class="quiet" hx-post="/dashboard/channels/threads/{{ chat.id }}/forget" hx-target="#channels">Forget</button>
@@ -43,18 +48,18 @@
       <button class="quiet" hx-post="/dashboard/channels/threads/{{ chat.id }}/primary" hx-target="#channels">Make main chat</button>
       {% endif %}
     </li>
-  {% else %}<li class="muted">No chats yet. They appear once someone connects.</li>{% endfor %}
+  {% else %}<li class="empty">No chats yet. They appear once someone connects.</li>{% endfor %}
   </ul>
 </div>
-<p class="muted">Briefs and reminders for the whole family go to the main family chat, or to each adult while there is none.
-   To use an existing group, add the assistant to it and write something there.</p>
+<p class="hint">To use a group you already have, add the assistant to it and write something there.</p>
 {% for channel in health if channel.creates_groups %}
-<h2>Create a {{ channel.channel }} group</h2>
-<form class="card" hx-post="/dashboard/channels/{{ channel.channel }}/group" hx-target="#channels">
+<h2>Create a {{ channel.channel | channel }} group</h2>
+<form class="card inline wrap" hx-post="/dashboard/channels/{{ channel.channel }}/group" hx-target="#channels">
   <input type="text" name="subject" value="{{ session.household }} family" maxlength="128" aria-label="Group name" required>
   <button>Create group</button>
 </form>
-<p class="muted">The group becomes the main family chat as soon as {{ channel.channel }} confirms it; reload this
-   page, then use Invite link to join. If it never does, Forget the request and ask again. Outside 24 hours of someone's last message, {{ channel.channel }} only
-   delivers the approved template{% if channel.template %} ({{ channel.template }}){% endif %}.</p>
+<p class="hint">The group becomes the main family chat as soon as {{ channel.channel | channel }} confirms it: reload
+  this page, then use Invite link to join. If it never does, Forget the request and ask again. More than 24 hours
+  after someone's last message, {{ channel.channel | channel }} only delivers the standard
+  reminder{% if channel.template and session.is_admin %} ({{ channel.template }}){% endif %}.</p>
 {% endfor %}
