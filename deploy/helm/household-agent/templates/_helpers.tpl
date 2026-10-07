@@ -39,6 +39,32 @@ securityContext:
     drop: [ALL]
 {{- end -}}
 
+{{/*
+Codex's sign-in, for LLM_PROVIDER=codex_cli: one claim, mounted in both processes, because Codex
+rewrites the file when it refreshes the sign-in and two copies would log each other out.
+*/}}
+{{- define "household-agent.codexHomeMount" -}}
+{{- if .Values.codexHome.existingClaim }}
+- {name: codex-home, mountPath: {{ .Values.codexHome.mountPath }}}
+{{- end }}
+{{- end -}}
+
+{{- define "household-agent.codexHomeVolume" -}}
+{{- if .Values.codexHome.existingClaim }}
+- name: codex-home
+  persistentVolumeClaim:
+    claimName: {{ .Values.codexHome.existingClaim }}
+{{- end }}
+{{- end -}}
+
+{{/* The pods run as nobody, who must be able to write the claim. */}}
+{{- define "household-agent.codexHomeOwner" -}}
+{{- if .Values.codexHome.existingClaim }}
+securityContext:
+  fsGroup: 65534
+{{- end }}
+{{- end -}}
+
 {{- define "household-agent.scheduling" -}}
 {{- with .Values.imagePullSecrets }}
 imagePullSecrets:

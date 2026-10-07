@@ -11,6 +11,9 @@ data:
   {{- end }}
   {{- end }}
   WORKER_HEARTBEAT_FILE: {{ .Values.worker.heartbeatFile | quote }}
+  {{- if .Values.codexHome.existingClaim }}
+  CODEX_HOME: {{ .Values.codexHome.mountPath | quote }}
+  {{- end }}
   {{- if eq (toString .Values.config.AGENT_RUNTIME) "letta" }}
   {{- /* Where Letta's tools reach each process's /internal/tools: in the cluster, never the ingress. */}}
   INTERNAL_BASE_URL: {{ printf "http://%s-api:%v" (include "household-agent.name" .) .Values.api.port | quote }}

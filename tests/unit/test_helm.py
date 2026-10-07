@@ -81,6 +81,24 @@ def test_the_letta_runtime_gives_the_worker_a_port_inside_the_cluster_only():
     assert not any(p.startswith("/internal") for p in paths(docs["Ingress", "ha"]))
 
 
+def test_codex_sign_in_is_one_claim_shared_by_both_processes_and_absent_by_default():
+    docs = render()
+    for name in ("ha-api", "ha-worker"):
+        pod = docs["Deployment", name]["spec"]["template"]["spec"]
+        assert pod["volumes"] == [{"name": "tmp", "emptyDir": {}}] and "securityContext" not in pod
+    assert "CODEX_HOME" not in docs["ConfigMap", "ha"]["data"]
+
+    docs = render("codexHome.existingClaim=codex-sign-in", "config.LLM_PROVIDER=codex_cli")
+    for name in ("ha-api", "ha-worker"):
+        pod = docs["Deployment", name]["spec"]["template"]["spec"]
+        assert {"name": "codex-home", "persistentVolumeClaim": {"claimName": "codex-sign-in"}} in pod["volumes"]
+        assert {"name": "codex-home", "mountPath": "/codex"} in pod["containers"][0]["volumeMounts"]
+        assert pod["securityContext"] == {"fsGroup": 65534}                 # nobody can write the sign-in file
+        assert pod["containers"][0]["securityContext"]["readOnlyRootFilesystem"]
+    assert docs["ConfigMap", "ha"]["data"]["CODEX_HOME"] == "/codex"
+    assert not any(kind in ("Secret", "PersistentVolumeClaim") for kind, _ in docs)     # the claim is yours, as the Secret is
+
+
 def test_autoscaling_migration_ingress_and_image_tag_are_values():
     docs = render("api.autoscaling.enabled=true")
     hpa = docs["HorizontalPodAutoscaler", "ha-api"]["spec"]

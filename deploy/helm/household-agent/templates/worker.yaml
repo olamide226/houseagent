@@ -24,6 +24,9 @@ spec:
         {{- end }}
     spec:
       {{- include "household-agent.scheduling" . | nindent 6 }}
+      {{- with (include "household-agent.codexHomeOwner" . | trim) }}
+      {{- . | nindent 6 }}
+      {{- end }}
       terminationGracePeriodSeconds: 60
       containers:
         - name: worker
@@ -50,8 +53,14 @@ spec:
           {{- include "household-agent.securityContext" . | nindent 10 }}
           volumeMounts:
             - {name: tmp, mountPath: /tmp}
+            {{- with (include "household-agent.codexHomeMount" . | trim) }}
+            {{- . | nindent 12 }}
+            {{- end }}
       volumes:
         - {name: tmp, emptyDir: {}}
+        {{- with (include "household-agent.codexHomeVolume" . | trim) }}
+        {{- . | nindent 8 }}
+        {{- end }}
 {{- if $letta }}
 ---
 # Only under the Letta runtime: Letta's tools call back into the worker for the turns it runs.

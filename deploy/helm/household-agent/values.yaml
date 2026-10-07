@@ -12,6 +12,8 @@ imagePullSecrets: []
 # INTERNAL_TOOL_TOKEN, LETTA_API_KEY. Nothing secret belongs in this file.
 existingSecret: household-agent
 
+# Add CLAUDE_CODE_OAUTH_TOKEN for LLM_PROVIDER=claude_code (docs/operations.md).
+
 # Everything that is not a secret, as environment variables for both processes.
 # See docs/operations.md for the full list.
 config:
@@ -24,6 +26,13 @@ config:
   LLM_MODEL: ""
   MEDIA_BACKEND: s3
   LOG_LEVEL: INFO
+
+# Only for LLM_PROVIDER=codex_cli: the PersistentVolumeClaim that holds Codex's sign-in. It is
+# mounted in both processes and set as CODEX_HOME. Codex rewrites the sign-in file whenever it
+# refreshes it, so it is a volume both pods share and never a Secret (docs/operations.md).
+codexHome:
+  existingClaim: ""
+  mountPath: /codex
 
 api:
   replicas: 1

@@ -31,6 +31,9 @@ spec:
         {{- end }}
     spec:
       {{- include "household-agent.scheduling" . | nindent 6 }}
+      {{- with (include "household-agent.codexHomeOwner" . | trim) }}
+      {{- . | nindent 6 }}
+      {{- end }}
       {{- if .Values.api.migrate }}
       initContainers:
         - name: migrate
@@ -61,8 +64,14 @@ spec:
           {{- include "household-agent.securityContext" . | nindent 10 }}
           volumeMounts:
             - {name: tmp, mountPath: /tmp}
+            {{- with (include "household-agent.codexHomeMount" . | trim) }}
+            {{- . | nindent 12 }}
+            {{- end }}
       volumes:
         - {name: tmp, emptyDir: {}}
+        {{- with (include "household-agent.codexHomeVolume" . | trim) }}
+        {{- . | nindent 8 }}
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service
