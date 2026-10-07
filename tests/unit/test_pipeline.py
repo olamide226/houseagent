@@ -275,6 +275,18 @@ async def test_the_dashboard_keyword_gets_a_login_link_by_dm_without_an_agent_tu
     assert [chat for chat, _, _ in adapter.sent] == ["1001"]     # the member's own DM, not the group
 
 
+async def test_a_word_to_send_still_counts_with_marks_around_it_and_not_inside_a_sentence(client):
+    async with tx() as conn:
+        home = await seed_home(conn)
+    for n, text in enumerate(["**dashboard**", "\u201cShops.\u201d"]):   # as the assistant's reply showed it, or as typed
+        await post(client, tg_update(n, text))
+    assert await process(home) == 0
+    first, second = [row["text"] for row in await rows("select text from outbox order by created_at")]
+    assert "/login/" in first and "/presence/" in second
+    await post(client, tg_update(9, "what is the dashboard?"))
+    assert await process(home, say("NOOP")) == 1                 # a question about it is the agent's
+
+
 async def test_voice_notes_are_transcribed_before_the_turn(client):
     class StandInTranscriber:
         async def transcribe(self, audio: bytes, mime: str) -> str:

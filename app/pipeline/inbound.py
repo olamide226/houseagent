@@ -302,19 +302,29 @@ async def simulate_turn(conn: AsyncConnection, runtime: AgentRuntime, household_
     return await run_turn(conn, build_envelope(batch), runtime, simulated=True)
 
 
+async def _login_link(conn: AsyncConnection, member_id: str, public_base_url: str) -> str:
+    token = await members.create_login_token(conn, member_id, utcnow())
+    return (f"Here is your link to the dashboard. It works once, for the next 10 minutes: "
+            f"{public_base_url}/login/{token}"
+            if token else "Too many login links for now. Try again in an hour.")
+
+
+async def _shops_link(conn: AsyncConnection, member_id: str, public_base_url: str) -> str:
+    return await households.shops_link(conn, member_id)
+
+
+# The exact words answered by code, never by the agent, because the answer holds a secret: a
+# one-time login link, and the person's link for arriving at a shop. The agent tells people about
+# them from app/agent/guide.py, which has a line for each.
+KEYWORDS = {"dashboard": _login_link, "shops": _shops_link}
+_AROUND_A_WORD = " \t\n.!?\"'`*\u201c\u201d\u2018\u2019"   # as people type one: Dashboard. or "shops"
+
+
 async def _keyword(conn: AsyncConnection, message: dict[str, Any], public_base_url: str) -> bool:
-    """Two exact words are answered by code, never by the agent, because the answer holds a secret:
-    "dashboard" with a one-time login link, "shops" with the person's link for arriving at a shop."""
-    word = (message["text"] or "").strip().lower()
-    if word == "dashboard":
-        token = await members.create_login_token(conn, message["member_id"], utcnow())
-        text = (f"Here is your link to the dashboard. It works once, for the next 10 minutes: "
-                f"{public_base_url}/login/{token}"
-                if token else "Too many login links for now. Try again in an hour.")
-    elif word == "shops":
-        text = await households.shops_link(conn, message["member_id"])
-    else:
+    answer = KEYWORDS.get((message["text"] or "").strip(_AROUND_A_WORD).lower())
+    if answer is None:
         return False
+    text = await answer(conn, message["member_id"], public_base_url)
     await enqueue(conn, OutboundMessage(household_id=message["household_id"], target="member",
                                         member_id=message["member_id"], text=text, respect_quiet_hours=False))
     await execute(conn, "update messages set status = 'processed', processed_at = clock_timestamp() "

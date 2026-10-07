@@ -70,7 +70,8 @@ unprocessed message is older than `DEBOUNCE_SECONDS`, which batches "out of eggs
 
 1. takes `pg_advisory_xact_lock(hashtext(household_id))`, so two messages never race on stock;
 2. claims the household's `received` messages (`FOR UPDATE SKIP LOCKED`);
-3. answers the exact keyword `dashboard` with a login link, without the agent;
+3. answers a message that is only the word `dashboard` or `shops` with that person's link,
+   without the agent (capitals, and a full stop, quotes or stars around the word, do not matter);
 4. for each thread: fetches each attachment once, stores it through `MediaStore` and transcribes
    voice notes, then builds the `Envelope` and runs the agent turn;
 5. queues the response: nothing for `NOOP`, an `ack` reaction for `ACK`, otherwise the reply text
