@@ -201,8 +201,8 @@ after on `openai_compat` (the after-run's total less the product cases), which i
 turn over their 69 turns. A turn is two or three model steps, and one step reads 990 more tokens
 than before (4,987 against 3,995, measured on the three one-step NOOP cases): about 945 for the
 guide, which is in the cached part of the prompt, and about 45 for the brief's three lines. The
-account balance, shown to the cent, read $4.32 before the first run and $4.15 after the last, so
-every run for this change together cost 17 cents: the whole suite twice, and the product cases
+account balance, shown to the cent, read $4.32 before the first run and $4.14 after the last, so
+every run for this change together cost 18 cents: the whole suite twice, and the product cases
 about fifteen times over. The first whole-suite run moved it by 2.
 
 **The product cases, three samples each**, with the guide left out, in the prompt (as built),
