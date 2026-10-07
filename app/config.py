@@ -23,13 +23,15 @@ class Settings(BaseSettings):
     worker_heartbeat_file: str = "/tmp/worker-heartbeat"   # touched every minute; the worker's liveness probe
     eval_results_dir: str = "tests/evals/.results"         # where the eval suite leaves its last result
 
-    llm_provider: Literal["openai_compat", "anthropic"]
+    llm_provider: Literal["openai_compat", "anthropic", "claude_code", "codex_cli"]
     llm_base_url: str | None = None
     llm_api_key: str = ""
     llm_model: str
     llm_fast_model: str | None = None
     llm_supports_images: bool = True
     llm_max_tool_iterations: int = 8
+    llm_cli_path: str | None = None           # claude_code and codex_cli: the CLI, when it is not on PATH
+    llm_cli_timeout: float = 120              # seconds one model step may take before its CLI is stopped
 
     stt_provider: Literal["openai_compat"] | None = None
     stt_base_url: str | None = None

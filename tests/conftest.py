@@ -82,3 +82,22 @@ async def client():
     inbound._invite_attempts.clear()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as http:
         yield http
+
+
+@pytest.fixture
+def cli(tmp_path, monkeypatch):
+    """A stand-in `claude` and `codex` on PATH, for the subscription adapters. No network."""
+    import sys
+
+    from tests.helpers import STAND_IN, StandIn
+
+    bin_dir, home = tmp_path / "bin", tmp_path / "home"
+    bin_dir.mkdir()
+    home.mkdir()
+    for name in ("claude", "codex"):
+        (bin_dir / name).write_text(STAND_IN.format(python=sys.executable))
+        (bin_dir / name).chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(home))   # where the stand-in keeps its plan and what it saw
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    return StandIn(home)

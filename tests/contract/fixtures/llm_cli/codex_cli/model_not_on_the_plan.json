@@ -1,0 +1,34 @@
+{
+ "recorded_with": "codex-cli 0.154.0",
+ "exit": 1,
+ "stdout": [
+  {
+   "type": "thread.started",
+   "thread_id": "01a11629-4dee-7ac1-94d4-d4911208c668"
+  },
+  {
+   "type": "item.completed",
+   "item": {
+    "id": "item_0",
+    "type": "error",
+    "message": "Model metadata for `not-a-model` not found. Defaulting to fallback metadata; this can degrade performance and cause issues."
+   }
+  },
+  {
+   "type": "turn.started"
+  },
+  {
+   "type": "error",
+   "message": "{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'not-a-model' model is not supported when using Codex with a ChatGPT account.\"}}"
+  },
+  {
+   "type": "turn.failed",
+   "error": {
+    "message": "{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'not-a-model' model is not supported when using Codex with a ChatGPT account.\"}}"
+   }
+  }
+ ],
+ "expect": {
+  "error": "Codex failed: {\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'not-a-model' model is not supported when using Codex with a ChatGPT account.\"}}"
+ }
+}

@@ -1,6 +1,9 @@
 """Seed helpers and fakes shared by the tests."""
+import base64
+import json
 from dataclasses import dataclass, field
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -358,3 +361,45 @@ async def bought_every(conn: AsyncConnection, home: Home, name: str, days: int, 
         (("restocked", 0), ("finished", days), ("restocked", days + 1), ("finished", 2 * days + 1))),
         ("restocked", last))
     return item_id
+
+
+# A stand-in for the `claude` and `codex` CLIs (the `cli` fixture puts it on PATH under both
+# names). It records how it was run, then prints and exits as the test planned.
+STAND_IN = '''#!{python}
+import base64, json, os, sys, time
+home = os.environ.get("CLAUDE_CONFIG_DIR") or os.environ["CODEX_HOME"]
+count = len([name for name in os.listdir(home) if name.startswith("seen-")])
+plans = json.load(open(os.path.join(home, "plans.json")))
+plan = plans[min(count, len(plans) - 1)]
+files = {{name: base64.b64encode(open(name, "rb").read()).decode() for name in os.listdir(".")}}
+with open(os.path.join(home, "seen-%d.json" % count), "w") as seen:
+    json.dump({{"argv": sys.argv[1:], "stdin": sys.stdin.read(), "env": dict(os.environ), "cwd": os.getcwd(),
+               "files": files, "pid": os.getpid()}}, seen)
+time.sleep(plan.get("sleep", 0))
+sys.stdout.write(plan.get("stdout", ""))
+sys.stderr.write(plan.get("stderr", ""))
+sys.exit(plan.get("exit", 0))
+'''
+
+
+class StandIn:
+    """Plans what the stand-in CLI answers and reads back how it was run."""
+
+    def __init__(self, home: Path) -> None:
+        self.home = home
+
+    def will(self, *plans: dict) -> None:
+        """What each run in turn prints and exits with; the last one repeats."""
+        (self.home / "plans.json").write_text(json.dumps(plans))
+
+    def replays(self, *recordings: dict) -> None:
+        """Answer with recorded runs of the real CLI (tests/contract/fixtures/llm_cli)."""
+        self.will(*({"stdout": "".join(json.dumps(line) + "\n" for line in r["stdout"]), "exit": r["exit"]}
+                    for r in recordings))
+
+    def seen(self, index: int = -1) -> dict:
+        """How run `index` was started. Its scratch files are kept here: they are gone by now."""
+        runs = len(list(self.home.glob("seen-*.json")))
+        run = json.loads((self.home / f"seen-{index % runs}.json").read_text())
+        run["files"] = {name: base64.b64decode(data) for name, data in run["files"].items()}
+        return run

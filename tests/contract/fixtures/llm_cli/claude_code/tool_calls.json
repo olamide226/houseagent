@@ -1,0 +1,158 @@
+{
+ "recorded_with": "claude 2.1.292, model haiku",
+ "exit": 1,
+ "stdout": [
+  {
+   "type": "system",
+   "subtype": "init",
+   "tools": [
+    "mcp__household__get_shopping_list",
+    "mcp__household__log_inventory"
+   ],
+   "mcp_servers": [
+    {
+     "name": "household",
+     "status": "connected",
+     "source": "dynamic"
+    }
+   ],
+   "model": "claude-haiku-4-5-20251001",
+   "claude_code_version": "2.1.292"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "thinking",
+      "thinking": ""
+     }
+    ]
+   }
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_01A1FWMC4KBkz3D2cQKk15du",
+      "name": "mcp__household__log_inventory",
+      "input": {
+       "changes": [
+        {
+         "item": "eggs",
+         "action": "finished"
+        },
+        {
+         "item": "bread",
+         "action": "finished"
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "toolu_01A1FWMC4KBkz3D2cQKk15du",
+      "type": "tool_result",
+      "content": [
+       {
+        "type": "text",
+        "text": "Requested."
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "tool_use",
+      "id": "toolu_01FGopcaRbLqFgJDemfwcn1k",
+      "name": "mcp__household__get_shopping_list",
+      "input": {}
+     }
+    ]
+   }
+  },
+  {
+   "type": "user",
+   "message": {
+    "role": "user",
+    "content": [
+     {
+      "tool_use_id": "toolu_01FGopcaRbLqFgJDemfwcn1k",
+      "type": "tool_result",
+      "content": [
+       {
+        "type": "text",
+        "text": "Requested."
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "type": "result",
+   "subtype": "error_max_turns",
+   "is_error": true,
+   "result": null,
+   "stop_reason": "tool_use",
+   "num_turns": 2,
+   "terminal_reason": "max_turns",
+   "errors": [
+    "Reached maximum number of turns (1)"
+   ],
+   "usage": {
+    "input_tokens": 1480,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 192
+   }
+  }
+ ],
+ "expect": {
+  "text": null,
+  "stop": "tool_calls",
+  "tool_calls": [
+   {
+    "name": "log_inventory",
+    "arguments": {
+     "changes": [
+      {
+       "item": "eggs",
+       "action": "finished"
+      },
+      {
+       "item": "bread",
+       "action": "finished"
+      }
+     ]
+    }
+   },
+   {
+    "name": "get_shopping_list",
+    "arguments": {}
+   }
+  ],
+  "usage": {
+   "input_tokens": 1480,
+   "output_tokens": 192,
+   "cached_tokens": 0
+  }
+ }
+}

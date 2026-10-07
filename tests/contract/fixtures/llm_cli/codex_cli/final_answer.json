@@ -1,0 +1,49 @@
+{
+ "recorded_with": "codex-cli 0.154.0, model gpt-5.6-luna",
+ "exit": 0,
+ "stdout": [
+  {
+   "type": "thread.started",
+   "thread_id": "01a11628-ea2c-7500-bf53-b5a5a224b809"
+  },
+  {
+   "type": "item.completed",
+   "item": {
+    "id": "item_0",
+    "type": "error",
+    "message": "Code Mode is unavailable because code-mode host is disabled. Code mode will fail closed; enable `features.code_mode_host` and install `codex-code-mode-host`."
+   }
+  },
+  {
+   "type": "turn.started"
+  },
+  {
+   "type": "item.completed",
+   "item": {
+    "id": "item_1",
+    "type": "agent_message",
+    "text": "{\"text\":\"The shopping list has eggs and milk. I’ve marked the eggs and bread as finished.\",\"tool_calls\":[]}"
+   }
+  },
+  {
+   "type": "turn.completed",
+   "usage": {
+    "input_tokens": 4109,
+    "cached_input_tokens": 0,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 82,
+    "reasoning_output_tokens": 45
+   }
+  }
+ ],
+ "expect": {
+  "text": "The shopping list has eggs and milk. I’ve marked the eggs and bread as finished.",
+  "stop": "end",
+  "tool_calls": [],
+  "usage": {
+   "input_tokens": 4109,
+   "output_tokens": 82,
+   "cached_tokens": 0
+  }
+ }
+}

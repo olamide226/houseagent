@@ -1,0 +1,50 @@
+{
+ "recorded_with": "codex-cli 0.154.0, model gpt-5.6-luna",
+ "exit": 1,
+ "stdout": [
+  {
+   "type": "thread.started",
+   "thread_id": "01a11629-13a4-7180-a02f-05b5cace52e0"
+  },
+  {
+   "type": "item.completed",
+   "item": {
+    "id": "item_0",
+    "type": "error",
+    "message": "Code Mode is unavailable because code-mode host is disabled. Code mode will fail closed; enable `features.code_mode_host` and install `codex-code-mode-host`."
+   }
+  },
+  {
+   "type": "turn.started"
+  },
+  {
+   "type": "error",
+   "message": "Reconnecting... 2/5 (unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: wss://api.openai.com/v1/responses, cf-ray: a46c9fc47956ef25-LHR)"
+  },
+  {
+   "type": "item.completed",
+   "item": {
+    "id": "item_1",
+    "type": "error",
+    "message": "Falling back from WebSockets to HTTPS transport. unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: wss://api.openai.com/v1/responses, cf-ray: a46c9fee9d550033-LHR"
+   }
+  },
+  {
+   "type": "error",
+   "message": "Reconnecting... 2/5 (unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a46c9ff1ea9ce6ac-LHR, request id: req_bc5a861802434706b425bb0999d74ef8)"
+  },
+  {
+   "type": "error",
+   "message": "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a46ca01b19948895-LHR, request id: req_a1b23c31f90940c0bfd278d732aa387d"
+  },
+  {
+   "type": "turn.failed",
+   "error": {
+    "message": "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a46ca01b19948895-LHR, request id: req_a1b23c31f90940c0bfd278d732aa387d"
+   }
+  }
+ ],
+ "expect": {
+  "error": "Codex is not signed in, or its sign-in has expired: unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a46ca01b19948895-LHR, request id: req_a1b23c31f90940c0bfd278d732aa387d"
+ }
+}

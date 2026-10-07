@@ -1,0 +1,64 @@
+{
+ "recorded_with": "claude 2.1.292, model haiku",
+ "exit": 0,
+ "stdout": [
+  {
+   "type": "system",
+   "subtype": "init",
+   "tools": [],
+   "mcp_servers": [],
+   "model": "claude-haiku-4-5-20251001",
+   "claude_code_version": "2.1.292"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "thinking",
+      "thinking": ""
+     }
+    ]
+   }
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "```json\n{\n  \"dairy\": [\"milk\"],\n  \"bakery\": [\"bread\"],\n  \"other\": []\n}\n```"
+     }
+    ]
+   }
+  },
+  {
+   "type": "result",
+   "subtype": "success",
+   "is_error": false,
+   "result": "```json\n{\n  \"dairy\": [\"milk\"],\n  \"bakery\": [\"bread\"],\n  \"other\": []\n}\n```",
+   "stop_reason": "end_turn",
+   "num_turns": 1,
+   "terminal_reason": "completed",
+   "errors": null,
+   "usage": {
+    "input_tokens": 541,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 155
+   }
+  }
+ ],
+ "expect": {
+  "text": "```json\n{\n  \"dairy\": [\"milk\"],\n  \"bakery\": [\"bread\"],\n  \"other\": []\n}\n```",
+  "stop": "end",
+  "tool_calls": [],
+  "usage": {
+   "input_tokens": 541,
+   "output_tokens": 155,
+   "cached_tokens": 0
+  }
+ }
+}

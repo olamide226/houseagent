@@ -1,0 +1,54 @@
+{
+ "recorded_with": "claude 2.1.292, model haiku",
+ "exit": 1,
+ "stdout": [
+  {
+   "type": "system",
+   "subtype": "init",
+   "tools": [
+    "mcp__household__get_shopping_list",
+    "mcp__household__log_inventory"
+   ],
+   "mcp_servers": [
+    {
+     "name": "household",
+     "status": "connected",
+     "source": "dynamic"
+    }
+   ],
+   "model": "claude-haiku-4-5-20251001",
+   "claude_code_version": "2.1.292"
+  },
+  {
+   "type": "assistant",
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "Not logged in · Please run /login"
+     }
+    ]
+   }
+  },
+  {
+   "type": "result",
+   "subtype": "success",
+   "is_error": true,
+   "result": "Not logged in · Please run /login",
+   "stop_reason": "stop_sequence",
+   "num_turns": 1,
+   "terminal_reason": "api_error",
+   "errors": null,
+   "usage": {
+    "input_tokens": 0,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 0
+   }
+  }
+ ],
+ "expect": {
+  "error": "Claude Code is not signed in, or its sign-in has expired: Not logged in · Please run /login"
+ }
+}
