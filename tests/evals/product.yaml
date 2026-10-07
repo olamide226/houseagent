@@ -1,0 +1,45 @@
+# What the assistant says about itself: what it can do and how to do it (ADR 0034). `seed.setup` is
+# what the installation has switched on (Setup in app/agent/guide.py); without it there is Telegram
+# only, photos are read, voice notes are not, and the Shortcut for the shops is not shared.
+# Nothing may be written, and the reply is checked only for the word or page that has to be in it.
+- name: what can you do is answered from what is built
+  turns: [{from: Ada, text: "what can you do?"}]
+  expect: {writes: 0, reply: text, plain: true, reply_mentions: [shopping]}
+
+- name: seeing the list on a laptop is the word dashboard
+  turns: [{from: Ola, text: "how do I see the list on my laptop?"}]
+  expect: {writes: 0, plain: true, reply_mentions: [dashboard], reply_says_any: [send, sends, type, text, write, say]}
+
+- name: adding a wife is an invite and nobody is added yet
+  turns: [{from: Ola, text: "how do I add my wife?"}]
+  expect: {writes: 0, plain: true, reply_mentions: [invite], members_added: [], invites_sent: 0}
+
+- name: the shop thing is the word shops
+  turns: [{from: Ada, text: "how does the shop thing work?"}]
+  expect: {writes: 0, plain: true, reply_mentions: [shops]}
+
+- name: photos cannot be read where they are not switched on
+  seed: {setup: {photos: false}}
+  turns: [{from: Ola, text: "can you read photos?"}]
+  expect: {writes: 0, plain: true, reply_says_any: ["can't", cannot, not, unable], reply_avoids: ["yes"]}
+
+- name: photos are a receipt or the fridge where they are switched on
+  turns: [{from: Ola, text: "can you read photos?"}]
+  expect: {writes: 0, plain: true, reply_mentions: [receipt]}
+
+- name: moving to WhatsApp is done on the Family page
+  seed: {setup: {chat_apps: [telegram, whatsapp]}}
+  turns: [{from: Ola, text: "switch me to WhatsApp"}]
+  expect: {writes: 0, plain: true, reply_mentions: [Family]}
+
+- name: WhatsApp is not offered where it is not set up
+  turns: [{from: Ola, text: "switch me to WhatsApp"}]
+  expect: {writes: 0, plain: true, reply_says_any: ["can't", cannot, not, "isn't"]}
+
+- name: a feature that does not exist is not made up
+  turns: [{from: Ada, text: "can you order the shopping online from Tesco for me?"}]
+  expect: {writes: 0, reply: text, plain: true, reply_says_any: ["can't", cannot, not, unable]}
+
+- name: a how-to question in the family group is answered
+  turns: [{from: Ada, scope: group, text: "Home, where do I see the calendar on my computer?"}]
+  expect: {writes: 0, plain: true, reply_mentions: [dashboard]}

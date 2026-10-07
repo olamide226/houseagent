@@ -30,6 +30,7 @@ import yaml
 from app.agent import internal
 from app.agent.actions import Recorder
 from app.agent.base import AgentRuntime
+from app.agent.guide import Setup
 from app.agent.loop import LoopRuntime
 from app.agent.resolve import normalise
 from app.config import get_settings
@@ -43,7 +44,7 @@ from app.llm.types import Usage
 from app.pipeline.inbound import PLAYGROUND, _upsert_thread, simulate_turn
 from app.pipeline.router import record_outbound
 from app.services import calendar, households, shopping
-from tests.helpers import add_item, add_member, ctx_for, london, seed_home, wall
+from tests.helpers import add_item, add_member, ctx_for, london, seed_home, technical_words, wall
 
 pytestmark = [pytest.mark.eval, pytest.mark.skipif(os.environ.get("RUN_EVALS") != "1", reason="set RUN_EVALS=1")]
 
@@ -90,7 +91,9 @@ def photo(name: str) -> MediaRef:
     return MediaRef(kind="image", mime="image/png", storage_backend="s3", storage_key=name)
 
 
-def make_runtime(provider: str) -> AgentRuntime:
+def make_runtime(provider: str, setup: Setup) -> AgentRuntime:
+    """`setup` is what the case's installation has switched on; a model that is not to read photos
+    is not shown them either."""
     if provider == "letta":
         if not _letta:   # one for the run: it registers the tools with Letta once
             from letta_client import AsyncLetta
@@ -102,10 +105,11 @@ def make_runtime(provider: str) -> AgentRuntime:
         return _letta[0]
     if model := CLI_MODELS.get(provider):
         cli_class = ClaudeCodeClient if provider == "claude_code" else CodexCliClient
-        return LoopRuntime(cli_class(model=model), media=FixtureStore())   # type: ignore[arg-type]
+        return LoopRuntime(cli_class(model=model, supports_images=setup.photos), media=FixtureStore(),   # type: ignore[arg-type]
+                           setup=setup)
     client_class = AnthropicClient if provider == "anthropic" else OpenAICompatClient
-    return LoopRuntime(client_class(api_key=API_KEY, model=MODEL, base_url=ENDPOINTS[provider]),
-                       media=FixtureStore())   # type: ignore[arg-type]
+    return LoopRuntime(client_class(api_key=API_KEY, model=MODEL, base_url=ENDPOINTS[provider],
+                                    supports_images=setup.photos), media=FixtureStore(), setup=setup)   # type: ignore[arg-type]
 
 
 async def seed(case: dict[str, Any], now: datetime) -> Any:
@@ -244,6 +248,14 @@ def check(expect: dict[str, Any], seen: dict[str, Any], seed: dict[str, Any], la
         assert Counter(seen["active"]) == Counter(key(name) for name in seeded_list)
     for wanted in expect.get("reply_mentions", []):
         assert wanted.lower() in last_reply.lower(), f"reply was {last_reply!r}"
+    if "reply_says_any" in expect:              # whole words, so "not" is not found in "note"
+        said = last_reply.lower().replace("\u2019", "'")
+        assert any(re.search(rf"\b{re.escape(wanted.lower())}\b", said) for wanted in expect["reply_says_any"]), \
+            f"reply was {last_reply!r}"
+    for unwanted in expect.get("reply_avoids", []):
+        assert unwanted.lower() not in last_reply.lower(), f"reply was {last_reply!r}"
+    if expect.get("plain"):
+        assert not technical_words(last_reply), f"reply was {last_reply!r}"
     if "reply" in expect:
         kind = last_reply if last_reply in ("ACK", "NOOP") else "text"
         assert kind == expect["reply"], f"reply was {last_reply!r}"
@@ -365,7 +377,8 @@ async def test_case(provider: str, suite: str, case: dict[str, Any], sample: int
         pytest.skip(f"no credentials for {provider}")
     now = london(case.get("now", NOW))
     home = await seed(case, now)
-    runtime = make_runtime(provider)
+    spec = case.get("seed", {}).get("setup", {})
+    runtime = make_runtime(provider, Setup(**{**spec, "chat_apps": tuple(spec.get("chat_apps", ["telegram"]))}))
     reply = ""
     name = f"{suite}:{case['name']}" + (f" #{sample}" if SAMPLES > 1 else "")
     outcomes.setdefault(provider, {})[name] = "failed"
