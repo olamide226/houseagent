@@ -4,10 +4,18 @@ from typing import Protocol
 import httpx
 
 from app.config import Settings
+from app.media.store import EXTENSIONS
 
 
 class SpeechToText(Protocol):
     async def transcribe(self, audio: bytes, mime: str) -> str: ...
+
+
+def upload_name(mime: str) -> str:
+    """The name the audio is uploaded under. A transcriber reads the format from its extension:
+    Groq answers 400 unsupported_audio_format to a file called just `audio`."""
+    kind = mime.split(";")[0].strip().lower()   # "audio/ogg; codecs=opus"
+    return f"audio.{EXTENSIONS.get(kind) or kind.rpartition('/')[2].removeprefix('x-')}"
 
 
 class OpenAICompatSTT:
@@ -22,7 +30,7 @@ class OpenAICompatSTT:
         async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(
                 self._url, headers=self._headers,
-                data={"model": self._model}, files={"file": ("audio", audio, mime)},
+                data={"model": self._model}, files={"file": (upload_name(mime), audio, mime)},
             )
         response.raise_for_status()
         return str(response.json()["text"]).strip()

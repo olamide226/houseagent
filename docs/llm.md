@@ -163,6 +163,13 @@ record again and run the evals.
 adapter posts to any OpenAI-compatible `/audio/transcriptions` endpoint. The `local` provider from
 the spec is not built. Tests use a stand-in transcriber.
 
+The file is uploaded as `audio.<extension>`, the extension taken from the MIME type (`audio/ogg`
+is `audio.ogg`, `audio/mp4` is `audio.m4a`). Groq reads the format from that name and answers 400
+`unsupported_audio_format` to a name without one. A voice note that cannot be fetched, stored or
+transcribed is logged as `media_failed` with the `step` that failed and, when a service refused,
+its HTTP `status` and short error code as `reason`. The person is told only that the voice note
+could not be made out.
+
 ## Tested models
 
 See [evals.md](evals.md#latest-results) for the latest eval scores per provider.

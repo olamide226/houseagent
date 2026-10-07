@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import httpx
 import structlog
 
 from app.channels.base import ChannelAdapter
@@ -43,21 +44,37 @@ async def prepare(media: list[dict[str, Any]], household_id: str, message_id: st
         wants_transcript = ref["kind"] == "audio" and stt is not None and not ref.get("transcript")
         if adapter is None or not ref.get("external_id") or not (wants_store or wants_transcript):
             continue
+        step = "fetch"
         try:
             data, mime = await adapter.fetch_media(MediaRef.model_validate(ref))
             if mime == CAF:
+                step = "convert"
                 data, mime = await asyncio.to_thread(caf_to_wav, data), "audio/wav"
             if store is not None and wants_store:
+                step = "store"
                 stored = await store.put(household_id, message_id, n, data, mime)
                 ref.update(stored.model_dump(include=set(STORAGE_FIELDS), exclude_none=True))
                 changed = changed or is_stored(ref)
             if stt is not None and wants_transcript:
+                step = "transcribe"
                 ref["transcript"] = await stt.transcribe(data, mime)
                 changed = True
         except Exception as exc:
             log.warning("media_failed", household_id=household_id, message_id=message_id, kind=ref["kind"],
-                        error=type(exc).__name__)
+                        step=step, error=type(exc).__name__, **_refusal(exc))
     return changed
+
+
+def _refusal(exc: Exception) -> dict[str, Any]:
+    """What a service answered when it refused: the status and its short error code. Never the
+    request, whose address or headers carry a key, nor the message, which may quote part of one."""
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return {}
+    try:
+        reason = exc.response.json()["error"]["code"]
+    except (ValueError, KeyError, TypeError):
+        reason = None
+    return {"status": exc.response.status_code, **({"reason": str(reason)[:60]} if reason else {})}
 
 
 def without_storage(media: list[dict[str, Any]]) -> list[dict[str, Any]]:
