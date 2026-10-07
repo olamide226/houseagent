@@ -7,7 +7,7 @@ import app.dashboard
 from app.agent import actions, loop
 from app.agent.guide import PAGES, SENDS, TALK, WORDS, Setup, product_guide
 from app.agent.prompt import STATIC_PROMPT, build_brief, system_prompt
-from app.agent.runtime import setup_of
+from app.agent.runtime import make_runtime, setup_of
 from app.agent.tools import REGISTRY
 from app.agent.tools.calendar import ScheduleEvent
 from app.agent.tools.undo import UndoLast
@@ -90,6 +90,7 @@ def test_what_is_switched_on_is_read_from_the_settings_and_the_media_store():
         "wa_app_secret": None, "bb_password": None, "stt_provider": "openai_compat",
         "stt_base_url": "http://stt.test/v1", "stt_model": "whisper", "presence_shortcut_url": "https://icloud.test/s"})
     assert setup_of(other, None) == Setup(chat_apps=("telegram",), photos=False, voice_notes=True, shop_shortcut=True)
+    assert make_runtime(other, None)._setup == setup_of(other, None)   # and it reaches the runtime that answers
 
 
 def test_the_guide_follows_the_static_prompt_unchanged_and_stays_in_the_cached_part():
