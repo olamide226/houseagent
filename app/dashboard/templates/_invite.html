@@ -1,7 +1,11 @@
-<div class="card">
+<div class="invite">
   {% if invite.link %}
-  <p><a href="{{ invite.link }}">Open in Telegram</a></p>
-  <p class="qr">{{ invite.qr | safe }}</p>
+  <a class="btn big telegram" href="{{ invite.link }}">{{ icon("send") }}Open in Telegram</a>
+  <div class="qr">{{ invite.qr | safe }}</div>
+  <p class="sub center">On another phone? Point its camera at this code.</p>
+  <p class="or">or</p>
   {% endif %}
-  <p>Or send this code to {{ invite.agent }}: <code>{{ invite.code }}</code></p>
+  <p class="sub">Send this code to {{ invite.agent }} as a message, in any chat app it is on:</p>
+  <p class="code"><code>{{ invite.code }}</code>
+    <button type="button" class="quiet" data-copy="{{ invite.code }}" hidden>Copy</button></p>
 </div>

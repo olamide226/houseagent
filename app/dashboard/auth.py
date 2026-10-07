@@ -94,13 +94,25 @@ def _setup_allowed(token: str) -> bool:
     return bool(expected) and hmac.compare_digest(token.encode(), expected.encode())
 
 
+def time_zones(chosen: str) -> list[str]:
+    """The zones the setup page offers: the regional names a phone gives for itself, and the one chosen."""
+    regions = ("Africa", "America", "Antarctica", "Asia", "Atlantic", "Australia", "Europe", "Indian", "Pacific")
+    return sorted({zone for zone in available_timezones() if zone.split("/")[0] in regions} | {"UTC", chosen})
+
+
+def _setup_page(request: Request, token: str, timezone: str, *, error: str | None = None, household: str = "",
+                admin: str = "", status_code: int = 200) -> Response:
+    return templates.TemplateResponse(request, "setup.html", {
+        "token": token, "timezone": timezone, "zones": time_zones(timezone), "error": error,
+        "household": household, "admin": admin}, status_code=status_code)
+
+
 @router.get("/setup", response_class=HTMLResponse)
 async def setup_form(request: Request, token: str = "") -> Response:
     async with tx() as conn:
         if await households.household_exists(conn) or not _setup_allowed(token):
             raise HTTPException(status_code=404)
-    return templates.TemplateResponse(request, "setup.html", {
-        "token": token, "timezone": get_settings().default_timezone, "error": None})
+    return _setup_page(request, token, get_settings().default_timezone)
 
 
 @router.post("/setup", response_class=HTMLResponse)
@@ -112,9 +124,9 @@ async def setup_submit(request: Request, token: str = Form(""), household: str =
         if await households.household_exists(conn) or not _setup_allowed(token):
             raise HTTPException(status_code=404)
         if timezone not in available_timezones() or not household.strip() or not admin.strip():
-            return templates.TemplateResponse(request, "setup.html", {
-                "token": token, "timezone": timezone, "error": "Check the names and the time zone."},
-                status_code=422)
+            known = timezone if timezone in available_timezones() else get_settings().default_timezone
+            return _setup_page(request, token, known, error="Check the names and the time zone.",
+                               household=household, admin=admin, status_code=422)
         _, member_id = await households.create_household(conn, household.strip(), timezone, admin.strip())
         code = await members.create_invite(conn, member_id, utcnow())
     return templates.TemplateResponse(request, "setup_done.html", {"invite": invite_context(admin.strip(), code)})

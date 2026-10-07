@@ -1,9 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Household created{% endblock %}
+{% block title %}Connect your chat{% endblock %}
 {% block main %}
-<h1>Household created</h1>
-<p>{{ invite.name }}, connect your chat to {{ invite.agent }} with this invite. It works once per channel and expires in 7 days.
-   This page will not be shown again.</p>
-{% include "_invite.html" %}
-<p class="muted">Once connected, send <strong>dashboard</strong> to {{ invite.agent }} to get a login link.</p>
+<span class="logo">{{ icon("check") }}</span>
+<ol class="steps" aria-label="Setup steps">
+  <li class="done">1. Your home</li>
+  <li aria-current="step">2. Connect your chat</li>
+</ol>
+<h1>Nearly there, {{ invite.name }}</h1>
+<p class="lead">{% if invite.link %}Say hello to {{ invite.agent }}, your household assistant: tap the button, then press
+  <strong>Start</strong> in Telegram.{% else %}Say hello to {{ invite.agent }}, your household assistant, by sending it
+  the code below.{% endif %}</p>
+<div class="card">{% include "_invite.html" %}</div>
+<p class="notice warn">Connect before you close this page. The invite is shown only once, and works for 7 days.</p>
+<p class="sub">Once you are connected, send <strong>dashboard</strong> to {{ invite.agent }} whenever you want a login
+  link back to these pages.</p>
 {% endblock %}

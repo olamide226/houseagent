@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Log in from chat{% endblock %}
+{% block main %}
+<span class="logo">{{ icon("home") }}</span>
+<h1>Log in from chat</h1>
+<p class="lead">No password. {{ agent }} sends you a login link.</p>
+<ol class="numbered">
+  <li><span>Open your chat with {{ agent }}.</span></li>
+  <li><span>Send the word <strong>dashboard</strong>.</span></li>
+  <li><span>Tap the link it sends back. It works once, for 10 minutes.</span></li>
+</ol>
+{% if telegram %}<a class="btn big telegram" href="{{ telegram }}">{{ icon("send") }}Open Telegram</a>{% endif %}
+{% endblock %}

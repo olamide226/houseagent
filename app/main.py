@@ -51,9 +51,10 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(auth.LoginRequired)
     async def login_required(request: Request, exc: auth.LoginRequired) -> Response:
-        return auth.templates.TemplateResponse(request, "message.html", {
-            "title": "Log in from chat",
-            "message": f"Send “dashboard” to {get_settings().agent_name} to get a one-time login link.",
+        settings = get_settings()
+        return auth.templates.TemplateResponse(request, "login.html", {
+            "agent": settings.agent_name,
+            "telegram": f"https://t.me/{settings.tg_bot_username}" if settings.tg_bot_username else None,
         }, status_code=401)
 
     @app.get("/healthz")

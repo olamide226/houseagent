@@ -51,9 +51,13 @@ async def login(client, home, member=None):
 async def test_setup_needs_the_token_creates_the_household_once_then_disappears(client):
     assert (await client.get("/setup")).status_code == 404
     assert (await client.get("/setup?token=wrong")).status_code == 404
-    assert (await client.get(SETUP)).status_code == 200
+    form = await client.get(SETUP)
+    assert form.status_code == 200 and '<option value="Europe/London" selected>' in form.text
+    assert "data-device-zone" in form.text                              # the browser may offer its own zone instead
     assert (await client.post("/setup", data={**FORM, "token": "wrong"})).status_code == 404
-    assert (await client.post("/setup", data={**FORM, "timezone": "Mars/Olympus"})).status_code == 422
+    wrong = await client.post("/setup", data={**FORM, "timezone": "Mars/Olympus"})
+    assert wrong.status_code == 422 and 'value="Adebayo"' in wrong.text and 'value="Ola"' in wrong.text
+    assert '<option value="Europe/London" selected>' in wrong.text and "data-device-zone" not in wrong.text
 
     done = await client.post("/setup", data=FORM)
     assert done.status_code == 200
@@ -88,6 +92,7 @@ async def test_pages_need_a_session_and_a_magic_link_works_exactly_once(client):
                  "/dashboard/channels", "/dashboard/more"):
         refused = await client.get(path)
         assert refused.status_code == 401 and "login link" in refused.text
+        assert 'href="https://t.me/home_test_bot"' in refused.text           # where to ask for one
 
     first = await client.get(f"/login/{token}")
     assert first.status_code == 303

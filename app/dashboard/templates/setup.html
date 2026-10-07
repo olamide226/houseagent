@@ -1,13 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Set up your household{% endblock %}
 {% block main %}
-<h1>Set up your household</h1>
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
-<form class="stack card" method="post" action="/setup">
+<span class="logo">{{ icon("home") }}</span>
+<ol class="steps" aria-label="Setup steps">
+  <li aria-current="step">1. Your home</li>
+  <li>2. Connect your chat</li>
+</ol>
+<h1>Let's set up your home</h1>
+<p class="lead">Two quick answers, then you connect your chat.</p>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form class="stack" method="post" action="/setup">
   <input type="hidden" name="token" value="{{ token }}">
-  <label>Household name <input type="text" name="household" required autofocus></label>
-  <label>Time zone <input type="text" name="timezone" value="{{ timezone }}" required></label>
-  <label>Your name <input type="text" name="admin" required></label>
-  <button>Create household</button>
+  <label class="field">Your first name
+    <input type="text" name="admin" value="{{ admin }}" autocomplete="given-name" required autofocus></label>
+  <label class="field">A name for your household
+    <input type="text" name="household" value="{{ household }}" placeholder="e.g. The Adebayos" autocomplete="off" required></label>
+  <label class="field">Time zone
+    <select name="timezone"{% if not error %} data-device-zone{% endif %} required>
+      {% for zone in zones %}<option value="{{ zone }}"{% if zone == timezone %} selected{% endif %}>{{ zone | replace("_", " ") }}</option>
+      {% endfor %}
+    </select>
+    <span class="sub">Reminders and the morning brief go by this.</span></label>
+  <button class="big">Continue</button>
 </form>
 {% endblock %}
