@@ -11,13 +11,16 @@ Everything is read by `Settings` in `app/config.py`, from the environment or a l
 | `PUBLIC_BASE_URL` | yes | | Webhook, presence and login links; `https://` also makes the session cookie Secure |
 | `SESSION_SECRET` | yes | | Signs dashboard cookies and CSRF tokens |
 | `SETUP_TOKEN` | first run | | Unlocks `/setup` until a household exists |
-| `LLM_PROVIDER` | yes | | `openai_compat` or `anthropic` |
-| `LLM_BASE_URL` | for `openai_compat` | | Endpoint; optional override for `anthropic` |
-| `LLM_API_KEY` | yes (except local models) | | Provider key |
-| `LLM_MODEL` | yes | | Must support tool calling |
+| `LLM_PROVIDER` | yes | | `openai_compat` or `anthropic`, with a key; `claude_code` or `codex_cli`, on a subscription ([below](#subscription-providers)) |
+| `LLM_BASE_URL` | for `openai_compat` | | Endpoint; optional override for `anthropic`. Not read by the subscription providers |
+| `LLM_API_KEY` | yes (except local models and the subscription providers) | | Provider key |
+| `LLM_MODEL` | yes | | Must support tool calling. For a subscription provider, a name its CLI takes (`haiku`, `gpt-5.6-luna`) |
 | `LLM_FAST_MODEL` | no | `LLM_MODEL` | A cheaper model for the nightly job that sorts items into categories |
 | `LLM_SUPPORTS_IMAGES` | no | `true` | `false`: photos are not sent to the model and the agent says it cannot read them |
 | `LLM_MAX_TOOL_ITERATIONS` | no | `8` | Loop guard |
+| `LLM_CLI_PATH` | no | `claude` or `codex` on `PATH` | Subscription providers: where the CLI is |
+| `LLM_CLI_TIMEOUT` | no | `120` | Subscription providers: seconds one model step may take before its CLI is stopped |
+| `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME` | no | | Not read by the app: passed to the CLI, which reads them ([below](#subscription-providers)) |
 | `STT_PROVIDER`, `STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL` | no | | Voice-note transcription (`openai_compat`) |
 | `MEDIA_BACKEND` | no | `s3` | `s3` or `imgbb`. The backend is used only once its variables are set |
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | for `s3` | | Any S3-compatible bucket. Leave `S3_ENDPOINT` unset for AWS |
@@ -88,6 +91,8 @@ from the `Dockerfile`, push it to your registry, and set `image.repository` and 
   a tailnet one. TLS is cert-manager's, through the ingress annotations.
 - **Pods** run as `nobody` with a read-only root file system; `/tmp` is an `emptyDir` for the
   heartbeat file and voice-note conversion.
+- **A subscription provider** needs the CLI in the image, and for Codex the claim named by
+  `codexHome.existingClaim`: see [Subscription providers](#subscription-providers).
 - **BlueBubbles** is reached at `BB_BASE_URL` over the tailnet; the cluster needs a route to it
   (the Tailscale operator or a subnet router). Nothing on the Mac is public.
 - **Letta**, if switched on with `config.AGENT_RUNTIME: letta`, makes the chart give the worker a
@@ -97,6 +102,131 @@ from the `Dockerfile`, push it to your registry, and set `image.repository` and 
 Backups are not in the chart. Take `pg_dump` or CloudNativePG backups of the database; media in
 the bucket is covered by the bucket's own versioning or lifecycle. The System page's export is a
 readable copy of one household, not a restore format: there is no import.
+
+## Subscription providers
+
+`LLM_PROVIDER=claude_code` runs the model on a Claude subscription and `codex_cli` on a ChatGPT
+plan, through the vendor's own CLI ([llm.md](llm.md#subscription-providers) has how, and what the
+vendors' terms say: read that before switching). The api and the worker each start the CLI
+themselves, so wherever they run needs three things: the CLI, its sign-in, and somewhere the CLI
+may write.
+
+**They were tried on a laptop, never deployed.** On the laptop both ran the eval suite on the CLI's
+existing sign-in. In the container image both CLIs start as `nobody` on a read-only root and the
+adapters report that nobody is signed in; a signed-in container was not tried, and nor was the
+chart on a cluster.
+
+### On your own machine
+
+Install the CLI, sign in once, and set two variables. Tested with Claude Code 2.1.292 and Codex
+CLI 0.154.0.
+
+```sh
+claude            # then /login, with the subscription account
+LLM_PROVIDER=claude_code  LLM_MODEL=haiku
+
+codex login       # "Sign in with ChatGPT"
+LLM_PROVIDER=codex_cli    LLM_MODEL=gpt-5.6-luna
+```
+
+Leave `LLM_BASE_URL` and `LLM_API_KEY` unset. The model names are the CLI's: `claude --model`
+takes `haiku`, `sonnet` or a full model id, and `codex` takes what your plan offers (a model it
+does not offer fails with "... is not supported when using Codex with a ChatGPT account").
+Your own settings, memory, hooks, skills and MCP servers are not used by these runs, and the runs
+leave no session behind.
+
+### The CLI in the image
+
+The `Dockerfile` installs neither by default. Name a version to add one or both; each is a single
+file in `/usr/local/bin`, about 250 MB and 230 MB:
+
+```sh
+docker build --build-arg CLAUDE_CODE_VERSION=2.1.292 --build-arg CODEX_VERSION=0.154.0 -t household-agent .
+```
+
+Claude Code comes from Anthropic's installer (`claude.ai/install.sh`) and Codex from its GitHub
+release. Neither updates itself in the image. One run of `claude` peaks near 240 MB of memory and
+one of `codex` near 170 MB, and up to two run at once in each process, so raise the pods' memory
+limits (`api.resources.limits.memory`, `worker.resources.limits.memory`) by about 500 MB.
+
+### The sign-in in a container
+
+The pods run as `nobody` with a read-only root, so the CLI needs a home it can write. `/tmp` is
+already writable:
+
+```yaml
+config:
+  HOME: /tmp
+```
+
+**Claude.** Make a token on any machine with a browser and put it in the Secret:
+
+```sh
+claude setup-token        # prints a one-year token for the subscription; it can only make model requests
+```
+
+```yaml
+# in the existing Secret: CLAUDE_CODE_OAUTH_TOKEN: <the token>
+config:
+  LLM_PROVIDER: claude_code
+  LLM_MODEL: haiku
+  HOME: /tmp
+  CLAUDE_CONFIG_DIR: /tmp/claude
+```
+
+Nothing has to persist: the token is the whole sign-in, and both pods can use it at once.
+
+**Codex.** Its sign-in is a file, `$CODEX_HOME/auth.json`, that Codex **rewrites** each time it
+refreshes the session (about every eight days). So it lives on a volume, not in a Secret, and the
+api and the worker must share the one copy: OpenAI's guide says "Do not share the same file
+across concurrent jobs or multiple machines", because the copy that refreshes first logs the
+other out. Create a PersistentVolumeClaim that both pods can mount (`ReadWriteMany`, or
+`ReadWriteOnce` with both pods on one node) and name it:
+
+```yaml
+codexHome:
+  existingClaim: codex-sign-in      # mounted at /codex in both pods, and set as CODEX_HOME
+config:
+  LLM_PROVIDER: codex_cli
+  LLM_MODEL: gpt-5.6-luna
+  HOME: /tmp
+```
+
+Then sign in on that volume, once, from inside a pod:
+
+```sh
+kubectl exec -it deploy/home-worker -- codex login --device-auth    # open the link, enter the code
+kubectl exec deploy/home-worker -- codex login status               # "Logged in using ChatGPT"
+```
+
+That is a sign-in of its own, so your laptop's stays as it is. Do not copy your laptop's
+`auth.json` into the volume: the two would then take turns logging each other out. Treat the
+volume like a password. Device-code sign-in has to be allowed in your ChatGPT security settings.
+
+With Docker Compose the same two things are a named volume mounted at `/codex` in `api` and
+`worker` with `CODEX_HOME=/codex`, or `CLAUDE_CODE_OAUTH_TOKEN` in `.env`.
+
+### When the sign-in expires or the allowance runs out
+
+Nothing checks the sign-in ahead of time. The first turn after it lapses fails: the person gets
+the usual apology, the message is marked failed on Activity, and the System page's Model card
+says why until a later message is answered:
+
+| The System page says | What happened | Do |
+| --- | --- | --- |
+| `Claude Code is not signed in, or its sign-in has expired: ...` | The token is missing, a year old, or was revoked | `claude setup-token` again, replace `CLAUDE_CODE_OAUTH_TOKEN` in the Secret, restart both pods |
+| `Codex is not signed in, or its sign-in has expired: ...` | `auth.json` is missing, its refresh token was revoked, or another copy refreshed first | `codex login --device-auth` in a pod again |
+| `... has reached the subscription's usage limit: ...` | The plan's five-hour or weekly allowance is used up, by the household or by you | Wait for the reset the message names, use a smaller model, or switch `LLM_PROVIDER` back to an API key |
+| `... could not be started (FileNotFoundError) ...` | The CLI is not in the image or not on `PATH` | Rebuild with the build argument, or set `LLM_CLI_PATH` |
+| `... gave no answer within 120 seconds` | The vendor was slow or the CLI hung | It was stopped; raise `LLM_CLI_TIMEOUT` if it keeps happening |
+| `... ran with other tools than the household's` or `... used a tool of its own` | A CLI version that no longer honours the flags that switch its own tools off | The answer was discarded. Go back to a tested version |
+
+Messages that failed are not retried; the person has to say it again. To check by hand:
+`kubectl exec deploy/home-worker -- codex login status`, or for Claude send any message in the
+Playground.
+
+The allowance is shared with your own use of Claude or ChatGPT, and each vendor counts it in its
+own way ([llm.md](llm.md#limits)). A household turn is two or three model steps.
 
 ## Media storage
 
@@ -336,8 +466,11 @@ The calendar feed token is rotated from the Calendar page, a presence link from 
 invite is replaced or revoked on the Family page. "Log out everywhere" ends every dashboard
 session of a member. Provider tokens, webhook secrets, `SESSION_SECRET` and
 `INTERNAL_TOOL_TOKEN` are changed in the Secret and take effect when both processes restart;
-changing `SESSION_SECRET` logs everyone out.
+changing `SESSION_SECRET` logs everyone out. `CLAUDE_CODE_OAUTH_TOKEN` lasts a year and is
+replaced the same way; Codex's sign-in is renewed with `codex login` on its volume
+([Subscription providers](#subscription-providers)).
 
 ## Not covered
 
-A restore drill has not been done, and there is no import for the System page's export.
+A restore drill has not been done, and there is no import for the System page's export. The
+subscription providers have not run in a signed-in container or on a cluster.

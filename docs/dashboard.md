@@ -100,8 +100,11 @@ export and the rebuild answer 403 to anyone else.
 - **Job runs.** The 30 newest runs of the jobs that happen once a day or week (`daily_brief`,
   `weekly_digest`, `consumption_model`, `low_stock_prompt`), from `job_runs`. Messages, sends and
   reminders are handled continuously and leave no row; they show on Activity.
-- **Model.** `AGENT_RUNTIME`, `LLM_PROVIDER`, the endpoint's host, `LLM_MODEL`,
-  `LLM_FAST_MODEL` when set, and whether photos are read. Never a key.
+- **Model.** `AGENT_RUNTIME`, `LLM_PROVIDER`, the endpoint's host (or that the provider is a CLI
+  on a subscription sign-in), `LLM_MODEL`, `LLM_FAST_MODEL` when set, and whether photos are
+  read. Never a key. When the household's newest handled message failed, its error is shown
+  first: with a subscription provider that is where an expired sign-in or a used-up allowance
+  appears. It goes once a later message is answered.
 - **Last eval result.** For each provider, what the eval suite last wrote into
   `EVAL_RESULTS_DIR` (default `tests/evals/.results`): passed of total, the model, when, and the
   cases that failed. The suite writes there on the machine where it is run, so a deployed image

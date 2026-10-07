@@ -35,6 +35,15 @@ failure is told apart from the model answering differently:
 RUN_EVALS=1 EVAL_SAMPLES=5 EVAL_TRACE=1 ... uv run pytest tests/evals -s -k "undo: or receipt"
 ```
 
+To run them through a subscription provider ([llm.md](llm.md#subscription-providers)), name its
+model. The CLI must be installed and signed in on this machine; no key is used, and the run draws
+on that subscription's allowance:
+
+```sh
+RUN_EVALS=1 EVAL_CLAUDE_CODE_MODEL=haiku uv run pytest tests/evals -k claude_code
+RUN_EVALS=1 EVAL_CODEX_CLI_MODEL=gpt-5.6-luna uv run pytest tests/evals -k codex_cli
+```
+
 To run the same cases through the optional Letta runtime instead, start a Letta server and set
 `EVAL_RUNTIME=letta`, `EVAL_LETTA_BASE_URL` (default `http://127.0.0.1:8283`) and
 `EVAL_LETTA_MODEL` (the model's handle on that server). The test process then serves the tool
@@ -199,6 +208,61 @@ ignore that, there's another bag", and in all 4 of its failures the model record
 it had just been told about (in 2 of them after undoing the mistake), which is a fair reading.
 It now reads
 "oops, ignore that, I was wrong". Its before and after are therefore not the same question.
+
+## The subscription providers
+
+One run of the whole suite through each subscription provider
+([llm.md](llm.md#subscription-providers)), 7 Oct 2026, 61 cases, loop runtime, on a laptop with
+Claude Code 2.1.292 and Codex CLI 0.154.0 signed in to their subscriptions. The models are each
+CLI's small one, not `deepseek-flash`, so this compares providers as they would be used and not
+one model across four adapters.
+
+| Provider | Model | Passed | NOOP | Undo | Input tokens (cached) | Output tokens | Whole run | Per turn |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `claude_code` | `haiku` (Claude Haiku 4.5) | **58/61** (95.1%) | 3/3 | 7/7 | 769,724 (591,234) | 44,156 | 606 s | 8.7 s mean, 7.2 s median |
+| `codex_cli` | `gpt-5.6-luna` | **59/61** (96.7%) | 3/3 | 7/7 | 811,093 (442,624) | 10,985 | 825 s | 11.9 s mean, 10.3 s median |
+| `openai_compat`, `anthropic` (above) | `deepseek-flash` | 61/61 | 3/3 | 7/7 | 589,398 and 589,744 | 15,317 and 15,759 | 432 s for both | about 3.1 s mean |
+
+| Category | `claude_code` | `codex_cli` | `openai_compat`, `anthropic` |
+| --- | --- | --- | --- |
+| inventory | 11/12 | 11/12 | 12/12 |
+| shopping list | 5/5 | 5/5 | 5/5 |
+| NOOP | 3/3 | 3/3 | 3/3 |
+| undo | 7/7 | 7/7 | 7/7 |
+| calendar | 7/7 | 7/7 | 7/7 |
+| reminders | 4/4 | 3/4 | 4/4 |
+| photos | 5/6 | 6/6 | 6/6 |
+| onboarding | 12/13 | 13/13 | 13/13 |
+| presence | 4/4 | 4/4 | 4/4 |
+
+Both are over the release bar's numbers (95% overall, 100% on NOOP and undo) in this one run,
+`claude_code` by one case. It is one sample per case on each.
+
+Time per turn is the case's wall time over its turns (69 turns in the 61 cases), seeding
+included. A turn is two or three model steps, and each step starts the CLI. `codex_cli`'s mean
+includes one step that reached the 120-second limit.
+
+The five that failed, and what three more runs of each showed (tool calls printed):
+
+| Provider | Case | In the full run | Three more runs |
+| --- | --- | --- | --- |
+| `claude_code` | batch finish with staple | Rows right; replied "Eggs on the list. Add bread too?" where the case expects `ACK` | 2/3. The same case fails about one run in ten on `deepseek-flash` |
+| `claude_code` | routines step books a weekly activity | Booked the first Chatterbox for Tuesday 13 October, not 6 October | 3/3, after a change to the adapter (below) |
+| `claude_code` | receipt restocks what was bought | Milk restocked twice, once with source `shopping` | 3/3 |
+| `codex_cli` | a finished item that is not a staple is listed when the person asks | No event recorded | 3/3 |
+| `codex_cli` | a reminder set for late tonight is sent despite quiet hours | The CLI gave no answer within 120 seconds, so the turn failed | 3/3, each in under 16 seconds. Why that one step hung was not found |
+
+**The date.** Both CLIs tell the model today's date on their own, from the machine's clock. The
+suite pins the clock to Monday 5 October; the runs were on Wednesday 7 October, and from a
+Wednesday the next Tuesday is the 13th. That fits the Chatterbox failure but was not proved to be
+its cause. Outside the suite the two dates differ only around midnight, when the machine's time
+zone is not the household's. The adapters now tell the model that the brief's date is the one to
+go by. The three re-runs above were with that change; the full runs were without it.
+
+**What it used.** Nothing was billed. On the Claude subscription the five-hour window read 4%
+used before the day's work and 15% after all of it (development calls, both small runs, the full
+run and the re-runs, and the session that did the work), and the weekly window went from 3% to
+4%. Codex's allowance was not read.
 
 ## Previous full run (milestone 6)
 

@@ -46,11 +46,11 @@ rendered but not installed. Each page below says what has been checked and what 
 | [architecture.md](architecture.md) | Processes, message flow, media, quiet hours, scheduled jobs, repo layout |
 | [data-model.md](data-model.md) | Tables, stock transitions, calendar rows, invariants |
 | [channels.md](channels.md) | The adapter contract; Telegram, WhatsApp and iMessage setup, template approval, payload notes, what happens when BlueBubbles is down, limits |
-| [llm.md](llm.md) | Provider layer, adding an adapter, tested models |
+| [llm.md](llm.md) | Provider layer, the subscription providers and what the vendors' terms say about them, adding an adapter, tested models |
 | [agent-and-tools.md](agent-and-tools.md) | Runtime loop, the optional Letta runtime, photos, onboarding, tools, calendar rules, resolution rules, undo |
 | [presence.md](presence.md) | iPhone Shortcut setup, the presence rules, the consumption model, "probably" list entries, the low-stock prompt |
 | [dashboard.md](dashboard.md) | Pages, the login flow, invites, channels and the family group, the System page, the calendar feed |
-| [operations.md](operations.md) | Environment variables, running, Helm, media storage, worker jobs, the BlueBubbles outage and WhatsApp template runbooks, logs |
+| [operations.md](operations.md) | Environment variables, running, Helm, the subscription providers' CLIs and sign-in, media storage, worker jobs, the BlueBubbles outage and WhatsApp template runbooks, logs |
 | [evals.md](evals.md) | Running the agent evals, adding a case, latest results |
 | [adr/](adr/) | One decision per file |
 | [spec.md](spec.md) | The v1 implementation spec: the baseline for behaviour, names and layout |

@@ -177,7 +177,8 @@ app/
   config.py      Settings, logging
   db.py          engine, tx(), advisory lock, query helpers
   core/          envelope types, identity and invite codes, time, quiet hours, recurrence
-  llm/           neutral types, OpenAI-compatible and Anthropic adapters, speech-to-text
+  llm/           neutral types, OpenAI-compatible and Anthropic adapters, the two subscription
+                 adapters that run the vendors' CLIs, speech-to-text
   media/         MediaStore protocol and factory, S3 and ImgBB backends
   channels/      ChannelAdapter protocol, registry, Telegram, WhatsApp, iMessage
   pipeline/      inbound (persist, debounce, turn, simulate_turn), media (fetch, store, transcribe), router

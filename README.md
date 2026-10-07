@@ -42,6 +42,7 @@ household yet**, and how much of it has met the real services differs by part:
 | Presence | Built; tested with plain HTTP calls, never from a phone |
 | Voice notes | Built; tested with a stand-in transcriber. No speech-to-text service has been tried |
 | Agent quality | Measured on 61 eval cases with one model through two adapters. The latest run meets the release bar on both, one sample per case: see [docs/evals.md](docs/evals.md#latest-results) |
+| Model providers | `openai_compat` and `anthropic` with an API key. `claude_code` and `codex_cli` run on a Claude subscription or a ChatGPT plan through the vendor's own CLI: built, run once each on the eval suite, never deployed, and the vendors' terms for this use are unclear: see [docs/llm.md](docs/llm.md#subscription-providers) |
 | Letta runtime | Optional and off by default. Built, compared with the plain loop on the eval suite, and not promoted: see [docs/evals.md](docs/evals.md#the-letta-comparison) |
 | Helm chart | Linted and rendered; never installed on a cluster |
 
@@ -49,7 +50,8 @@ Each page under `docs/` says, for its feature, what has been checked and what ha
 
 ## Run it locally
 
-Needs Docker, a Telegram bot token from BotFather, and a key for any tool-calling LLM.
+Needs Docker, a Telegram bot token from BotFather, and a key for any tool-calling LLM (or a Claude
+or ChatGPT subscription: [docs/llm.md](docs/llm.md#subscription-providers)).
 
 ```sh
 cp .env.example .env          # fill in LLM_*, TG_*, SESSION_SECRET, SETUP_TOKEN
@@ -81,7 +83,7 @@ uv run pytest tests/unit tests/contract
 | [docs/operations.md](docs/operations.md) | Environment variables, Helm, health, the BlueBubbles outage and WhatsApp template runbooks, logs, costs |
 | [docs/evals.md](docs/evals.md) | The eval suite, how to run it, the latest results |
 | [docs/data-model.md](docs/data-model.md), [docs/llm.md](docs/llm.md) | Tables and invariants; the model layer |
-| [docs/adr/](docs/adr/) | Thirty decisions, one per file |
+| [docs/adr/](docs/adr/) | Thirty-two decisions, one per file |
 | [docs/spec.md](docs/spec.md) | The v1 implementation spec this was built from |
 
 ```text
@@ -91,6 +93,6 @@ app/
   agent/       the loop runtime, the optional Letta runtime, prompt, tools, undo
   services/    the one write path, shared by tools and the dashboard
   dashboard/   pages and login        presence/  the Shortcut endpoint
-  worker/      the job supervisor     llm/       two provider adapters, speech-to-text
+  worker/      the job supervisor     llm/       four provider adapters, speech-to-text
 deploy/helm/household-agent/          tests/     unit, contract, evals
 ```
