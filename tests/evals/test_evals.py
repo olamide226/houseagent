@@ -282,11 +282,11 @@ def check_family(expect: dict[str, Any], seen: dict[str, Any], home: Any) -> Non
         assert seen["household"]["brief"] == expect["brief"], seen["household"]
     for name, wanted in expect.get("quiet", {}).items():
         assert {m["name"]: m["quiet"] for m in seen["family"]}[name] == wanted, seen["family"]
-    if "presence_links" in expect:              # who was sent a personal link, and has one
-        sent = {send["member_id"] for send in seen["sends"] if "/presence/" in (send["text"] or "")}
-        linked = sorted(m["name"] for m in seen["family"] if m["has_link"] and m["id"] in sent)
-        assert linked == sorted(expect["presence_links"]), (seen["sends"], seen["family"])
-        assert sent == {m["id"] for m in seen["family"] if m["has_link"]}
+    if "shops_offers" in expect:                # who was offered the list on arriving at a shop; nobody gets a link unasked
+        offered = {send["member_id"] for send in seen["sends"] if send["text"] == households.SHOPS_OFFER}
+        assert sorted(m["name"] for m in seen["family"] if m["id"] in offered) == sorted(expect["shops_offers"]), \
+            (seen["sends"], seen["family"])
+        assert not any(m["has_link"] for m in seen["family"]), seen["family"]
     if "invites_sent" in expect:
         invites = [send for send in seen["sends"] if re.search(r"[A-Z]{4}-[A-Z0-9]{4}", send["text"] or "")]
         assert len(invites) == expect["invites_sent"], seen["sends"]

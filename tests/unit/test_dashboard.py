@@ -688,7 +688,8 @@ async def test_settings_makes_and_replaces_a_presence_link_that_is_shown_once_an
 
     made = (await client.post(f"/dashboard/settings/presence/{ada}", headers=csrf)).text
     (url, token), = link.findall(made)
-    assert "Ada's personal link" in made and "Get Contents of URL" in made and "Replace link" in made
+    assert "Ada's personal link" in made and "shows the steps" in made and "Replace link" in made
+    assert not [word for word in ("POST", "JSON", "Get Contents of URL") if word in made]      # the steps are on her page
     assert "testserver/presence/" not in (await client.get("/dashboard/settings")).text        # shown that once only
     async with tx() as conn:
         stored = await fetch_val(conn, "select presence_token_hash from members where id = :m", m=ada)

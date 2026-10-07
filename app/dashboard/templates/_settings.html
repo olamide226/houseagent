@@ -36,26 +36,14 @@
   </ul>
 </div>
 <h2>The list when you reach a shop</h2>
-<p class="hint">A phone can say when its owner arrives at a shop, and they are sent the list for that shop. Each adult
-  puts their own personal link into their phone.</p>
+<p class="hint">An iPhone can say when its owner arrives at a shop, and they are sent the list for that shop. It is
+  optional. Each adult has their own personal link, and opening it on their iPhone shows what to do.</p>
 {% if presence %}
 <div class="card">
-  <p><strong>{{ presence.name }}'s personal link.</strong> It is shown only this once, so copy it now and keep it private.</p>
+  <p><strong>{{ presence.name }}'s personal link.</strong> It is shown only this once, so copy it now and send it to
+    {{ presence.name }} privately. Opened on their iPhone, it shows the steps, one shop at a time.</p>
   <div class="copy"><input type="text" readonly value="{{ presence.url }}" aria-label="{{ presence.name }}'s personal link" onfocus="this.select()">
     <button type="button" class="quiet" data-copy="{{ presence.url }}" hidden>Copy</button></div>
-  <details class="opt" open>
-    <summary>How to set up the phone</summary>
-    <ol class="numbered">
-      <li><span>In the Shortcuts app on {{ presence.name }}'s iPhone, make an automation for each place. The trigger is
-        <strong>Arrive</strong> at the place, set to run without asking.</span></li>
-      <li><span>Its one action is <strong>Get Contents of URL</strong> with this link, method <strong>POST</strong>, and a
-        <strong>JSON</strong> request body with two text fields: <code class="plain">event</code> =
-        <code class="plain">enter</code> and <code class="plain">place</code> = the place's name exactly as listed
-        under Places.</span></li>
-      <li><span>For home, add one more with the trigger <strong>Leave</strong> and <code class="plain">event</code> =
-        <code class="plain">exit</code>.</span></li>
-    </ol>
-  </details>
 </div>
 {% endif %}
 <div class="card rows">
@@ -71,7 +59,8 @@
   {% endfor %}
   </ul>
 </div>
-<p class="hint">Replacing a link stops the old one working, so the phone's automations need the new one.</p>
+<p class="hint">Anyone without a link can also get theirs by sending the word <strong>shops</strong> in chat.
+  Replacing a link stops the old one working, so what was set up on that phone has to be done again with the new one.</p>
 <h2>Places</h2>
 <p class="hint">Only a shop sends its list on arrival. A phone names a place exactly as it is written here.</p>
 <div class="card rows">

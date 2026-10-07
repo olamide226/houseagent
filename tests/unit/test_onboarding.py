@@ -235,12 +235,16 @@ async def test_steps_can_be_skipped_or_done_out_of_order_and_undo_reopens_one():
 URL = re.compile(r"http://testserver/presence/([\w-]{43})")
 
 
-async def presence_messages():
-    """Queued presence DMs as {member name: (token, respect_quiet_hours)}."""
-    sent = await rows("select m.name, o.text, o.target, o.respect_quiet_hours from outbox o "
-                      "join members m on m.id = o.member_id where o.text like '%/presence/%' order by o.created_at")
+async def offers():
+    """Queued shop-arrival offers as {member name: respect_quiet_hours}."""
+    sent = await rows("select m.name, o.target, o.respect_quiet_hours from outbox o join members m "
+                      "on m.id = o.member_id where o.text = :offer order by o.created_at", offer=households.SHOPS_OFFER)
     assert all(row["target"] == "member" for row in sent)
-    return {row["name"]: (URL.search(row["text"]).group(1), row["respect_quiet_hours"]) for row in sent}
+    return {row["name"]: row["respect_quiet_hours"] for row in sent}
+
+
+async def links():
+    return {r["name"]: r["presence_token_hash"] for r in await rows("select name, presence_token_hash from members")}
 
 
 async def setting_up(conn, *, reached="rhythm"):
@@ -255,43 +259,25 @@ async def setting_up(conn, *, reached="rhythm"):
     return home
 
 
-async def test_answering_the_last_question_sends_each_connected_adult_a_personal_link_that_works(client):
+async def test_answering_the_last_question_offers_each_connected_adult_the_list_at_the_shop_in_plain_words():
     async with tx() as conn:
         home = await setting_up(conn)
-    await tool(home, "remember", key="shops", value="Tesco Extra, Costco")
 
     result, is_error = await tool(home, "onboarding_advance", step="rhythm")
     assert not is_error and result.splitlines()[0] == "OK: rhythm done. Setup is complete"
-    assert "NOTE: Ada, Ola got a private message with a personal link" in result   # made together: by name
+    assert "NOTE: Ada, Ola got a private message offering the shopping list on arrival" in result   # made together: by name
     assert await fetch_state(home) == {"step": None, "skipped": [],
                                        "done": ["family", "routines", "shops", "staples", "tour", "rhythm", "presence"]}
+    assert await offers() == {"Ola": False, "Ada": True}             # Ola is talking to us now; Ada may be asleep
+    # Short, optional, and nothing to follow: no link, no steps, none of an engineer's words.
+    offer = households.SHOPS_OFFER
+    assert "optional" in offer and "send me the word shops" in offer and len(offer) < 250
+    assert not [word for word in ("http", "POST", "JSON", "URL", "token", "Shortcut") if word in offer]
+    assert set((await links()).values()) == {None}                   # nobody has a link they did not ask for
 
-    links = await presence_messages()
-    assert set(links) == {"Ola", "Ada"} and links["Ola"][0] != links["Ada"][0]
-    assert (links["Ola"][1], links["Ada"][1]) == (False, True)       # Ola is talking to us now; Ada may be asleep
-    (text,) = {r["text"].replace(links["Ola"][0], "TOKEN") for r in await rows(
-        "select text from outbox where member_id = :m", m=home.ola)}
-    assert text == households.presence_text("http://testserver/presence/TOKEN", ["Costco", "Tesco Extra"])
-    for wanted in ("Arrive", "run without asking", "Get Contents of URL", "POST", "event = enter", "event = exit",
-                   "place = Home", "Shops I know: Costco, Tesco Extra."):
-        assert wanted in text
-    # The model is told that links went out, never what they are; only hashes are stored.
-    logged = json.dumps(await rows("select args, result, inverse from agent_actions"), default=str)
-    hashes = {r["name"]: r["presence_token_hash"] for r in await rows("select name, presence_token_hash from members")}
-    for token, _ in links.values():
-        assert token not in result and token not in logged and token not in hashes.values()
-    assert hashes["Grace"] is None and hashes["Tobi"] is None and hashes["Ola"] and hashes["Ada"]
-
-    # The link in Ada's message is hers: her phone calling it is recorded as Ada arriving.
-    await client.post(f"/presence/{links['Ada'][0]}", json={"event": "enter", "place": "Tesco Extra"})
-    assert await rows("select m.name, p.name as place, p.kind from presence_events e join members m "
-                      "on m.id = e.member_id join places p on p.id = e.place_id") == [
-        {"name": "Ada", "place": "Tesco Extra", "kind": "store"}]
-
-    await tool(home, "undo_last")                           # reopening the step takes nobody's link away
-    assert (await fetch_state(home))["step"] == "rhythm"
-    assert {r["name"]: r["presence_token_hash"] for r in await rows(
-        "select name, presence_token_hash from members")} == hashes
+    await tool(home, "undo_last")                                    # reopening the step and finishing it again
+    await tool(home, "onboarding_advance", step="rhythm")
+    assert len(await rows("select 1 from outbox")) == 2              # offers nothing twice
 
 
 async def fetch_state(home):
@@ -299,28 +285,52 @@ async def fetch_state(home):
         return await fetch_val(conn, "select onboarding_state from households where id = :h", h=home.id)
 
 
-async def test_presence_can_be_skipped_or_asked_for_early_and_a_link_someone_has_is_never_replaced():
+async def test_the_word_shops_gets_a_first_personal_link_that_works_and_never_replaces_one(client):
+    async with tx() as conn:
+        home = await setting_up(conn, reached="tour")
+    await post(client, tg_update(1, " Shops ", user_id=1002, name="Ada"))
+    assert await inbound.process_household(home.id, LoopRuntime(FakeLLM()), {}) == 0       # no agent turn
+    (sent,) = await rows("select member_id, target, text, respect_quiet_hours from outbox")
+    token = URL.search(sent["text"]).group(1)
+    assert sent == {"member_id": home.members["Ada"], "target": "member", "respect_quiet_hours": False,
+                    "text": households.presence_text(f"http://testserver/presence/{token}")}
+    assert "Open it on your iPhone" in sent["text"] and "Keep it to yourself" in sent["text"]
+    assert not [word for word in ("POST", "JSON", "URL", "token", "Get Contents") if word in sent["text"]]
+    hashes = await links()
+    assert hashes["Ada"] and token not in hashes.values() and hashes["Ola"] is None      # hers alone, stored hashed
+
+    # The link is hers: her phone calling it is recorded as Ada arriving.
+    await client.post(f"/presence/{token}", json={"event": "enter", "place": "Tesco Extra"})
+    assert [r["name"] for r in await rows("select m.name from presence_events e join members m "
+                                          "on m.id = e.member_id")] == ["Ada"]
+
+    await post(client, tg_update(2, "shops", user_id=1002, name="Ada"))       # asked again: the link is not replaced
+    await inbound.process_household(home.id, LoopRuntime(FakeLLM()), {})
+    assert [r["text"] for r in await rows("select text from outbox order by created_at")][1] == households.SHOPS_ALREADY
+    assert await links() == hashes
+
+
+async def test_presence_can_be_skipped_or_asked_for_early_and_someone_with_a_link_is_not_offered_one():
     async with tx() as conn:
         home = await setting_up(conn, reached="tour")
     await tool(home, "onboarding_advance", step="presence", skipped=True)
     await tool(home, "onboarding_advance", step="tour")
     result, _ = await tool(home, "onboarding_advance", step="rhythm", skipped=True)
     assert result == "OK: rhythm skipped. Setup is complete"
-    assert await presence_messages() == {} and await rows(
-        "select 1 from members where presence_token_hash is not null") == []
+    assert await offers() == {}
 
     async with tx() as conn:
         await execute(conn, "delete from households")
         home = await setting_up(conn, reached="tour")
         mine = await members.new_presence_token(conn, home.ola)      # Ola made a link on the Settings page already
-    result, _ = await tool(home, "onboarding_advance", step="presence")      # "send me that shop link now"
+    result, _ = await tool(home, "onboarding_advance", step="presence")      # "tell me about that shop thing now"
     assert result.splitlines() == ["OK: presence done. Next step: tour",
-                                   "NOTE: Ada got a private message with a personal link for shop-arrival "
-                                   "nudges and the phone steps; setting it up is optional"]
-    assert set(await presence_messages()) == {"Ada"}
+                                   "NOTE: Ada got a private message offering the shopping list on arrival at "
+                                   "a shop; it is optional, and sending the word shops starts it"]
+    assert set(await offers()) == {"Ada"}
     await tool(home, "onboarding_advance", step="tour")
     await tool(home, "onboarding_advance", step="rhythm")
-    assert set(await presence_messages()) == {"Ada"}        # not sent twice
+    assert set(await offers()) == {"Ada"}                   # not sent twice
     async with tx() as conn:
         assert (await members.for_presence_token(conn, mine))["id"] == home.ola
 
@@ -328,15 +338,15 @@ async def test_presence_can_be_skipped_or_asked_for_early_and_a_link_someone_has
 async def test_a_household_left_at_the_presence_step_is_told_what_it_is_and_the_tool_finishes_it():
     async with tx() as conn:
         home = await setting_up(conn, reached="presence")
-    llm = FakeLLM(call("onboarding_advance", step="presence"), say("All set. I've sent you each a link."))
+    llm = FakeLLM(call("onboarding_advance", step="presence"), say("All set. One optional extra is in your messages."))
     async with tx() as conn:
         await inbound.simulate_turn(conn, LoopRuntime(llm), home.id, home.ola, "anything else?")
     assert "Current step: presence. Remaining: presence." in llm.requests[0][0]
     assert STEP_GUIDE["presence"] in llm.requests[0][0]
-    assert set(await presence_messages()) == {"Ola", "Ada"} and (await fetch_state(home))["step"] is None
+    assert set(await offers()) == {"Ola", "Ada"} and (await fetch_state(home))["step"] is None
 
 
-async def test_an_adult_who_connects_after_setup_gets_the_welcome_and_then_their_link(client):
+async def test_an_adult_who_connects_after_setup_gets_the_welcome_and_then_the_offer(client):
     async with tx() as conn:
         home = await setting_up(conn)
         grace_code = await members.create_invite(conn, home.members["Grace"], utcnow())
@@ -344,24 +354,19 @@ async def test_an_adult_who_connects_after_setup_gets_the_welcome_and_then_their
     await deliver()
 
     await post(client, tg_update(1, f"/start {grace_code}", user_id=1003, name="Grace"))
-    (welcome, link) = await deliver()
-    assert welcome == ("1003", f"Hi Grace, you're connected. {inbound.WELCOME}", None)
-    assert link[0] == "1003" and URL.search(link[1])
-    token = URL.search(link[1]).group(1)
-    async with tx() as conn:
-        assert (await members.for_presence_token(conn, token))["name"] == "Grace"
+    assert await deliver() == [("1003", f"Hi Grace, you're connected. {inbound.WELCOME}", None),
+                               ("1003", households.SHOPS_OFFER, None)]
 
-    # The same invite links her WhatsApp too. That must not replace the link her phone already uses.
+    # The same invite links her WhatsApp too. That must not make the offer a second time.
     await post_whatsapp(client, wa_message(1, grace_code, user_id="GB.1000000000000000000103", name="Grace"))
-    assert len(await presence_messages()) == 3
-    async with tx() as conn:
-        assert (await members.for_presence_token(conn, token))["name"] == "Grace"
+    assert set(await offers()) == {"Ola", "Ada", "Grace"} and len(await rows("select 1 from outbox where text = :t",
+                                                                               t=households.SHOPS_OFFER)) == 3
 
 
 @pytest.mark.parametrize("state", ['{"step": null, "done": []}',                               # set up before presence existed
                                    '{"step": null, "done": ["presence"], "skipped": ["presence"]}',   # said no thanks
                                    '{"step": "shops", "done": ["family", "routines"]}'])        # not there yet
-async def test_no_link_is_sent_on_connecting_unless_setup_sent_them(client, state):
+async def test_no_offer_is_made_on_connecting_unless_setup_made_it(client, state):
     async with tx() as conn:
         home = await seed_home(conn)
         await execute(conn, "update households set onboarding_state = cast(:state as jsonb)", state=state)

@@ -98,12 +98,12 @@ async def advance_onboarding(rec: Recorder, step: str, skipped: bool = False) ->
     was_skipped = [*state.get("skipped", []), *([step] if skipped else [])]
     notes = []
     if (step == PRESENCE and not skipped) or [name for name in ONBOARDING_STEPS if name not in done] == [PRESENCE]:
-        # Nothing to ask for presence: when it is asked for, or is all that is left, the links go out.
+        # Nothing to ask for presence: when it is asked for, or is all that is left, the offer goes out.
         done += [] if PRESENCE in done else [PRESENCE]
-        sent = await send_presence_links(conn, household_id, speaker=rec.ctx.member_id)
+        sent = await offer_shops(conn, household_id, speaker=rec.ctx.member_id)
         if sent:
-            notes.append(f"NOTE: {', '.join(sent)} got a private message with a personal link for "
-                         "shop-arrival nudges and the phone steps; setting it up is optional")
+            notes.append(f"NOTE: {', '.join(sent)} got a private message offering the shopping list on arrival at "
+                         "a shop; it is optional, and sending the word shops starts it")
     remaining = [name for name in ONBOARDING_STEPS if name not in done]
     await rec.before("households", id=household_id)
     await execute(
@@ -120,32 +120,32 @@ def presence_url(token: str) -> str:
     return f"{get_settings().public_base_url}/presence/{token}"
 
 
-def presence_text(url: str, shops: list[str]) -> str:
-    """What an adult is sent with their personal link (spec section 11, phone setup)."""
-    known = f"Shops I know: {', '.join(shops)}. Use those exact names.\n" if shops else ""
-    return (
-        "Optional: your phone can tell me when you reach a shop, and I'll send you the list for that shop.\n\n"
-        f"Your personal link, keep it to yourself: {url}\n\n"
-        "In the Shortcuts app on your iPhone, make an automation for each shop: the trigger is Arrive at the shop, "
-        "set to run without asking, and its one action is Get Contents of URL with that link, method POST, and a "
-        "JSON request body with two text fields: event = enter and place = the shop's name.\n"
-        f"{known}"
-        "For home, make two more: Arrive with event = enter and place = Home, and Leave with event = exit and "
-        "place = Home."
-    )
+# What setup sends each adult. It holds no link: the steps are on the page the link opens, and
+# the link is made when someone asks for it (ADR 0033).
+SHOPS_OFFER = ("One more thing, and it is optional: your iPhone can tell me when you arrive at a shop, so the list "
+               "for that shop is waiting for you. It takes a few minutes to set up. Whenever you want to try it, "
+               "send me the word shops.")
+SHOPS_ALREADY = ("You already have your personal link: it is in the message I sent you before. Lost it? Send me "
+                 "the word dashboard, open Settings, and tap Replace link.")
+
+
+def presence_text(url: str) -> str:
+    """What an adult is sent with their personal link. The page it opens says what to do."""
+    return ("Here is your personal link. Open it on your iPhone and it shows you what to do, one shop at a time:\n"
+            f"{url}\n\n"
+            "Keep it to yourself: it is how I know it is your phone.")
 
 
 async def presence_offered(conn: AsyncConnection, household_id: str) -> bool:
-    """Whether setup sent the presence links (and did not skip them): later adults then get theirs too."""
+    """Whether setup made the offer (and did not skip it): later adults then get it too."""
     state = await fetch_val(conn, "select onboarding_state from households where id = :h", h=household_id)
     return PRESENCE in state.get("done", []) and PRESENCE not in state.get("skipped", [])
 
 
-async def send_presence_links(conn: AsyncConnection, household_id: str, *, member_id: str | None = None,
-                              speaker: str | None = None) -> list[str]:
-    """DM each connected adult who has no presence link yet their personal URL and the phone
-    steps; `member_id` limits it to one person. Returns the names. Someone who already has a
-    link is left alone: a new one would break the automations on their phone."""
+async def offer_shops(conn: AsyncConnection, household_id: str, *, member_id: str | None = None,
+                      speaker: str | None = None) -> list[str]:
+    """DM each connected adult who has no personal link the offer, once ever; `member_id` limits
+    it to one person. Returns the names of those it went to."""
     adults = await fetch_all(
         conn,
         """select m.id, m.name from members m
@@ -155,15 +155,19 @@ async def send_presence_links(conn: AsyncConnection, household_id: str, *, membe
            order by m.created_at, m.name""",
         h=household_id, member=member_id,
     )
-    shops = [place["name"] for place in await places(conn, household_id) if place["kind"] == "store"]
-    for adult in adults:
-        token = await members.new_presence_token(conn, adult["id"])
-        await enqueue(conn, OutboundMessage(
-            household_id=household_id, target="member", member_id=adult["id"],
-            text=presence_text(presence_url(token), shops),
-            respect_quiet_hours=adult["id"] != speaker,   # whoever is talking to us now is awake
-        ))
-    return [adult["name"] for adult in adults]
+    return [adult["name"] for adult in adults if await enqueue(conn, OutboundMessage(
+        household_id=household_id, target="member", member_id=adult["id"], text=SHOPS_OFFER,
+        respect_quiet_hours=adult["id"] != speaker,   # whoever is talking to us now is awake
+        dedupe_key=f"shops_offer:{adult['id']}",
+    ))]
+
+
+async def shops_link(conn: AsyncConnection, member_id: str) -> str:
+    """The answer to the word "shops": a first personal link. One someone already has is left
+    alone, because a new one would stop the shortcuts on their phone working."""
+    if await fetch_val(conn, "select presence_token_hash is not null from members where id = :m", m=member_id):
+        return SHOPS_ALREADY
+    return presence_text(presence_url(await members.new_presence_token(conn, member_id)))
 
 
 async def claim_nudge(conn: AsyncConnection, household_id: str, key: str, now: datetime, *,

@@ -53,9 +53,9 @@
     quiet: {Ola: "22:00-06:30", Ada: "22:00-06:30"}
     onboarding_done: [rhythm, presence]
     onboarding_step: null
-    presence_links: [Ola, Ada]
+    shops_offers: [Ola, Ada]
 
-- name: accepting the rhythm as it is finishes setup and sends each adult their link
+- name: accepting the rhythm as it is finishes setup and makes each adult the shops offer
   seed: {onboarding: rhythm}
   turns: [{from: Ola, text: "Yes, those times are fine as they are"}]
   expect:
@@ -63,7 +63,7 @@
     quiet: {Ola: "21:30-07:00", Ada: "21:30-07:00"}
     onboarding_done: [rhythm, presence]
     onboarding_step: null
-    presence_links: [Ola, Ada]
+    shops_offers: [Ola, Ada]
 
 - name: a preference is remembered
   turns: [{from: Ada, text: "Remember that we only ever buy Cravendale milk"}]

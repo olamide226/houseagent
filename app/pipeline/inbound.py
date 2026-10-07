@@ -115,9 +115,8 @@ async def _unknown_sender(conn: AsyncConnection, adapter: ChannelAdapter, event:
         respect_quiet_hours=False,
     ))
     if not setting_up and await households.presence_offered(conn, member["household_id"]):
-        # Setup already sent the others their presence links; a first link for this adult follows the welcome.
-        await households.send_presence_links(conn, member["household_id"], member_id=member["id"],
-                                             speaker=member["id"])
+        # Setup already made the others the shop-arrival offer; this adult's follows the welcome.
+        await households.offer_shops(conn, member["household_id"], member_id=member["id"], speaker=member["id"])
     log.info("invite_redeemed", household_id=member["household_id"], channel=event.channel.value)
 
 
@@ -217,7 +216,7 @@ async def process_household(household_id: str, runtime: AgentRuntime, adapters: 
         messages = await _waiting_messages(conn, "household_id", household_id)
         await execute(conn, "update messages set status = 'processing' where id = any(cast(:ids as uuid[]))",
                       ids=[m["id"] for m in messages])
-        messages = [m for m in messages if not await _login_request(conn, m, public_base_url)]
+        messages = [m for m in messages if not await _keyword(conn, m, public_base_url)]
         for batch in group_by_thread(messages):
             ids = [m["id"] for m in batch]
             # Outside the turn's savepoint: what was stored stays recorded even if the turn fails,
@@ -303,13 +302,18 @@ async def simulate_turn(conn: AsyncConnection, runtime: AgentRuntime, household_
     return await run_turn(conn, build_envelope(batch), runtime, simulated=True)
 
 
-async def _login_request(conn: AsyncConnection, message: dict[str, Any], public_base_url: str) -> bool:
-    """The exact keyword "dashboard" is answered with a one-time login link, never by the agent."""
-    if (message["text"] or "").strip().lower() != "dashboard":
+async def _keyword(conn: AsyncConnection, message: dict[str, Any], public_base_url: str) -> bool:
+    """Two exact words are answered by code, never by the agent, because the answer holds a secret:
+    "dashboard" with a one-time login link, "shops" with the person's link for arriving at a shop."""
+    word = (message["text"] or "").strip().lower()
+    if word == "dashboard":
+        token = await members.create_login_token(conn, message["member_id"], utcnow())
+        text = (f"Your dashboard link (valid 10 minutes, works once): {public_base_url}/login/{token}"
+                if token else "Too many login links for now. Try again in an hour.")
+    elif word == "shops":
+        text = await households.shops_link(conn, message["member_id"])
+    else:
         return False
-    token = await members.create_login_token(conn, message["member_id"], utcnow())
-    text = (f"Your dashboard link (valid 10 minutes, works once): {public_base_url}/login/{token}"
-            if token else "Too many login links for now. Try again in an hour.")
     await enqueue(conn, OutboundMessage(household_id=message["household_id"], target="member",
                                         member_id=message["member_id"], text=text, respect_quiet_hours=False))
     await execute(conn, "update messages set status = 'processed', processed_at = clock_timestamp() "
