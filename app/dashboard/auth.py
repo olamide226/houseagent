@@ -14,12 +14,15 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from app.config import get_settings
 from app.core.identity import invite_link
-from app.core.timeutil import utcnow
+from app.core.timeutil import local, utcnow
+from app.dashboard import words
 from app.db import tx
 from app.services import households, members
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+templates.env.filters.update(words.FILTERS)
+templates.env.globals.update(icon=words.icon, local=local)
 
 COOKIE = "ha_session"
 SESSION_SECONDS = 30 * 24 * 3600

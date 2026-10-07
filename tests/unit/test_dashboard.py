@@ -9,6 +9,7 @@ from app.agent.loop import LoopRuntime
 from app.channels.base import ADAPTERS
 from app.core.envelope import Channel, OutboundMessage
 from app.core.timeutil import local, utcnow
+from app.dashboard import words
 from app.db import execute, fetch_all, fetch_one, fetch_val, tx
 from app.main import app
 from app.pipeline import router
@@ -153,6 +154,20 @@ async def test_every_post_needs_the_csrf_token(client):
 
 
 # ---------------------------------------------------------------- pages and writes
+def test_stored_values_are_shown_in_plain_words():
+    assert [words.repeat_text(rule) for rule in (
+        "FREQ=DAILY", "FREQ=WEEKLY;BYDAY=TU,TH", "RRULE:FREQ=MONTHLY;INTERVAL=2", "FREQ=DAILY;BYHOUR=18",
+        "every so often")] == ["every day", "every week on Tue, Thu", "every 2 months", "every day", "repeats"]
+    assert words.result_lines("OK: Swimming on Thu at 17:00, repeating (FREQ=WEEKLY)\nNOTE: reminders 1 hour before\n"
+                              "milk: in stock\n") == [
+        ("ok", "Swimming on Thu at 17:00, repeating (every week)"), ("note", "reminders 1 hour before"),
+        ("", "milk: in stock")]
+    assert words.result_lines(None) == []
+    stock, channel = words.FILTERS["stock"], words.FILTERS["channel"]
+    assert (stock("in_stock"), channel("whatsapp"), channel("signal_chat")) == ("In stock", "WhatsApp", "signal chat")
+    assert 'class="icon chev"' in words.icon("right", "chev") and 'class="icon"' in words.icon("home")
+
+
 async def test_today_shows_list_count_low_and_expiring_items(client):
     async with tx() as conn:
         home = await seed_home(conn)
