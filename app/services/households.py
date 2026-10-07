@@ -125,8 +125,8 @@ def presence_url(token: str) -> str:
 SHOPS_OFFER = ("One more thing, and it is optional: your iPhone can tell me when you arrive at a shop, so the list "
                "for that shop is waiting for you. It takes a few minutes to set up. Whenever you want to try it, "
                "send me the word shops.")
-SHOPS_ALREADY = ("You already have your personal link: it is in the message I sent you before. Lost it? Send me "
-                 "the word dashboard, open Settings, and tap Replace link.")
+SHOPS_ALREADY = ("You already have a personal link. If you can't find it, send me the word dashboard, open "
+                 "Settings, and tap Replace link to get a new one.")
 
 
 def presence_text(url: str) -> str:

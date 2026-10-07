@@ -32,8 +32,8 @@ it by hand, once per shop.
   message: what it is, that it is optional, and "send me the word shops". An adult who connects
   later gets the same after the welcome. It is sent once per person (an outbox dedupe key).
 - **The word `shops` gets the link**, answered by the pipeline like `dashboard`, so the token
-  never passes through the model. It makes a first link only. Someone who has one is told where to
-  find it and that Settings can replace it: a new token would stop the shortcuts on their phone.
+  never passes through the model. It makes a first link only. Someone who has one is told that
+  Settings can replace it: a new token would stop the shortcuts on their phone.
 - **The page is private.** It is served `no-store`, `noindex` and `Referrer-Policy: no-referrer`,
   because its address holds the token and it links to icloud.com.
 - **`/static` is on the public ingress** whatever `dashboard.public` says, since the page needs
