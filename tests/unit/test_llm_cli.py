@@ -1,10 +1,12 @@
 """The subscription adapters (ADR 0032) against a stand-in CLI: a script on PATH named `claude`
 and `codex` that records how it was run and answers what the test told it to (the `cli`
 fixture). No network."""
+import asyncio
 import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -380,12 +382,21 @@ async def test_an_error_is_one_short_line(cli):
 
 
 @pytest.mark.parametrize("client", [ClaudeCodeClient, CodexCliClient])
-async def test_a_cli_that_does_not_answer_in_time_is_stopped(cli, client):
-    cli.will({"sleep": 30})
-    with pytest.raises(LLMError, match="gave no answer within 0.5 seconds"):
-        await client(model="m", timeout=0.5).complete(SYSTEM, conversation(), TOOLS)
-    with pytest.raises(ProcessLookupError):
-        os.kill(cli.seen()["pid"], 0)       # not left running
+async def test_a_cli_that_does_not_answer_in_time_is_stopped_with_its_children(cli, client):
+    cli.will({"sleep": 60, "child": True})
+    started = time.monotonic()
+    with pytest.raises(LLMError, match="gave no answer within 1 seconds"):
+        await client(model="m", timeout=1).complete(SYSTEM, conversation(), TOOLS)
+    assert time.monotonic() - started < 10           # stopped, not waited for
+    for pid in (cli.seen()["pid"], cli.seen()["child"]):
+        for _ in range(50):                           # a killed child is reaped a moment later
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            await asyncio.sleep(0.1)
+        else:
+            pytest.fail(f"process {pid} was left running")
 
 
 @pytest.mark.parametrize("client", [ClaudeCodeClient, CodexCliClient])
@@ -399,7 +410,9 @@ async def test_a_missing_cli_says_so(cli, client, tmp_path):
     ("claude_code", ClaudeCodeClient, "claude", claude(says("ACK"), result="ACK")),
     ("codex_cli", CodexCliClient, "codex", codex(said({"text": "ACK", "tool_calls": []}), DONE)),
 ])
-async def test_the_provider_setting_picks_the_cli_adapter_with_no_key_or_endpoint(cli, provider, client, binary, answer):
+async def test_the_provider_setting_picks_the_cli_adapter_with_no_key_or_endpoint(cli, provider, client, binary, answer,
+                                                                                 monkeypatch):
+    monkeypatch.setenv("PATH", os.defpath)      # the stand-in is no longer on PATH: only LLM_CLI_PATH finds it
     settings = Settings(llm_provider=provider, llm_model="big", llm_fast_model="small", llm_base_url=None,
                         llm_api_key="", llm_cli_path=str(cli.home.parent / "bin" / binary), llm_cli_timeout=7,
                         llm_supports_images=False)

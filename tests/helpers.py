@@ -372,9 +372,13 @@ count = len([name for name in os.listdir(home) if name.startswith("seen-")])
 plans = json.load(open(os.path.join(home, "plans.json")))
 plan = plans[min(count, len(plans) - 1)]
 files = {{name: base64.b64encode(open(name, "rb").read()).decode() for name in os.listdir(".")}}
+child = None
+if plan.get("child"):   # a process of its own, as the real CLIs have
+    import subprocess
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]).pid
 with open(os.path.join(home, "seen-%d.json" % count), "w") as seen:
     json.dump({{"argv": sys.argv[1:], "stdin": sys.stdin.read(), "env": dict(os.environ), "cwd": os.getcwd(),
-               "files": files, "pid": os.getpid()}}, seen)
+               "files": files, "pid": os.getpid(), "child": child}}, seen)
 time.sleep(plan.get("sleep", 0))
 sys.stdout.write(plan.get("stdout", ""))
 sys.stderr.write(plan.get("stderr", ""))
