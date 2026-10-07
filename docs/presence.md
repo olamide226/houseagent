@@ -16,7 +16,7 @@ only ever hears "Ola entered Tesco Extra".
 - **During setup.** When the last setup question is answered, each connected adult is sent a
   private message with their link and these steps. An adult who connects later gets theirs after
   the welcome.
-- **On the dashboard.** Settings, "Arriving at the shops", "Make link". The link is shown once,
+- **On the dashboard.** Settings, "The list when you reach a shop", "Make link". The link is shown once,
   because only its hash is stored. "Replace link" makes a new one and stops the old one working,
   so the automations on that phone then need the new link.
 

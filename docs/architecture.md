@@ -62,7 +62,7 @@ and answered 200; a database error returns 503 so the provider retries.
 
 A webhook can also carry things that are not messages (`adapter.parse_updates`). A WhatsApp
 `failed` delivery status marks the send it names as failed, and the outcome of a group creation
-finishes or drops the request made on the Channels page. Both are handled in the api process.
+finishes or drops the request made on the Chat apps page. Both are handled in the api process.
 
 **Processing (worker, `inbound.process_household`).** A household is ready when its newest
 unprocessed message is older than `DEBOUNCE_SECONDS`, which batches "out of eggs", "and bread",

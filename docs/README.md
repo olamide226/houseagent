@@ -33,7 +33,7 @@ Telegram, inventory and the shopping list, undo, `/setup`, magic-link login; the
 reminders that respect quiet hours, the daily brief and weekly digest, a read-only ICS feed;
 conversational onboarding, invites, media storage on S3 or ImgBB, receipt and fridge photos, and
 the Family and Settings pages; then WhatsApp with its 24-hour window and reminder template, a
-second try on another channel when a send fails for good, and the Channels page; then the
+second try on another channel when a send fails for good, and the Chat apps page; then the
 presence endpoint for iOS Shortcuts with its store-arrival list, the consumption model, and the
 low-stock prompt; then iMessage through a BlueBubbles server with a health check that moves
 people to their next channel while it is down, the System page, the optional Letta runtime

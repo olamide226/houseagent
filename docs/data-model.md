@@ -19,8 +19,8 @@ milestones 1 to 5 use and the rules the code enforces.
 | `consumption_profiles` | `services/consumption.py`, from the nightly job, the low-stock prompt and the weekly digest |
 | `channel_identities` | invite redemption (`core/identity.py`) |
 | `login_tokens` | the `dashboard` keyword (`services/members.py`) |
-| `threads`, `messages` | inbound pipeline; the router adds `out` rows; the Channels page adds a group's thread |
-| `households.primary_thread_id` | the first group message, a created group once confirmed, the Channels page |
+| `threads`, `messages` | inbound pipeline; the router adds `out` rows; the Chat apps page adds a group's thread |
+| `households.primary_thread_id` | the first group message, a created group once confirmed, the Chat apps page |
 | `items` | resolution (new items, learned aliases), dashboard item edits |
 | `inventory_events`, `stock` | `services/inventory.py` only |
 | `shopping_list_items` | `services/shopping.py`, the inventory side-effect rules, and the consumption model's guesses (`reason = 'predicted'`) |
@@ -52,7 +52,7 @@ and `delete_url`). Retention removes those four fields after `MEDIA_RETENTION_DA
 the rest, including a voice note's `transcript`.
 
 `threads.channel` is free text. Besides real channels it holds `playground`: the threads the
-dashboard Playground and the eval suite talk on. Their outbox rows have status `simulated` and
+dashboard's Practice chat and the eval suite talk on. Their outbox rows have status `simulated` and
 are never sent.
 
 `channel_identities.handle` is a Telegram user id, or for WhatsApp the business-scoped user id

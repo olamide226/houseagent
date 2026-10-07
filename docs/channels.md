@@ -86,7 +86,7 @@ payloads and mocked calls.
 4. Subscribe the app to the webhook fields `messages` and `group_lifecycle_update`.
 5. Get the reminder template approved (below).
 6. Each adult sends their invite code, from the Family page, to the business number in a DM.
-7. Optional: create the family group on the dashboard's Channels page.
+7. Optional: create the family group on the dashboard's Chat apps page.
 
 `WA_API_VERSION` defaults to `v26.0` and `WA_REMINDER_TEMPLATE` to `household_reminder`.
 
@@ -230,7 +230,7 @@ the adapter degraded; one good ping clears it. While it is degraded:
   addressed to an iMessage group. Those are retried with the usual backoff and fail after about
   43 minutes.
 - The admin of each household that uses iMessage gets one message per outage, on a channel that
-  works, and the Channels page says since when iMessage has been unreachable.
+  works, and the Chat apps page says since when iMessage has been unreachable.
 
 Nothing sent this way can reach anyone new: the fallback goes through the same destination check
 as every send. What to do about an outage is in

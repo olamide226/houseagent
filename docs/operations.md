@@ -36,7 +36,7 @@ Everything is read by `Settings` in `app/config.py`, from the environment or a l
 | `AGENT_RUNTIME` | no | `loop` | `loop`, or `letta` for the optional Letta runtime ([agent-and-tools.md](agent-and-tools.md#the-letta-runtime-optional)) |
 | `LETTA_BASE_URL`, `LETTA_API_KEY`, `LETTA_MODEL` | for `letta` | | The Letta server, its key if it wants one, and the model's handle as that server names it |
 | `INTERNAL_TOOL_TOKEN` | for `letta` | | The bearer token Letta's tools present to `/internal/tools/*`. Unset, that route answers 404 |
-| `INTERNAL_BASE_URL` | no | `PUBLIC_BASE_URL` | Where Letta reaches the api's `/internal` (Playground turns) |
+| `INTERNAL_BASE_URL` | no | `PUBLIC_BASE_URL` | Where Letta reaches the api's `/internal` (Practice chat turns) |
 | `WORKER_INTERNAL_URL` | no | `http://localhost:8001` | Where Letta reaches the worker's `/internal` (chat turns); the worker listens on this port under `letta` |
 | `AGENT_NAME` | no | `Home` | Name used in the prompt and pages |
 | `DEFAULT_TIMEZONE` | no | `Europe/London` | Prefilled on `/setup` |
@@ -222,8 +222,8 @@ says why until a later message is answered:
 | `... ran with other tools than the household's` or `... used a tool of its own` | A CLI version that no longer honours the flags that switch its own tools off | The answer was discarded. Go back to a tested version |
 
 Messages that failed are not retried; the person has to say it again. To check by hand:
-`kubectl exec deploy/home-worker -- codex login status`, or for Claude send any message in the
-Playground.
+`kubectl exec deploy/home-worker -- codex login status`, or for Claude send any message in
+Practice chat.
 
 The allowance is shared with your own use of Claude or ChatGPT, and each vendor counts it in its
 own way ([llm.md](llm.md#limits)). A household turn is two or three model steps.
@@ -296,7 +296,7 @@ where o.status = 'failed' order by o.created_at desc limit 20;
 
 ## WhatsApp
 
-Setup and the template are in [channels.md](channels.md#whatsapp). The Channels page shows, per
+Setup and the template are in [channels.md](channels.md#whatsapp). The Chat apps page shows, per
 chat, whether WhatsApp will take an ordinary message or only the template, and how many sends
 failed in the last day.
 
@@ -315,7 +315,7 @@ because a reply is always inside the window.
 3. Paused or disabled for low quality: Meta lifts a pause by itself after some hours; a disabled
    template has to be replaced.
 4. Language must be English (UK): the adapter sends `en_GB`.
-5. Failed sends are on the Activity page with "Retry". A retry within 24 hours of the person
+5. Failed sends are on the Activity page with "Send again". A retry within 24 hours of the person
    writing goes out as an ordinary message.
 
 ### An expired or revoked WhatsApp token
@@ -336,7 +336,7 @@ or error messages, and `httpx` request logging is off.
 
 iMessage depends on one Mac. The worker pings it every five minutes; a failed ping logs
 `imessage_health_changed` with `healthy: false`, DMs the admin once ("iMessage is not
-reachable..."), and shows "not reachable since" on the Channels page. From then on people are
+reachable..."), and shows "Not reachable since" on the Chat apps page. From then on people are
 reached on their next channel ([what moves and what does not](channels.md#when-bluebubbles-does-not-answer)).
 **BlueBubbles does not retry a webhook.** It posts each one once and only logs a failure
 (`webhookService` in its source). So a message someone sends over iMessage while the Mac cannot
@@ -372,8 +372,8 @@ Work through these in order; stop at the first that fixes it.
    was written against server v1.9.9 and field names shift between releases.
 
 When the next ping succeeds the worker logs `imessage_health_changed` with `healthy: true`, the
-Channels page clears, and DMs go back to iMessage with nothing to undo. Sends that failed for
-good during the outage are on the Activity page with "Retry".
+Chat apps page clears, and DMs go back to iMessage with nothing to undo. Sends that failed for
+good during the outage are on the Activity page with "Send again".
 
 ```sql
 -- since when iMessage has been unreachable, per household (no row: it is up)
@@ -410,7 +410,7 @@ select i.canonical_name, p.samples, round(p.avg_days_to_finish, 1) as days, p.la
 from consumption_profiles p join items i on i.id = p.item_id order by p.predicted_runout_at nulls last;
 ```
 
-**Rotating a presence link.** Settings, "Arriving at the shops", "Replace link" next to the
+**Rotating a presence link.** Settings, "The list when you reach a shop", "Replace link" next to the
 person. The old link stops working at once; put the new one into each automation on that phone.
 Do this if a link was pasted somewhere it should not have been. A list arriving for a shop nobody
 is in is the sign of a leaked link.
@@ -433,7 +433,8 @@ access log: mask or drop the path there too.
 
 ## Cost tracking
 
-Each turn's token usage is in `messages.meta.usage` and on the Activity page:
+Each turn's token usage is in `messages.meta.usage` and, for an admin, under "Technical details" on
+the Activity page:
 
 ```sql
 select date_trunc('day', created_at) as day,

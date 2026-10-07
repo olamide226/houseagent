@@ -1,7 +1,7 @@
 # Agent evals
 
 Agent quality is judged by database state, never by wording. Each case in `tests/evals/*.yaml`
-seeds a household, sends its turns through `simulate_turn()` (the service the dashboard Playground
+seeds a household, sends its turns through `simulate_turn()` (the service the dashboard's Practice chat
 uses), and asserts on rows.
 
 The clock is pinned: every case starts on Monday 5 October 2026 at 12:00 in London, and each

@@ -53,15 +53,15 @@ Letta server names it.
   gets 401; with no turn in flight for that household, 409; with no token configured, 404.
 - **Which process answers.** The bridge runs in whichever process is running the turn: the
   worker for chat (it listens on the port of `WORKER_INTERNAL_URL`, 8001 by default) and the api
-  for the Playground (`INTERNAL_BASE_URL`, by default `PUBLIC_BASE_URL`). `/internal` must be
+  for Practice chat (`INTERNAL_BASE_URL`, by default `PUBLIC_BASE_URL`). `/internal` must be
   reachable from the Letta server and from nowhere else; the Helm chart keeps it off the
   ingress ([ADR 0029](adr/0029-the-letta-tool-bridge.md)).
 - **Photos** go to Letta as base64 image parts of the user message.
 - The final answer is read as in the loop: `ACK`, `NOOP`, or a reply. A Letta failure fails the
   turn, and the member gets the usual "Sorry, that didn't go through".
 
-What is different under Letta: a Playground dry run rolls the database back but Letta still
-remembers the exchange; the model's own instructions are Letta's system prompt with ours in a
+What is different under Letta: a Practice chat run that is not saved rolls the database back but
+Letta still remembers the exchange; the model's own instructions are Letta's system prompt with ours in a
 memory block; and message text is stored on the Letta server as well as in Postgres.
 
 Letta's documentation now describes a different product (a harness with a WebSocket App Server).
@@ -128,7 +128,8 @@ the thread history like any other assistant message:
 | At 17:30 | "Probably running low: milk, bread. Add to the list?" | "yes", or "just the milk", adds with `update_shopping_list`; the guessed entry becomes a real one |
 
 Token usage, tool calls and latency for each turn are stored on the batch's last message in
-`messages.meta` (`usage`, `turn`), and shown on the dashboard Activity page.
+`messages.meta` (`usage`, `turn`), and shown to an admin on the dashboard Activity page, under
+"Technical details".
 
 ## Tools
 
