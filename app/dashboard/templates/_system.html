@@ -25,9 +25,12 @@
 </div>
 <h2>Model</h2>
 <div class="card">
+  {% if llm.failed %}
+  <p class="out">The last message could not be answered ({{ when(llm.failed.processed_at) }}): {{ llm.failed.error }}</p>
+  {% endif %}
   <ul class="rows">
     <li><span class="grow">Runtime</span><span>{{ llm.runtime }}</span></li>
-    <li><span class="grow">Provider</span><span>{{ llm.provider }}{% if llm.endpoint %} <span class="muted">at {{ llm.endpoint }}</span>{% endif %}</span></li>
+    <li><span class="grow">Provider</span><span>{{ llm.provider }}{% if llm.subscription %} <span class="muted">its CLI on this machine, signed in to a subscription</span>{% elif llm.endpoint %} <span class="muted">at {{ llm.endpoint }}</span>{% endif %}</span></li>
     <li><span class="grow">Model</span><span>{{ llm.model }}</span></li>
     {% if llm.fast_model %}<li><span class="grow">Model for sorting items</span><span>{{ llm.fast_model }}</span></li>{% endif %}
     <li><span class="grow">Reads photos</span><span>{{ "yes" if llm.images else "no" }}</span></li>

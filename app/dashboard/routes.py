@@ -605,9 +605,17 @@ async def _system(request: Request, session: Session, template: str = "_system.h
             "stock_rows": len(await inventory.stock_rows(conn, session.household_id)),
             "migration": await fetch_val(conn, "select version_num from alembic_version"),
         }
+        # The newest message that was handled: if it failed, the model is the likely reason,
+        # and with a subscription provider the reason is usually its sign-in or its usage limit.
+        last = await fetch_one(
+            conn, """select status, meta->>'error' as error, processed_at from messages
+                     where household_id = :h and direction = 'in' and processed_at is not null
+                     order by processed_at desc limit 1""", h=session.household_id)
     llm = {"runtime": settings.agent_runtime, "provider": settings.llm_provider, "model": settings.llm_model,
            "fast_model": settings.llm_fast_model, "images": settings.llm_supports_images,
-           "endpoint": urlsplit(settings.llm_base_url).netloc if settings.llm_base_url else None}
+           "endpoint": urlsplit(settings.llm_base_url).netloc if settings.llm_base_url else None,
+           "subscription": settings.llm_provider in ("claude_code", "codex_cli"),
+           "failed": last if last and last["status"] == "failed" else None}
     return templates.TemplateResponse(request, template, {
         "session": session, "error": error, "notice": notice, "llm": llm, "version": _version(), "local": local,
         "evals": _eval_results(settings.eval_results_dir), "quantity_text": inventory.quantity_text, **context,

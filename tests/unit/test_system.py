@@ -6,13 +6,16 @@ import re
 from datetime import timedelta
 from decimal import Decimal as D
 
-from app.agent.tools import run_tool
+from app.agent.loop import LoopRuntime
+from app.agent.tools import run_tool, tool_definitions
 from app.config import get_settings
 from app.core.timeutil import utcnow
 from app.db import execute, fetch_all, fetch_val, tx
+from app.llm.claude_code import ClaudeCodeClient
+from app.pipeline import inbound
 from app.services import households, members
 from app.worker import main as worker
-from tests.helpers import add_item, add_member, ctx_for, seed_home, stock_snapshot
+from tests.helpers import add_item, add_member, ctx_for, seed_home, stock_snapshot, tg_update
 from tests.unit.test_dashboard import login
 
 
@@ -86,6 +89,36 @@ async def test_the_page_names_the_model_and_version_and_never_shows_a_secret(cli
                    settings.tg_webhook_secret, settings.wa_access_token, settings.wa_app_secret,
                    settings.bb_password, settings.bb_webhook_secret, settings.database_url):
         assert secret and secret not in text
+
+
+async def test_a_subscription_whose_sign_in_has_gone_shows_on_the_page_until_a_message_is_answered(client, cli, monkeypatch):
+    monkeypatch.setattr(get_settings(), "llm_provider", "claude_code")
+    monkeypatch.setattr(get_settings(), "llm_base_url", None)
+    async with tx() as conn:
+        home = await seed_home(conn)
+    await login(client, home)
+    text = await page(client)
+    assert 'claude_code <span class="muted">its CLI on this machine, signed in to a subscription</span>' in text
+    assert "could not be answered" not in text
+
+    # What `claude -p` prints, and exits 1 with, when its sign-in is missing (recorded: tests/contract).
+    offered = [f"mcp__household__{tool.name}" for tool in tool_definitions(onboarding_active=False)]
+    result = {"type": "result", "subtype": "success", "usage": {}}
+    cli.will({"exit": 1, "stdout": json.dumps(result | {"is_error": True, "result": "Not logged in · Please run /login"})},
+             {"stdout": json.dumps({"type": "system", "subtype": "init", "tools": offered}) + "\n"
+                        + json.dumps(result | {"is_error": False, "result": "NOOP"})})
+    runtime = LoopRuntime(ClaudeCodeClient(model="haiku"))
+    await client.post("/webhooks/telegram", json=tg_update(1, "we're out of eggs"),
+                      headers={"X-Telegram-Bot-Api-Secret-Token": "test-webhook-secret"})
+    assert await inbound.process_household(home.id, runtime, {}) == 1
+    text = await page(client)
+    assert "The last message could not be answered (" in text
+    assert "LLMError: Claude Code is not signed in, or its sign-in has expired: Not logged in · Please run /login" in text
+
+    await client.post("/webhooks/telegram", json=tg_update(2, "morning all"),
+                      headers={"X-Telegram-Bot-Api-Secret-Token": "test-webhook-secret"})
+    assert await inbound.process_household(home.id, runtime, {}) == 1
+    assert "could not be answered" not in await page(client)       # the next message was answered: no longer the state
 
 
 async def test_the_last_eval_result_is_read_from_where_the_suite_leaves_it(client, tmp_path, monkeypatch):
