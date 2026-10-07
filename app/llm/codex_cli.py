@@ -14,12 +14,13 @@ from app.llm.types import CACHE_BREAK, ChatMessage, ImagePart, LLMError, LLMResp
 NAME = "Codex"
 # Codex is an agent with a shell. These switch off the tools that run or read anything, and the
 # parts of a personal setup that would otherwise join the turn. `--ignore-user-config` leaves
-# out config.toml, and with it the user's own MCP servers.
+# out config.toml, and with it the user's own MCP servers. Skills have no switch: a budget of
+# one token (zero is refused) leaves their list empty, which is also 3,000 tokens fewer a step.
 OFF = ("shell_tool", "unified_exec", "code_mode_host", "view_image", "image_generation", "browser_use",
        "computer_use", "multi_agent", "hooks", "memories", "plugins", "apps")
 ISOLATED = ["--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
             "--sandbox", "read-only", "--color", "never",
-            "-c", "project_doc_max_bytes=0", "-c", 'web_search="disabled"',
+            "-c", "project_doc_max_bytes=0", "-c", 'web_search="disabled"', "-c", "skills.max_context_tokens=1",
             *(arg for feature in OFF for arg in ("--disable", feature))]
 ENV = ("CODEX_HOME", "CODEX_CA_CERTIFICATE")
 # Every other item in the event stream is Codex doing something of its own: a command, a file

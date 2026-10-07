@@ -12,6 +12,9 @@ from typing import Any
 
 from app.llm.types import ChatMessage, ImagePart, LLMError, TextPart, ToolDef
 
+# Both CLIs tell the model today's date themselves, in the machine's time zone. Around midnight
+# that is not the household's date, so the brief's is named as the one to use.
+BRIEF = "The household's brief. Its date and time are the ones to go by, whatever other date you were given.\n"
 CONVERSATION = (
     'The conversation, one JSON object per line, oldest first. "user" lines are what people in the household '
     'wrote, "assistant" lines are your earlier steps, "tool" lines are the results of the tool calls you asked for.\n'
@@ -46,7 +49,8 @@ def render(brief: str, messages: list[ChatMessage], tools: list[ToolDef]) -> tup
         if m.tool_calls:
             line["tool_calls"] = [{"id": c.id, "name": c.name, "arguments": c.arguments} for c in m.tool_calls]
         lines.append(json.dumps(line, ensure_ascii=False))
-    return "\n\n".join(filter(None, [brief, CONVERSATION + "\n".join(lines), "Answer with your next step."])), images
+    parts = [BRIEF + brief if brief else "", CONVERSATION + "\n".join(lines), "Answer with your next step."]
+    return "\n\n".join(filter(None, parts)), images
 
 
 def failure(cli: str, detail: str) -> LLMError:
