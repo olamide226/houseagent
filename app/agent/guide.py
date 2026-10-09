@@ -49,7 +49,8 @@ TALK = {
 # The words answered by code (app/pipeline/inbound.py), because the answer holds a private link.
 WORDS = {
     "dashboard": "The word dashboard, sent to you as a message by itself, gets that adult a private link to the web "
-                 "pages, for any phone or computer. It works once, for 10 minutes.",
+                 "pages, for any phone or computer. It opens a page with one button, Open my dashboard. It works once, "
+                 "for 10 minutes.",
     "shops": "The list at the shop (optional, iPhone only): their iPhone tells you when they arrive at a shop and you "
              "send them the list for that shop. The word shops, sent to you by itself, gets them a personal link; "
              "opened on the iPhone it shows the steps, one shop at a time. Someone who has lost their link gets a "

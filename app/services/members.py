@@ -198,6 +198,13 @@ async def create_login_token(conn: AsyncConnection, member_id: str, now: datetim
     return token
 
 
+async def login_token_usable(conn: AsyncConnection, token: str, now: datetime) -> bool:
+    """Whether the token could still be exchanged. Only reads: this is all a GET of the link may do."""
+    return bool(await fetch_val(
+        conn, "select exists (select 1 from login_tokens where token_hash = :hash and used_at is null "
+              "and expires_at > :now)", hash=hash_token(token), now=now))
+
+
 async def consume_login_token(conn: AsyncConnection, token: str, now: datetime) -> dict[str, Any] | None:
     """Exchange an unused, unexpired token for its member. Single use."""
     return await fetch_one(

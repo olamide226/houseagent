@@ -53,9 +53,9 @@ def create_app() -> FastAPI:
     async def login_required(request: Request, exc: auth.LoginRequired) -> Response:
         settings = get_settings()
         return auth.templates.TemplateResponse(request, "login.html", {
-            "agent": settings.agent_name,
+            "agent": settings.agent_name, "spent": exc.spent,
             "telegram": f"https://t.me/{settings.tg_bot_username}" if settings.tg_bot_username else None,
-        }, status_code=401)
+        }, status_code=401, headers=auth.PRIVATE_PAGE)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:

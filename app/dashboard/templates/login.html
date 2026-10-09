@@ -1,9 +1,15 @@
 {% extends "base.html" %}
-{% block title %}Log in from chat{% endblock %}
+{% block title %}{{ "This link no longer works" if spent else "Log in from chat" }}{% endblock %}
 {% block main %}
 <span class="logo">{{ icon("home") }}</span>
+{% if spent %}
+<h1>This link no longer works</h1>
+<p class="lead">It was already used or has expired. Send the word <strong>dashboard</strong> to {{ agent }} for a
+  fresh one.</p>
+{% else %}
 <h1>Log in from chat</h1>
 <p class="lead">No password. {{ agent }} sends you a login link.</p>
+{% endif %}
 <ol class="numbered">
   <li><span>Open your chat with {{ agent }}.</span></li>
   <li><span>Send the word <strong>dashboard</strong>.</span></li>

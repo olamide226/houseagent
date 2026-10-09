@@ -26,6 +26,8 @@ templates.env.globals.update(icon=words.icon, local=local)
 
 COOKIE = "ha_session"
 SESSION_SECONDS = 30 * 24 * 3600
+# A page with a secret in its address: kept out of caches, search results and the Referer of its links.
+PRIVATE_PAGE = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex"}
 
 
 @dataclass(frozen=True)
@@ -41,6 +43,9 @@ class Session:
 
 class LoginRequired(Exception):
     """No valid session; rendered as a page that says how to get a login link."""
+
+    def __init__(self, *, spent: bool = False) -> None:
+        self.spent = spent   # they opened a login link that was used already or has expired
 
 
 def _serializer() -> URLSafeTimedSerializer:
@@ -133,13 +138,32 @@ async def setup_submit(request: Request, token: str = Form(""), household: str =
 
 
 @router.get("/login/{token}")
-async def login(token: str) -> Response:
+async def login_page(request: Request, token: str) -> Response:
+    """What opening the link shows: one button. A GET spends nothing, because the first GET of a
+    link sent in chat is the chat app fetching a preview, not the person (ADR 0035)."""
+    async with tx() as conn:
+        if not await members.login_token_usable(conn, token, utcnow()):
+            raise LoginRequired(spent=True)
+    return templates.TemplateResponse(request, "login_confirm.html", {"agent": get_settings().agent_name},
+                                      headers=PRIVATE_PAGE)
+
+
+@router.post("/login/{token}")
+async def login(request: Request, token: str) -> Response:
+    """The button on that page: spends the token and starts the session.
+
+    CSRF: there is no session yet to tie a token to, and none is needed. The address holds 32
+    random bytes that only the person's chat was sent, so nobody else can make this request for
+    them. What a stranger can do is post a link of their own from another site, to sign someone
+    into the stranger's household; a browser that says where a request came from is refused that."""
+    if request.headers.get("Sec-Fetch-Site", "same-origin") not in ("same-origin", "none"):
+        raise HTTPException(status_code=403, detail="Open the link itself")
     settings = get_settings()
     async with tx() as conn:
         member = await members.consume_login_token(conn, token, utcnow())
     if member is None:
-        raise LoginRequired
-    response = RedirectResponse("/dashboard", status_code=303)
+        raise LoginRequired(spent=True)
+    response = RedirectResponse("/dashboard", status_code=303, headers=PRIVATE_PAGE)
     response.set_cookie(
         COOKIE, _serializer().dumps({"m": member["id"], "v": member["session_version"]}),
         max_age=SESSION_SECONDS, httponly=True, samesite="lax",

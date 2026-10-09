@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.config import get_settings
 from app.core.timeutil import utcnow
-from app.dashboard.auth import templates
+from app.dashboard.auth import PRIVATE_PAGE, templates
 from app.db import execute, fetch_val, tx
 from app.presence import rules
 from app.services import households, members
@@ -28,8 +28,6 @@ router = APIRouter()
 EVENTS = ("enter", "exit")
 PER_HOUR = 30      # pings accepted per token per hour
 PLACE_MAX = 80     # longer than any place name; keeps junk out of `places`
-# A page with a secret in its address: kept out of caches, search results and the Referer of its links.
-PRIVATE_PAGE = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex"}
 
 
 @router.post("/presence/{token}", status_code=204)

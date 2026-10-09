@@ -41,7 +41,7 @@ async def login(client, home, member=None):
     """Log in through a real magic link. Returns the CSRF header for POSTs."""
     async with tx() as conn:
         token = await members.create_login_token(conn, member or home.ola, utcnow())
-    response = await client.get(f"/login/{token}")
+    response = await client.post(f"/login/{token}")
     assert response.status_code == 303 and response.headers["location"] == "/dashboard"
     page = await client.get("/dashboard")
     return {"X-CSRF-Token": re.search(r'"X-CSRF-Token": "([0-9a-f]+)"', page.text).group(1), "HX-Request": "true"}
@@ -94,15 +94,56 @@ async def test_pages_need_a_session_and_a_magic_link_works_exactly_once(client):
         assert refused.status_code == 401 and "login link" in refused.text
         assert 'href="https://t.me/home_test_bot"' in refused.text           # where to ask for one
 
-    first = await client.get(f"/login/{token}")
+    first = await client.post(f"/login/{token}")
     assert first.status_code == 303
     cookie = first.headers["set-cookie"].lower()
     assert "httponly" in cookie and "samesite=lax" in cookie and "max-age=2592000" in cookie
     assert (await client.get("/dashboard")).status_code == 200
 
     client.cookies.clear()
-    assert (await client.get(f"/login/{token}")).status_code == 401       # single use
-    assert (await client.get("/login/made-up")).status_code == 401
+    assert (await client.post(f"/login/{token}")).status_code == 401      # single use
+    assert (await client.post("/login/made-up")).status_code == 401
+    assert (await client.get("/dashboard")).status_code == 401
+
+
+async def test_opening_a_login_link_spends_nothing_and_the_button_on_the_page_signs_in(client):
+    """A chat app fetches a link it is sent, to show a preview, before the person can tap it."""
+    async with tx() as conn:
+        home = await seed_home(conn)
+        token = await members.create_login_token(conn, home.ola, utcnow())
+    for _ in range(2):                                                    # the preview, then the person
+        page = await client.get(f"/login/{token}")
+        assert page.status_code == 200 and "set-cookie" not in page.headers
+        assert '<form method="post">' in page.text and "Open my dashboard" in page.text
+        # Nothing for a preview to show or pass on: no token and no names in the page, and it is not kept.
+        assert token not in page.text and "Adebayo" not in page.text and "Ola" not in page.text
+        assert (page.headers["cache-control"], page.headers["referrer-policy"], page.headers["x-robots-tag"]) == (
+            "no-store", "no-referrer", "noindex")
+    assert (await client.get("/dashboard")).status_code == 401
+    async with tx() as conn:
+        assert await fetch_val(conn, "select used_at from login_tokens") is None
+
+    # Posted from a page on another site, as a link of someone else's would be: refused, and still not spent.
+    assert (await client.post(f"/login/{token}", headers={"Sec-Fetch-Site": "cross-site"})).status_code == 403
+    signed_in = await client.post(f"/login/{token}", headers={"Sec-Fetch-Site": "same-origin"})
+    assert signed_in.status_code == 303 and signed_in.headers["location"] == "/dashboard"
+    assert (await client.get("/dashboard")).status_code == 200
+
+    client.cookies.clear()
+    for again in (await client.post(f"/login/{token}"), await client.get(f"/login/{token}")):
+        assert again.status_code == 401 and "set-cookie" not in again.headers
+        said = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", again.text))
+        assert "It was already used or has expired. Send the word dashboard to Home for a fresh one." in said
+        assert again.headers["cache-control"] == "no-store"
+
+
+async def test_a_login_link_older_than_ten_minutes_shows_no_button_and_signs_nobody_in(client):
+    async with tx() as conn:
+        home = await seed_home(conn)
+        token = await members.create_login_token(conn, home.ola, utcnow() - timedelta(minutes=10, seconds=1))
+    page = await client.get(f"/login/{token}")
+    assert page.status_code == 401 and "already used or has expired" in page.text and "<form" not in page.text
+    assert (await client.post(f"/login/{token}")).status_code == 401
     assert (await client.get("/dashboard")).status_code == 401
 
 

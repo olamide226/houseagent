@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Open your dashboard{% endblock %}
+{# Opening the link changes nothing; the button does. The form posts to this page's own address. #}
+{% block main %}
+<span class="logo">{{ icon("home") }}</span>
+<h1>Open your dashboard</h1>
+<p class="lead">This is your login link from {{ agent }}. It works once, so keep it to yourself.</p>
+<form method="post"><button class="big">Open my dashboard</button></form>
+{% endblock %}
