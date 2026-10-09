@@ -50,7 +50,7 @@ rendered but not installed. Each page below says what has been checked and what 
 | [agent-and-tools.md](agent-and-tools.md) | Runtime loop, the product guide the assistant answers "how do I..." from, the optional Letta runtime, photos, onboarding, tools, calendar rules, resolution rules, undo |
 | [presence.md](presence.md) | iPhone Shortcut setup, the presence rules, the consumption model, "probably" list entries, the low-stock prompt |
 | [dashboard.md](dashboard.md) | Pages, the login flow, invites, channels and the family group, the System page, the calendar feed |
-| [operations.md](operations.md) | Environment variables, running, Helm, the subscription providers' CLIs and sign-in, media storage, worker jobs, the BlueBubbles outage and WhatsApp template runbooks, logs |
+| [operations.md](operations.md) | Environment variables, running, one server with compose (deploy, update, backup, moving a household), Helm, the subscription providers' CLIs and sign-in, media storage, worker jobs, the BlueBubbles outage and WhatsApp template runbooks, logs |
 | [evals.md](evals.md) | Running the agent evals, adding a case, latest results |
 | [adr/](adr/) | One decision per file |
 | [spec.md](spec.md) | The v1 implementation spec: the baseline for behaviour, names and layout |

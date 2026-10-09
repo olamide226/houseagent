@@ -30,13 +30,13 @@ module; a new model is a configuration change.
 
 ## Status
 
-All six milestones of the [spec](docs/spec.md) are implemented. **It has not been used by a
-household yet**, and how much of it has met the real services differs by part:
+All six milestones of the [spec](docs/spec.md) are implemented. **One household has been trying it
+on Telegram since October 2026**, and how much of it has met the real services differs by part:
 
 | Part | State |
 | --- | --- |
 | Inventory, shopping list, undo, calendar, reminders, digests, onboarding, dashboard | Built and tested against Postgres, with live-model evals |
-| Telegram | Built; tested against recorded payloads and mocked sends, never against Telegram itself |
+| Telegram | Built; tested against recorded payloads and mocked sends, and in daily use by that household |
 | WhatsApp | Built; tested against payloads built from Meta's docs and mocked calls. There is no WhatsApp account yet |
 | iMessage | Built from the BlueBubbles server source; tested against payloads built from it. There is no Mac set up yet |
 | Presence | Built; tested with plain HTTP calls, never from a phone |
@@ -45,6 +45,7 @@ household yet**, and how much of it has met the real services differs by part:
 | Model providers | `openai_compat` and `anthropic` with an API key. `claude_code` and `codex_cli` run on a Claude subscription or a ChatGPT plan through the vendor's own CLI: built, run once each on the eval suite, never deployed, and the vendors' terms for this use are unclear: see [docs/llm.md](docs/llm.md#subscription-providers) |
 | Letta runtime | Optional and off by default. Built, compared with the plain loop on the eval suite, and not promoted: see [docs/evals.md](docs/evals.md#the-letta-comparison) |
 | Helm chart | Linted and rendered; never installed on a cluster |
+| One server with Docker Compose | Running since 9 Oct 2026 behind a cluster's ingress, with that household's data moved onto it: see [docs/operations.md](docs/operations.md#on-one-server) |
 
 Each page under `docs/` says, for its feature, what has been checked and what has not.
 
@@ -61,7 +62,8 @@ docker compose up --build     # Postgres, migration, api on :8000, worker
 Open `http://localhost:8000/setup?token=<SETUP_TOKEN>`, create the household, and tap the invite
 it shows. The assistant says hello and asks its first setup question. Telegram must reach the api
 over HTTPS to deliver webhooks. The longer version, and running without Docker, is in
-[docs/README.md](docs/README.md).
+[docs/README.md](docs/README.md); keeping it running on a server is in
+[docs/operations.md](docs/operations.md#on-one-server).
 
 ```sh
 createdb houseagent_test      # once
@@ -80,7 +82,7 @@ uv run pytest tests/unit tests/contract
 | [docs/agent-and-tools.md](docs/agent-and-tools.md) | The runtime, the prompt, the twelve tools, undo, the Letta runtime |
 | [docs/dashboard.md](docs/dashboard.md) | Every page, login, invites |
 | [docs/presence.md](docs/presence.md) | The iPhone Shortcut, the arrival rules, predictions |
-| [docs/operations.md](docs/operations.md) | Environment variables, Helm, health, the BlueBubbles outage and WhatsApp template runbooks, logs, costs |
+| [docs/operations.md](docs/operations.md) | Environment variables, running on one server with compose, Helm, health, the BlueBubbles outage and WhatsApp template runbooks, logs, costs |
 | [docs/evals.md](docs/evals.md) | The eval suite, how to run it, the latest results |
 | [docs/data-model.md](docs/data-model.md), [docs/llm.md](docs/llm.md) | Tables and invariants; the model layer |
 | [docs/adr/](docs/adr/) | Thirty-two decisions, one per file |
@@ -95,4 +97,5 @@ app/
   dashboard/   pages and login        presence/  the Shortcut endpoint
   worker/      the job supervisor     llm/       four provider adapters, speech-to-text
 deploy/helm/household-agent/          tests/     unit, contract, evals
+deploy/k8s/dev/                       the dev server's ingress to its compose stack
 ```

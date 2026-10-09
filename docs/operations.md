@@ -56,6 +56,149 @@ worker. The image is `python:3.12-slim` with `ffmpeg` and runs as `nobody`. Comp
 object store: point `S3_*` in `.env` at a bucket you have, or leave them unset and photos are not
 read.
 
+The database lives in the volume `pgdata` and has no published port. The database, the api and the
+worker restart by themselves, and `docker compose ps` shows the health of each: the api's is
+`/readyz`, the worker's is its heartbeat file. Compose reads four variables of its own from the
+same `.env`:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `API_PUBLISH` | `8000` | Where the api is published: a port, or `address:port` to open it on one address only |
+| `POSTGRES_PASSWORD` | `ha` | The database's password. It is fixed when the volume is first created |
+| `CLAUDE_CODE_VERSION`, `CODEX_VERSION` | empty | Builds that CLI into the image ([below](#the-cli-in-the-image)) |
+
+## On one server
+
+One household fits on one machine: the same compose file, behind whatever ends TLS there.
+`https://houseagent.devng.host` runs this way since 9 Oct 2026, with a cluster's ingress in front
+of it.
+
+### Deploy
+
+```sh
+git clone https://github.com/olamide226/houseagent.git && cd houseagent
+cp .env.example .env && chmod 600 .env
+```
+
+Fill `.env` in as on a laptop, and add:
+
+```sh
+PUBLIC_BASE_URL=https://houseagent.devng.host
+POSTGRES_PASSWORD=...               # openssl rand -hex 24: letters and digits only, it goes into a URL
+API_PUBLISH=172.17.0.1:18090        # an address the proxy reaches and the internet does not
+```
+
+```sh
+docker compose up -d --build
+docker compose ps                   # db, api and worker healthy; migrate exited (0)
+```
+
+Then point the proxy at that port, and Telegram at the new address
+([channels.md](channels.md#setup-checklist)).
+
+**The port is the whole api.** Whoever reaches it also reaches `/readyz` and `/internal`, which
+the proxy is there to keep in. Docker opens a published port in the firewall itself, past `ufw`,
+so a bare port number is open to the internet. Publish on loopback when the proxy runs on the
+machine, or on the Docker bridge address (`172.17.0.1`) when it runs in a cluster on it.
+
+**The dev server.** `deploy/k8s/dev/` is three plain manifests for the k3s cluster that the dev
+server is a node of: a Service with no selector, an EndpointSlice written by hand to
+`172.17.0.1:18090`, and an Ingress for `houseagent.devng.host` with a certificate from
+cert-manager. The Ingress routes the same paths as the chart ([below](#deploying-with-helm)) and
+nothing else. Its proxy keeps an access log with full paths, so login, presence and calendar
+tokens are in that log.
+
+```sh
+sudo k3s kubectl apply -f deploy/k8s/dev/
+sudo k3s kubectl -n dev get certificate houseagent-devng-tls      # READY True after about half a minute
+curl -i https://houseagent.devng.host/healthz                     # 200; /readyz is 404 from the proxy
+```
+
+That server also has a `docker-compose.override.yml` beside the compose file. It is not in the
+repository (`.gitignore` names it) and holds only what is that machine's own: which cgroup the
+containers run in.
+
+### Update and roll back
+
+```sh
+git pull && docker compose up -d --build      # builds, migrates, then replaces the api and the worker
+```
+
+The api is away for a few seconds; Telegram and WhatsApp send again what was not taken. To go
+back, `git checkout <commit>` and run the same command. That does not undo a migration.
+
+### Logs
+
+```sh
+docker compose logs -f --tail=100 api worker
+```
+
+### Backup and restore
+
+```sh
+docker compose exec -T db pg_dump -U ha -Fc houseagent > houseagent-$(date +%F).dump
+```
+
+Nothing does this for you: run it from cron and keep the file on another machine. To restore, into
+an empty database:
+
+```sh
+docker compose stop api worker
+docker compose exec -T db dropdb -U ha --force houseagent
+docker compose exec -T db createdb -U ha houseagent
+docker compose exec -T db pg_restore -U ha -d houseagent --no-owner --no-acl --exit-on-error < houseagent-2026-10-09.dump
+docker compose up -d
+```
+
+### Moving a household from another machine
+
+Done once, on 9 Oct 2026, from a Mac (Postgres 15.2, dumped with `pg_dump` 16.1) to this stack
+(Postgres 16.15). All 22 tables matched in row count and content, and Telegram was without a
+webhook that answered for 40 seconds.
+
+1. **Rehearse while the old copy still runs.** Dump it with
+   `pg_dump -Fc --no-owner --no-acl`, restore it as above, start the api alone
+   (`docker compose up -d api`), compare `select count(*)` per table, and call `/readyz`. Do not
+   start the worker on a copy: it would send the same reminders and briefs as the one still
+   running.
+2. **Stop the old api, then the old worker** once it has nothing in hand, so no reply is cut off
+   half way. Both of these are 0 when it is idle:
+
+   ```sql
+   select count(*) from messages where direction = 'in' and status in ('received', 'processing');
+   select count(*) from outbox where status = 'sending' or (status = 'pending' and send_after <= now());
+   ```
+
+3. **Dump again, restore into an empty database, compare again**, then `docker compose up -d`.
+4. **Point Telegram at the new address** with `setWebhook` as in
+   [channels.md](channels.md#setup-checklist): the same secret, and no `drop_pending_updates`.
+   Telegram kept what was sent meanwhile and delivers it now. `getWebhookInfo` must show the new
+   address and no `last_error_message`.
+5. **Links people already have keep the old address.** A personal link for the shops is replaced on
+   Settings ("Replace link") and put into the phone again; a calendar feed is subscribed to again
+   from the Calendar page. Login links are made new each time.
+
+Keep the old database until the new one has run for a while. To go back before then: start the old
+api and worker and run `setWebhook` with the old address.
+
+### The Claude subscription on a server
+
+The stack can answer on a Claude subscription instead of an API key
+([Subscription providers](#subscription-providers); read what the vendors' terms say first). With
+`CLAUDE_CODE_VERSION=2.1.292` in `.env` the image has the CLI. The containers run as `nobody`, who
+has no home, so `.env` also needs `HOME=/tmp` and `CLAUDE_CONFIG_DIR=/tmp/claude`. The switch is
+then three lines and `docker compose up -d`:
+
+```sh
+LLM_PROVIDER=claude_code
+LLM_MODEL=claude-sonnet-5-5
+CLAUDE_CODE_OAUTH_TOKEN=...         # printed by `claude setup-token` on a machine with a browser
+```
+
+On the dev server the image and the two paths are in place and the three lines are there,
+commented out. Without the token the adapter answers "Claude Code is not signed in"; with a token
+it has not been tried.
+
 ## Deploying with Helm
 
 The chart is `deploy/helm/household-agent/`: one image, an `api` Deployment with its Service and
@@ -205,7 +348,8 @@ That is a sign-in of its own, so your laptop's stays as it is. Do not copy your 
 volume like a password. Device-code sign-in has to be allowed in your ChatGPT security settings.
 
 With Docker Compose the same two things are a named volume mounted at `/codex` in `api` and
-`worker` with `CODEX_HOME=/codex`, or `CLAUDE_CODE_OAUTH_TOKEN` in `.env`.
+`worker` with `CODEX_HOME=/codex`, or `CLAUDE_CODE_OAUTH_TOKEN` in `.env`
+([The Claude subscription on a server](#the-claude-subscription-on-a-server)).
 
 ### When the sign-in expires or the allowance runs out
 
@@ -475,5 +619,7 @@ replaced the same way; Codex's sign-in is renewed with `codex login` on its volu
 
 ## Not covered
 
-A restore drill has not been done, and there is no import for the System page's export. The
-subscription providers have not run in a signed-in container or on a cluster.
+A restore has been done once, when the household moved to the dev server
+([above](#moving-a-household-from-another-machine)); it is not practised on a schedule and no
+backup is taken automatically. There is no import for the System page's export. The subscription
+providers have not run in a signed-in container or on a cluster.
