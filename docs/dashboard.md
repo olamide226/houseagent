@@ -57,19 +57,31 @@ it, a QR code of the same link for another phone, and the code itself to send by
 
 No passwords. A connected adult sends `dashboard` to the bot. The pipeline answers that exact
 keyword itself (no model call) with a DM containing `/login/{token}`: 32 random bytes, stored
-hashed, valid 10 minutes, single use, 5 per member per hour. Opening it sets a signed, HttpOnly,
-SameSite=Lax cookie for 30 days (Secure when `PUBLIC_BASE_URL` is https) carrying the member id and
-`members.session_version`. `POST /logout?everywhere=1` bumps that version and ends every session.
-Children never get logins.
+hashed, valid 10 minutes, single use, 5 per member per hour. Children never get logins.
+
+Opening the link (`GET`) shows a page with one button, **Open my dashboard**, and changes nothing.
+The button is a `POST` to the same address. That is what spends the token and sets a signed,
+HttpOnly, SameSite=Lax cookie for 30 days (Secure when `PUBLIC_BASE_URL` is https) carrying the
+member id and `members.session_version`. `POST /logout?everywhere=1` bumps that version and ends
+every session. A chat app opens a link it is sent, to show a preview, before the person can tap
+it; when the `GET` spent the token, the person's own tap found it used
+([ADR 0035](adr/0035-a-login-link-is-spent-by-its-button.md)).
 
 Anyone without a session gets a page that lists those steps and, when `TG_BOT_USERNAME` is set, a
-button that opens the chat in Telegram.
+button that opens the chat in Telegram. Someone who opens a link that was used or is more than 10
+minutes old gets the same page under the words "This link no longer works. It was already used or
+has expired. Send the word dashboard to Home for a fresh one."
 
-<p><img src="img/dashboard/login.png" width="230" alt="The page a signed-out visitor sees: three steps and Open Telegram"></p>
+<p>
+  <img src="img/dashboard/login-confirm.png" width="230" alt="What a login link opens: one button, Open my dashboard">
+  <img src="img/dashboard/login-used.png" width="230" alt="A used login link: this link no longer works, and how to get a fresh one">
+  <img src="img/dashboard/login.png" width="230" alt="The page a signed-out visitor sees: three steps and Open Telegram">
+</p>
 
 Every POST carries a CSRF token derived from `SESSION_SECRET` and the session, in the
 `X-CSRF-Token` header (set once on `<body>` via `hx-headers`) or a `csrf` form field. A mismatch
-returns 403.
+returns 403. The one POST without it is the login button, which has no session yet: the address
+itself is the secret, and a request that a browser marks as coming from another site is refused.
 
 ## Pages
 

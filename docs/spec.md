@@ -689,7 +689,7 @@ The second adult does not repeat steps already done; they get a one-line welcome
 
 A phone-first dashboard at `/dashboard`, rendered by the api process with Jinja2 and HTMX. It is for setup, looking things over and fixing mistakes; daily use still happens in chat, so the dashboard never needs to be opened for the system to work.
 
-**Login by magic link over chat, no passwords.** A member sends "dashboard" to the bot. The pipeline intercepts this exact keyword before the agent (no LLM call) and DMs a one-time link `/login/{token}`: 32 random bytes, hashed in `login_tokens`, 10-minute expiry, single use, 5 per member per hour. Opening it sets a signed, HttpOnly, Secure, SameSite=Lax cookie for 30 days carrying the member id and `members.session_version`; "Log out everywhere" increments that version. Children never get logins. All adults can view and edit; only `is_admin` members see the System page.
+**Login by magic link over chat, no passwords.** A member sends "dashboard" to the bot. The pipeline intercepts this exact keyword before the agent (no LLM call) and DMs a one-time link `/login/{token}`: 32 random bytes, hashed in `login_tokens`, 10-minute expiry, single use, 5 per member per hour. Opening it shows a page with one button; the button's POST spends the token (a GET never does, ADR 0035) and sets a signed, HttpOnly, Secure, SameSite=Lax cookie for 30 days carrying the member id and `members.session_version`; "Log out everywhere" increments that version. Children never get logins. All adults can view and edit; only `is_admin` members see the System page.
 
 | Page | Shows | Actions |
 | --- | --- | --- |
@@ -727,7 +727,8 @@ Everything except `/internal` is on the public ingress (the dashboard routes onl
 | POST | `/presence/{token}` | token | 204 | Shortcut enter/exit |
 | GET | `/ics/{token}.ics` | token | `text/calendar` | Read-only event feed for Apple or Google Calendar |
 | GET, POST | `/setup` | `SETUP_TOKEN` | HTML | First-run household creation; 404 once a household exists |
-| GET | `/login/{token}` | one-time token | 303 to `/dashboard` | Exchanges a magic link for a session cookie |
+| GET | `/login/{token}` | one-time token | HTML | A page with one button; spends nothing |
+| POST | `/login/{token}` | one-time token | 303 to `/dashboard` | Exchanges a magic link for a session cookie |
 | POST | `/logout` | session + CSRF | 303 | Ends this session; `?everywhere=1` bumps `session_version` |
 | GET, POST | `/dashboard/...` | session + CSRF on POST | HTML / HTMX partials | Pages in section 13 |
 | POST | `/dashboard/playground` | session + CSRF | HTMX partial | Runs a turn; dry run unless `apply=1` |

@@ -53,6 +53,8 @@ Any further payload a channel records is checked the same way. A new channel add
 - `message_reaction` becomes an event with `reaction_emoji`. It has no message id of its own, so
   its id is `reaction:{update_id}`, which keeps provider retries idempotent. A removed reaction is ignored.
 - `edited_message` is ignored.
+- Every message is sent with `link_preview_options: {"is_disabled": true}`, so Telegram's servers do not open
+  a link that holds a secret (ADR 0035).
 - `/start CODE` is treated as the invite code, so the deep link `https://t.me/<bot>?start=<code>` connects in one tap.
 - The bot's own messages are dropped: the bot's user id is the part of the token before the colon.
 - Sends use `parse_mode=HTML`; `format()` escapes `&`, `<`, `>`. The ack reaction is a thumbs-up.
