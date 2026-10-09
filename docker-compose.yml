@@ -1,11 +1,27 @@
-# Local stack: Postgres, a one-shot migration, the api and the worker.
+# Postgres, a one-shot migration, the api and the worker: the same file on a laptop and on a server.
 # Copy .env.example to .env first; DATABASE_URL is overridden here to point at the db service.
+# Compose also reads .env for the four variables below. On a server set POSTGRES_PASSWORD and
+# API_PUBLISH there (docs/operations.md#on-one-server).
+x-app: &app
+  image: household-agent
+  build:
+    context: .
+    args:
+      # Empty: neither CLI is installed. Name a version for LLM_PROVIDER=claude_code or codex_cli.
+      CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-}
+      CODEX_VERSION: ${CODEX_VERSION:-}
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+asyncpg://ha:${POSTGRES_PASSWORD:-ha}@db/houseagent
+  restart: unless-stopped
+
 services:
   db:
     image: postgres:16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ha
-      POSTGRES_PASSWORD: ha
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ha}
       POSTGRES_DB: houseagent
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -16,30 +32,39 @@ services:
       retries: 30
 
   migrate:
-    build: .
+    <<: *app
+    restart: "no"
     command: ["alembic", "upgrade", "head"]
-    env_file: .env
-    environment: &database
-      DATABASE_URL: postgresql+asyncpg://ha:ha@db/houseagent
     depends_on:
       db:
         condition: service_healthy
 
   api:
-    build: .
-    env_file: .env
-    environment: *database
+    <<: *app
     ports:
-      - "8000:8000"
+      # The only published port. A bare port is open on every address of the machine; on a server
+      # put an address in front of it that only the proxy can reach, such as 127.0.0.1:18090.
+      - "${API_PUBLISH:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 2s
     depends_on:
       migrate:
         condition: service_completed_successfully
 
   worker:
-    build: .
+    <<: *app
     command: ["python", "-m", "app.worker.main"]
-    env_file: .env
-    environment: *database
+    healthcheck:
+      # The worker touches this file every minute for as long as its event loop turns.
+      test: ["CMD", "python", "-c", "import os, sys, time; sys.exit(time.time() - os.path.getmtime(os.environ.get('WORKER_HEARTBEAT_FILE', '/tmp/worker-heartbeat')) > 180)"]
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      start_interval: 2s
     depends_on:
       migrate:
         condition: service_completed_successfully

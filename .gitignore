@@ -21,3 +21,6 @@ htmlcov/
 
 # Local eval results
 tests/evals/.results/
+
+# One machine's own additions to docker-compose.yml, read by compose when present
+docker-compose.override.yml
