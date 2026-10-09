@@ -56,12 +56,13 @@ async def test_edited_messages_channel_posts_and_removed_reactions_are_ignored(a
 
 
 @respx.mock
-async def test_send_text_posts_html_and_returns_the_message_id(adapter):
+async def test_send_text_posts_html_with_no_link_preview_and_returns_the_message_id(adapter):
     route = respx.post(f"{API}/sendMessage").respond(json={"ok": True, "result": {"message_id": 9001}})
     sent = await adapter.send_text("1001", adapter.format("eggs < 6 & milk"), reply_to_external_id="501")
     assert sent.external_id == "9001"
     assert json.loads(route.calls.last.request.content) == {
         "chat_id": "1001", "text": "eggs &lt; 6 &amp; milk", "parse_mode": "HTML",
+        "link_preview_options": {"is_disabled": True},   # Telegram does not open a link that holds a secret
         "reply_parameters": {"message_id": 501},
     }
 

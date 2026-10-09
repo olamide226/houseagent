@@ -113,7 +113,10 @@ class TelegramAdapter:
 
     async def send_text(self, external_thread_id: str, text: str,
                         reply_to_external_id: str | None = None) -> SendResult:
-        payload: dict[str, Any] = {"chat_id": external_thread_id, "text": text, "parse_mode": "HTML"}
+        # No preview of any link: the ones sent here hold a secret (login, shop and calendar links),
+        # and a preview is Telegram's servers opening the link before the person does.
+        payload: dict[str, Any] = {"chat_id": external_thread_id, "text": text, "parse_mode": "HTML",
+                                   "link_preview_options": {"is_disabled": True}}
         if reply_to_external_id:
             payload["reply_parameters"] = {"message_id": int(reply_to_external_id)}
         sent = await self._call("sendMessage", payload)
