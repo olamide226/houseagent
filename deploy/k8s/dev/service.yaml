@@ -1,0 +1,12 @@
+# houseagent.devng.host is not a cluster workload: it is `docker compose` on the dev server
+# (docs/operations.md#on-one-server). This Service has no selector; endpointslice.yaml gives it
+# its one backend.
+apiVersion: v1
+kind: Service
+metadata:
+  name: houseagent
+  namespace: dev
+spec:
+  ports:
+    - port: 80
+      targetPort: 18090

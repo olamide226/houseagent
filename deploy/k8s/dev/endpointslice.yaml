@@ -1,0 +1,18 @@
+# The backend of the `houseagent` Service: the api container, published by compose on the dev
+# server's Docker bridge address (API_PUBLISH=172.17.0.1:18090). Pods on that node reach the
+# bridge; the internet cannot, and Docker-published ports are not covered by ufw. Written by hand
+# and owned by no controller, like `inade-ems-host` beside it.
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: houseagent-host
+  namespace: dev
+  labels:
+    kubernetes.io/service-name: houseagent
+addressType: IPv4
+endpoints:
+  - addresses:
+      - 172.17.0.1
+ports:
+  - port: 18090
+    protocol: TCP

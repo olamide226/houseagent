@@ -1,0 +1,32 @@
+# houseagent.devng.host to the compose stack, TLS from cert-manager. The paths are the Helm
+# chart's allowlist (deploy/helm/household-agent/templates/ingress.yaml): /internal and /readyz
+# are never routed, and nor is anything else.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: houseagent
+  namespace: dev
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Practice chat answers in the same request, after two or three model steps.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - houseagent.devng.host
+      secretName: houseagent-devng-tls
+  rules:
+    - host: houseagent.devng.host
+      http:
+        paths:
+          - {path: /webhooks, pathType: Prefix, backend: &api {service: {name: houseagent, port: {number: 80}}}}
+          - {path: /presence, pathType: Prefix, backend: *api}
+          - {path: /ics, pathType: Prefix, backend: *api}
+          - {path: /healthz, pathType: Prefix, backend: *api}
+          - {path: /static, pathType: Prefix, backend: *api}
+          - {path: /setup, pathType: Prefix, backend: *api}
+          - {path: /login, pathType: Prefix, backend: *api}
+          - {path: /logout, pathType: Prefix, backend: *api}
+          - {path: /dashboard, pathType: Prefix, backend: *api}
