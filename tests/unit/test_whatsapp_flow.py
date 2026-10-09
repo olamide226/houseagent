@@ -247,7 +247,8 @@ async def test_a_failed_status_from_meta_fails_the_send_and_moves_it_to_telegram
     assert await rows("select status, channel_used, last_error from outbox order by created_at") == [
         {"status": "failed", "channel_used": "whatsapp", "last_error": "131026 Message undeliverable"},
         {"status": "sent", "channel_used": "telegram", "last_error": None}]
-    assert bodies(telegram) == [{"chat_id": "1001", "text": "Bins tonight", "parse_mode": "HTML"}]
+    assert bodies(telegram) == [{"chat_id": "1001", "text": "Bins tonight", "parse_mode": "HTML",
+                                 "link_preview_options": {"is_disabled": True}}]
     assert await rows("select 1 from messages where direction = 'in'") == []     # a status is never a message
 
 
