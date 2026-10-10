@@ -145,7 +145,7 @@ class LettaRuntime:
         return agent_id
 
     async def _tools(self) -> list[str]:
-        """Register the twelve tools once per process. Upsert is by name, so a deploy that
+        """Register the thirteen tools once per process. Upsert is by name, so a deploy that
         changes a tool changes it for every existing agent."""
         if self._tool_ids is None:
             self._tool_ids = [

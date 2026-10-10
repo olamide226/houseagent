@@ -9,7 +9,7 @@ Each tool is an async function plus a Pydantic args model.
   6. Every write records an inverse in agent_actions so undo_last can revert it.
   7. Tool functions are thin: resolve names, then call app/services/ (shared with the dashboard).
 
-REGISTRY holds all twelve; `onboarding_advance` is only offered while a household is being set up.
+REGISTRY holds all thirteen; `onboarding_advance` is only offered while a household is being set up.
 """
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -19,7 +19,7 @@ import structlog
 from pydantic import BaseModel, ValidationError
 
 from app.agent.base import Ctx, ToolError
-from app.agent.tools import calendar, family, inventory, memory, onboarding, shopping, undo
+from app.agent.tools import calendar, family, inventory, meals, memory, onboarding, shopping, undo
 from app.llm.types import ToolDef
 
 log = structlog.get_logger()
@@ -40,6 +40,7 @@ REGISTRY: dict[str, ToolSpec] = {
         ToolSpec("query_inventory", inventory.query_inventory, inventory.QueryInventory),
         ToolSpec("update_shopping_list", shopping.update_shopping_list, shopping.UpdateShoppingList),
         ToolSpec("get_shopping_list", shopping.get_shopping_list, shopping.GetShoppingList),
+        ToolSpec("meal_ideas", meals.meal_ideas, meals.MealIdeas),
         ToolSpec("schedule_event", calendar.schedule_event, calendar.ScheduleEvent),
         ToolSpec("modify_event", calendar.modify_event, calendar.ModifyEvent),
         ToolSpec("list_upcoming", calendar.list_upcoming, calendar.ListUpcoming),

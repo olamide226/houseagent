@@ -4,7 +4,7 @@
 `inventory_events` row, and the deterministic side effects of spec section 9.4 run here.
 """
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -21,6 +21,11 @@ DEFAULT_LOCATIONS = {
     "freezer": ["deep freezer", "chest freezer"],
     "store": ["pantry", "cupboard", "store cupboard", "larder"],
 }
+
+# Sections of the worker's CATEGORIES that nobody cooks with. An item with no section yet counts as food.
+NOT_FOOD = ("household", "toiletries", "baby")
+USE_FIRST_DAYS = 7   # a date this close puts an item at the head of what there is to cook with
+COOKING_CAP = 120    # items shown for meal ideas; the rest are counted, not named
 
 # Events that still count: undo markers and the events of undone actions are history only.
 LIVE_EVENTS = """inventory_events e
@@ -381,6 +386,52 @@ async def stock_rows(
         h=household_id, item=item_id, location=location_id, statuses=statuses, days=expiring_within_days,
         today=today,
     )
+
+
+async def food_rows(conn: AsyncConnection, household_id: str) -> list[dict[str, Any]]:
+    """What there is to cook with: everything in stock that has not run out, less what is not food."""
+    return await fetch_all(
+        conn,
+        """select i.canonical_name as item, i.default_unit as unit, l.name as location, s.qty_estimate,
+                  s.status, s.expires_on, s.last_event_at
+           from stock s join items i on i.id = s.item_id join locations l on l.id = s.location_id
+           where i.household_id = :h and s.status <> 'out' and not coalesce(i.category, '') = any(:not_food)
+           order by l.name, i.canonical_name""",
+        h=household_id, not_food=list(NOT_FOOD),
+    )
+
+
+def cooking_text(rows: list[dict[str, Any]], today: date) -> str:
+    """Food rows as a few lines a model can plan meals from: what to use first, soonest date first,
+    then one line per place. An item is a word or two, not a line, so a long pantry stays short;
+    past COOKING_CAP the least recently recorded are counted and not named."""
+    def amount(row: dict[str, Any]) -> str:
+        known = quantity_text(row["qty_estimate"], row["unit"]) if row["qty_estimate"] else ""
+        return row["item"] + (f" {known}" if known else "") + (" (low)" if row["status"] == "low" else "")
+
+    def dated(row: dict[str, Any], by: str = "") -> str:
+        return f"{amount(row)} ({row['location']}, {by}{row['expires_on']:%a %-d %b})"
+
+    soon = today + timedelta(days=USE_FIRST_DAYS)
+    past = sorted((r for r in rows if r["expires_on"] and r["expires_on"] < today), key=lambda r: r["expires_on"])
+    first = sorted((r for r in rows if r["expires_on"] and today <= r["expires_on"] <= soon),
+                   key=lambda r: r["expires_on"])
+    rest = [r for r in rows if not r["expires_on"] or r["expires_on"] > soon]
+    room = max(COOKING_CAP - len(past) - len(first), 0)
+    recent = {id(r) for r in sorted(rest, key=lambda r: r["last_event_at"], reverse=True)[:room]}
+    lines = []
+    if first:
+        lines.append("Use first: " + ", ".join(dated(r, "by ") for r in first))
+    if past:
+        lines.append("Past its date: " + ", ".join(dated(r) for r in past))
+    places: dict[str, list[str]] = {}
+    for row in rest:
+        if id(row) in recent:
+            places.setdefault(row["location"], []).append(amount(row))
+    lines += [f"{place}: {', '.join(names)}" for place, names in places.items()]
+    if len(rest) > room:
+        lines.append(f"+{len(rest) - room} more not shown")
+    return "\n".join(lines)
 
 
 def stock_line(row: dict[str, Any]) -> str:

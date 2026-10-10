@@ -103,8 +103,7 @@ async def build_brief(conn: AsyncConnection, env: Envelope, now: datetime) -> st
     lines.append("Locations: " + _capped([row["name"] for row in locations]))
     facts = await households.facts(conn, env.household_id)
     if facts:
-        lines.append("Facts: " + _capped(
-            [f"{f['member'] + ': ' if f['member'] else ''}{f['key']}={f['value']}" for f in facts], "; "))
+        lines.append("Facts: " + _capped([households.fact_text(fact) for fact in facts], "; "))
 
     entries = await shopping.active_entries(conn, env.household_id, include_predicted=False)
     lines.append(f"Shopping list ({len(entries)}): " + (_capped([e["item"] for e in entries]) or "empty"))

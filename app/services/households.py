@@ -221,6 +221,11 @@ async def facts(conn: AsyncConnection, household_id: str) -> list[dict[str, Any]
     )
 
 
+def fact_text(fact: dict[str, Any]) -> str:
+    """A remembered fact as the model reads it: whose it is, if anyone's, then key=value."""
+    return f"{fact['member'] + ': ' if fact['member'] else ''}{fact['key']}={fact['value']}"
+
+
 async def set_fact(rec: Recorder, key: str, value: str | None, member_id: str | None = None) -> None:
     """Upsert a fact about the household, or about one member; no value forgets it."""
     conn, household_id = rec.ctx.conn, rec.ctx.household_id
