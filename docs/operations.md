@@ -203,9 +203,9 @@ LLM_MODEL=claude-sonnet-5-5
 CLAUDE_CODE_OAUTH_TOKEN=...         # printed by `claude setup-token` on a machine with a browser
 ```
 
-On the dev server the image and the two paths are in place and the three lines are there,
-commented out. Without the token the adapter answers "Claude Code is not signed in"; with a token
-it has not been tried.
+The dev server answers this way, on the owner's Claude subscription with `claude-sonnet-5-5`.
+Without the token the adapter answers "Claude Code is not signed in". What happens there when
+the sign-in expires or the allowance runs out has not been seen.
 
 ## Deploying with Helm
 
@@ -263,10 +263,11 @@ vendors' terms say: read that before switching). The api and the worker each sta
 themselves, so wherever they run needs three things: the CLI, its sign-in, and somewhere the CLI
 may write.
 
-**They were tried on a laptop, never deployed.** On the laptop both ran the eval suite on the CLI's
-existing sign-in. In the container image both CLIs start as `nobody` on a read-only root and the
-adapters report that nobody is signed in; a signed-in container was not tried, and nor was the
-chart on a cluster.
+**Both were tried on a laptop, and Claude on one server.** On the laptop both ran the eval suite
+on the CLI's existing sign-in. The dev server answers on a Claude subscription in a signed-in
+container under Docker Compose
+([The Claude subscription on a server](#the-claude-subscription-on-a-server)). Codex in a
+signed-in container was not tried, and nor was the chart on a cluster with either.
 
 ### On your own machine
 
@@ -712,6 +713,7 @@ replaced the same way; Codex's sign-in is renewed with `codex login` on its volu
 
 A restore has been done once, when the household moved to the dev server
 ([above](#moving-a-household-from-another-machine)); it is not practised on a schedule and no
-backup is taken automatically. There is no import for the System page's export. The subscription
-providers have not run in a signed-in container or on a cluster. Google Calendar has not been
+backup is taken automatically. There is no import for the System page's export. Of the
+subscription providers, Codex has not run in a signed-in container and neither has run on a
+cluster. Google Calendar has not been
 connected to a real account ([above](#google-calendar)).
