@@ -22,7 +22,9 @@ flowchart LR
     W -- "replies, templates" --> WA
     W -- "replies, tapbacks, a ping every 5 min" --> BB
     W <-- "events both ways, every 15 s and 2 min" --> GC[Google Calendar]
+    W <-- "the same, over CalDAV" --> AC[Apple iCloud Calendar]
     Browser -- "sign-in, then back to the api" --> GC
+    API -- "an email and app-specific password, tried once" --> AC
 ```
 
 (The same diagram lives in [diagrams/architecture.mmd](diagrams/architecture.mmd).)
@@ -161,7 +163,7 @@ current time as an argument, so tests drive them on a controlled clock.
 | `outbox` | 2 s, or when woken | Sends due rows | `SKIP LOCKED`; a sent row is no longer pending |
 | `fire_reminders` | 15 s | Due reminders become outbox rows. A one-off becomes `sent`; a repeating one moves to its next time | `SKIP LOCKED`, and the outbox dedupe key is `reminder:{id}:{fire_at}` |
 | `job_nudges` | 15 s | Says what is due about each household job and moves its row on to whatever comes next: the morning after, or the next occurrence ([agent-and-tools.md](agent-and-tools.md#household-jobs)) | `SKIP LOCKED`; the row moves on in the transaction that queues the message, and the outbox dedupe key is `job:{id}:{due}:{asked at}` |
-| `sync_calendars` | 15 s | For each connected calendar: sends what differs here, and every 2 minutes reads what changed there and applies it ([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)). Tells an adult once when their connection stops | A connection is leased to one worker; a change already applied equals what was agreed and changes nothing; an event made twice is known by its mark |
+| `sync_calendars` | 15 s | For each connected calendar: sends what differs here, and every 2 minutes reads what changed there and applies it ([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md); Apple over CalDAV, [ADR 0041](adr/0041-apple-calendar-is-caldav-with-an-app-specific-password.md)). Tells an adult once when their connection stops | A connection is leased to one worker; a change already applied equals what was agreed and changes nothing; an event made twice is known by its mark |
 | `expand_recurrence` | 1 h | Reminder rows for each recurring event's occurrences in the next 48 hours, skipping exception dates | Unique `(event_id, fire_at)` |
 | `daily_brief` | 1 min check | At the household's `digest_time`: today's events and reminders, items to use within 2 days. Nothing on an empty day | A `job_runs` row per household and date |
 | `weekly_digest` | 1 min check | Sunday 18:00: the week ahead, the list count, low and expiring items, and what will probably run low that week. The first one to run in a month adds what was spent the month before, from receipts | A `job_runs` row per household and ISO week, and a `monthly_spending` row per household and month |
@@ -187,7 +189,8 @@ app/
                  adapters that run the vendors' CLIs, speech-to-text
   media/         MediaStore protocol and factory, S3 and ImgBB backends
   channels/      ChannelAdapter protocol, registry, Telegram, WhatsApp, iMessage
-  calendars/     what a connected calendar is to the app (Entry, Provider), and Google Calendar
+  calendars/     what a connected calendar is to the app (Entry, Provider), Google Calendar, and
+                 Apple's iCloud Calendar over CalDAV
   pipeline/      inbound (persist, debounce, turn, simulate_turn), media (fetch, store, transcribe), router
   agent/         runtime interface and factory, loop, the optional Letta runtime and its tool bridge,
                  prompt, resolve, actions (undo), stock, tools/

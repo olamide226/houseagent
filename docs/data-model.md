@@ -205,28 +205,34 @@ A household job is a `reminders` row with a `kind` and no event
 
 ## Connected calendars
 
-`calendar_connections` has one row per adult who has signed in to their own calendar
-([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)).
+`calendar_connections` has one row per adult who has signed in to their own calendar: Google
+([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)) or Apple
+([ADR 0041](adr/0041-apple-calendar-is-caldav-with-an-app-specific-password.md)), in `provider`.
 
 - `status` is `choosing` (signed in; `choices` lists the calendars to pick from), `active`, or
   `broken` (it stopped for good and its owner was told; `last_error` says why).
-- `secret` is the sign-in, encrypted with `CALENDAR_SECRET_KEY`. It and `sync_token` are left
-  out of the household export.
-- `calendar_id` is the one calendar shared. `(household_id, provider, calendar_id)` is unique:
-  a calendar is shared with a household once.
+- `secret` is the sign-in, encrypted with `CALENDAR_SECRET_KEY`: Google's refresh token, or for
+  Apple the email and the app-specific password. It and `sync_token` are left out of the
+  household export.
+- `calendar_id` is the one calendar shared: Google's id for it, or for Apple the calendar's
+  CalDAV address. `(household_id, provider, calendar_id)` is unique: a calendar is shared with a
+  household once.
 - `sync_token` is the provider's place in its list of changes, and `next_pull_at` when to ask
   again. `leased_until` is set while a worker is on the connection, and after a failure it is
   when the connection is next tried; `failures` counts failures in a row.
 
 `calendar_links` has one row for each household event that is on a connected calendar.
 
-- `remote_id` is the event's id on that calendar and `remote_etag` its version as last seen.
+- `remote_id` is the event's id on that calendar and `remote_etag` its version as last seen. On
+  an Apple calendar the id is the path of the event's file; a date of a series that was changed
+  by itself is in the same file and has that path, `#` and the date (`…/football.ics#20261013`).
 - `synced` is the event as both sides last agreed on it: title as sent, start, end, whether it
   lasts all day, the repeat rule, the skipped dates, the place and the notes. A difference
   between it and the household's event is sent to the calendar; a difference between it and
   what the calendar reports is applied here.
 - `instances` holds the dates of a series that the calendar itself keeps as a changed or deleted
   occurrence. They are skipped here like any other date and are never sent back as skipped.
+  Only Google needs it: an Apple series says in its own file which dates it skips.
 - `event_id` becomes null when its event row is deleted (an undo of the action that made it).
   Such a link means "remove it from the calendar", and goes once that is done.
 - The link of a one-off event that ended more than 30 days ago is dropped. The event stays on

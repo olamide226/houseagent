@@ -40,7 +40,8 @@ Everything is read by `Settings` in `app/config.py`, from the environment or a l
 | `WORKER_INTERNAL_URL` | no | `http://localhost:8001` | Where Letta reaches the worker's `/internal` (chat turns); the worker listens on this port under `letta` |
 | `AGENT_NAME` | no | `Home` | Name used in the prompt and pages |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | for Google Calendar | | The OAuth client the owner makes once in Google Cloud ([below](#google-calendar)) |
-| `CALENDAR_SECRET_KEY` | for Google Calendar | | A Fernet key that encrypts each adult's stored sign-in. Several keys with commas between: the first encrypts, all decrypt. The app refuses to start with a value that is not a key |
+| `CALENDAR_SECRET_KEY` | for Google or Apple Calendar | | A Fernet key that encrypts each adult's stored sign-in. Several keys with commas between: the first encrypts, all decrypt. The app refuses to start with a value that is not a key. Set alone, it switches Apple Calendar on ([below](#apple-calendar)) |
+| `APPLE_CALDAV_URL` | no | `https://caldav.icloud.com` | Where an Apple Calendar is reached. Another CalDAV server only to try it out: one address serves every household |
 | `PRESENCE_SHORTCUT_URL` | no | | The iCloud link of the Shortcut the admin shared once. With it, the page a presence link opens gives everyone a "Get the shortcut" button ([presence.md](presence.md#sharing-the-shortcut-once)) |
 | `DEFAULT_TIMEZONE` | no | `Europe/London` | Prefilled on `/setup` |
 | `DEBOUNCE_SECONDS` | no | `4` | How long a batch must be quiet before its turn |
@@ -456,7 +457,7 @@ An adult connects their own Google Calendar on the dashboard's Calendar page and
 calendar to share; the worker then keeps it and the household's plans in step
 ([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md),
 [dashboard.md](dashboard.md#a-connected-google-calendar)). It is off until the three variables
-below are set. **It has never been run against Google**: no credentials existed when it was
+below are set. (An Apple Calendar needs only the key: [Apple Calendar](#apple-calendar).) **It has never been run against Google**: no credentials existed when it was
 built.
 
 ### The one-time setup in Google Cloud
@@ -528,6 +529,49 @@ is given up; a refused new event is tried again after the same wait.
 
 The callback's address holds a one-time code. The api masks it in its own access log; a proxy in
 front keeps its own log, where it should be masked or dropped as well ([Logs](#logs)).
+
+## Apple Calendar
+
+An adult connects their own Apple (iCloud) calendar on the same page
+([ADR 0041](adr/0041-apple-calendar-is-caldav-with-an-app-specific-password.md),
+[dashboard.md](dashboard.md#a-connected-apple-calendar)). **It has never been run against
+iCloud**: no Apple account existed when it was built. The tests run it against a CalDAV server on
+the test machine.
+
+**There is nothing to set up at Apple.** Set `CALENDAR_SECRET_KEY` ([the key](#the-key)) in
+`.env` or the Secret and restart the api and the worker. Each adult then sends `dashboard`, opens
+Calendar and taps Connect Apple Calendar. What they need is on the page:
+
+- An Apple Account with two-factor authentication. Apple only makes app-specific passwords for
+  those.
+- An app-specific password, made at <https://account.apple.com> under Sign-In and Security,
+  App-Specific Passwords. Apple shows it once. An account can have 25.
+
+What to know when running it:
+
+- **The server calls out to Apple**: `caldav.icloud.com` and the host Apple names for each
+  account, `pNN-caldav.icloud.com`, on port 443. Nothing calls in, so the ingress needs nothing.
+- **The stored sign-in is the email and that password**, encrypted with the key. It is in no
+  log and not in the export. It is good for the whole iCloud account, not only the calendar
+  that was picked, so the key deserves the care a password does.
+- **It stops when the password goes.** Removing the password at Apple, or changing the Apple
+  Account's own password (which cancels every app-specific password), makes the next round fail
+  with `AuthLost: 401`. The connection becomes `broken`, its owner gets one message, and they
+  connect again with a new password. Picking the same calendar carries on where it was.
+- **Disconnecting here does not remove the password at Apple.** The page tells the person where
+  to do that.
+- **How often it asks**: one small request every two minutes for each connection, and one or two
+  more for each event that changed. Apple publishes no limit; people report `503` when they ask
+  too much. A `503`, a `429` or a timeout waits 30 seconds, then twice as long each time up to
+  an hour.
+- **An event with guests is never written to**, because iCloud would email them. A change made
+  here to such an event shows in the log as `calendar_send_refused` with "it has guests".
+
+The queries under [Looking at it](#looking-at-it) work for both kinds; `provider` says which a
+row is. For an Apple row `calendar_id` is the calendar's address and `account` the email.
+
+When a real account is first connected, the things to check are listed in the ADR's
+consequences and in [go-live-checklist.md](go-live-checklist.md#never-tried-against-the-real-service).
 
 ## WhatsApp
 
@@ -692,6 +736,10 @@ Tests use local Postgres and refuse to run against any database not named `house
 ([ADR 0008](adr/0008-local-postgres-for-tests.md)). Set `TEST_DATABASE_URL` to change host or
 user. The schema is dropped and rebuilt from the migrations at the start of each run.
 
+The Apple Calendar tests start Radicale, a CalDAV server that comes with the development
+dependencies, on a free local port for the session and stop it at the end (`tests/caldav.py`).
+It keeps its files in a temporary folder. No test reaches iCloud.
+
 ## Secrets
 
 Keep keys in an untracked `.env`. `.gitignore` excludes `.env` and `.env.*` except `.env.example`.
@@ -705,7 +753,9 @@ session of a member. Provider tokens, webhook secrets, `SESSION_SECRET` and
 `INTERNAL_TOOL_TOKEN` are changed in the Secret and take effect when both processes restart;
 changing `SESSION_SECRET` logs everyone out. `CALENDAR_SECRET_KEY` is replaced by putting the new
 key in front of the old one ([Google Calendar](#the-key)); an adult's own sign-in to Google is
-replaced when they disconnect and connect again, and `GOOGLE_CLIENT_SECRET` in Google Cloud. `CLAUDE_CODE_OAUTH_TOKEN` lasts a year and is
+replaced when they disconnect and connect again, and `GOOGLE_CLIENT_SECRET` in Google Cloud. An
+adult's app-specific password for Apple is replaced by removing it at account.apple.com, making a
+new one and connecting again. `CLAUDE_CODE_OAUTH_TOKEN` lasts a year and is
 replaced the same way; Codex's sign-in is renewed with `codex login` on its volume
 ([Subscription providers](#subscription-providers)).
 
@@ -716,4 +766,5 @@ A restore has been done once, when the household moved to the dev server
 backup is taken automatically. There is no import for the System page's export. Of the
 subscription providers, Codex has not run in a signed-in container and neither has run on a
 cluster. Google Calendar has not been
-connected to a real account ([above](#google-calendar)).
+connected to a real account ([above](#google-calendar)), and nor has Apple Calendar
+([above](#apple-calendar)).

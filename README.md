@@ -20,7 +20,7 @@ module; a new model is a configuration change.
   staples. Nothing is estimated: a receipt read without prices is said to have none.
 - **Appointments and reminders.** One-off and recurring events, reminders that wait out quiet
   hours unless urgent, a morning brief, a Sunday digest, two-way sync with each adult's own Google
-  Calendar, and a read-only calendar feed for Apple Calendar or any other app.
+  or Apple Calendar, and a read-only calendar feed for any other calendar app.
 - **Letters, invites and forwards.** A photo of a school letter, a forwarded appointment message,
   pasted words or a PDF: every date in it goes on the calendar with its reminders, a date that
   does not add up is asked about, and one undo takes the whole letter back.
@@ -49,7 +49,8 @@ on Telegram since October 2026**, and how much of it has met the real services d
 | Presence | Built; tested with plain HTTP calls, never from a phone |
 | Voice notes | Built; tested with a stand-in transcriber. No speech-to-text service has been tried |
 | Google Calendar sync | Built; tested on rows against an in-memory calendar, and against responses written from Google's docs with mocked calls. It has never been run against Google: see [docs/operations.md](docs/operations.md#google-calendar) |
-| Agent quality | Measured on 127 eval cases with one model through two adapters. The latest run meets the release bar on both, one sample per case: see [docs/evals.md](docs/evals.md#latest-results) |
+| Apple Calendar sync | Built; tested through the worker against a real CalDAV server (Radicale) on the test machine, and against iCloud's discovery answers as another project recorded them. It has never been run against iCloud: see [docs/operations.md](docs/operations.md#apple-calendar) |
+| Agent quality | Measured on 131 eval cases with one model through two adapters. The latest run meets the release bar on both, one sample per case: see [docs/evals.md](docs/evals.md#latest-results) |
 | Model providers | `openai_compat` and `anthropic` with an API key. `claude_code` and `codex_cli` run on a Claude subscription or a ChatGPT plan through the vendor's own CLI: built, run once each on the eval suite, never deployed, and the vendors' terms for this use are unclear: see [docs/llm.md](docs/llm.md#subscription-providers) |
 | Letta runtime | Optional and off by default. Built, compared with the plain loop on the eval suite, and not promoted: see [docs/evals.md](docs/evals.md#the-letta-comparison) |
 | Helm chart | Linted and rendered; never installed on a cluster |

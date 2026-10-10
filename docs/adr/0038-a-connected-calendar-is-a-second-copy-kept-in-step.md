@@ -34,7 +34,9 @@ calendar is applied here, and from here it reaches Ada's.
   needs CalDAV discovery, `sync-collection`, reading and writing iCalendar with a changed
   occurrence as a `RECURRENCE-ID`, a form for the app-specific password, and tests against a local
   CalDAV server. Nothing in the sync itself has to change for it, and `calendar_connections`
-  already accepts `apple`.
+  already accepts `apple`. (Apple was built next:
+  [ADR 0041](0041-apple-calendar-is-caldav-with-an-app-specific-password.md). One thing in the
+  sync did change: it tells a provider which events it follows.)
 - **Reading is a poll every two minutes with the sync token, not a push channel.** A channel is a
   public webhook, a secret to check on it, and a renewal job, none of which could be tried
   without credentials; a poll that is wrong fails where it can be seen. One connection is 720
