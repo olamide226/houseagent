@@ -9,7 +9,7 @@ from app.agent.actions import Recorder, record
 from app.agent.base import Ctx, ToolError
 from app.agent.resolve import Ambiguous, resolve_item, resolve_members
 from app.core.timeutil import parse_clock
-from app.services import households, inventory, members
+from app.services import households, inventory, members, spending
 
 _SPAN = re.compile(r"\s*(?:-|–|—|\bto\b|\buntil\b)\s*")
 _OFF = {"", "off", "none", "no"}
@@ -19,8 +19,8 @@ class Remember(BaseModel):
     key: str = Field(description=(
         "snake_case, e.g. 'milk_brand', 'main_supermarket'. These keys change how the household runs: "
         "'staples' (things always kept in the house, comma-separated), 'shops' (where the family shops, "
-        "comma-separated), 'morning_brief' (a time), 'quiet_hours' (start-end, or off). Give times as they "
-        "were said: 7am, 9:30pm, 21:30"))
+        "comma-separated), 'morning_brief' (a time), 'quiet_hours' (start-end, or off), 'currency' (what their "
+        "money is in, three letters: GBP, EUR, USD, NGN). Give times as they were said: 7am, 9:30pm, 21:30"))
     value: str | None = Field(None, description="None forgets the fact")
     about: str | None = Field(None, description=(
         "Whose it is: a member's name, 'me' for the person speaking, 'us' for every adult. Omit for a fact "
@@ -38,6 +38,8 @@ async def remember(ctx: Ctx, args: Remember) -> str:
             await households.set_digest_time(rec, _clock(value))
         elif key == "quiet_hours":
             await _quiet_hours(rec, value, args.about)
+        elif key == "currency":
+            await spending.set_currency(rec, value)
         else:
             await households.set_fact(rec, key, value, await _one_member(ctx, args.about))
     return rec.result

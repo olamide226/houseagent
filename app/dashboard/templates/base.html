@@ -30,6 +30,7 @@
   <a class="only-phone" href="/dashboard/more"{% if here not in ("", "shopping", "inventory", "calendar") %} aria-current="page"{% endif %}>{{ icon("more") }}<span>More</span></a>
   <div class="nav-more">
     <span class="nav-label">Household</span>
+    {{ to("spending", "receipt", "Spending") }}
     {{ to("jobs", "tasks", "Jobs") }}
     {{ to("family", "people", "Family") }}
     {{ to("channels", "chat", "Chat apps") }}

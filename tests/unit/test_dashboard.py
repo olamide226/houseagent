@@ -89,7 +89,7 @@ async def test_pages_need_a_session_and_a_magic_link_works_exactly_once(client):
         token = await members.create_login_token(conn, home.ola, utcnow())
     for path in ("/dashboard", "/dashboard/shopping", "/dashboard/inventory", "/dashboard/calendar",
                  "/dashboard/activity", "/dashboard/playground", "/dashboard/family", "/dashboard/settings",
-                 "/dashboard/channels", "/dashboard/more"):
+                 "/dashboard/channels", "/dashboard/more", "/dashboard/spending"):
         refused = await client.get(path)
         assert refused.status_code == 401 and "login link" in refused.text
         assert 'href="https://t.me/home_test_bot"' in refused.text           # where to ask for one

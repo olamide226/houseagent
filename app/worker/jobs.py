@@ -26,7 +26,7 @@ from app.llm.types import ChatMessage, LLMClient, TextPart
 from app.media.store import MediaStore
 from app.pipeline import inbound, router
 from app.pipeline import media as media_pipeline
-from app.services import calendar, calendar_sync, consumption, households, inventory, shopping
+from app.services import calendar, calendar_sync, consumption, households, inventory, shopping, spending
 from app.services import jobs as household_jobs
 
 log = structlog.get_logger()
@@ -39,8 +39,7 @@ DIGEST_GRACE = timedelta(hours=4)       # a digest missed by more than this is s
 WEEKLY_DIGEST_AT = time(18, 0)          # on Sundays, household time
 CONSUMPTION_MODEL_AT = time(3, 0)       # nightly; run late rather than not at all, since it sends nothing
 LOW_STOCK_PROMPT_AT = time(17, 30)
-CATEGORIES = ("fruit and veg", "dairy and eggs", "meat and fish", "bakery", "frozen", "cupboard", "drinks",
-              "household", "toiletries", "baby", "other")
+CATEGORIES = inventory.CATEGORIES
 CATEGORISE_PROMPT = (
     "You sort a household's shopping items into supermarket sections. Reply with one JSON object and nothing "
     "else, mapping each item name exactly as given to one of: " + ", ".join(CATEGORIES) + ".")
@@ -51,6 +50,7 @@ IMESSAGE_DOWN = ("iMessage has stopped working: the Mac that sends the messages 
                  "back, messages go to each person's other chat app, if they have one. Check that the Mac is on, "
                  "awake and online, and that the BlueBubbles app on it is open.")
 LATE_MINUTES = 10                       # a reminder this long after its event began is dropped
+MONTHLY_SPENDING = "monthly_spending"   # job_runs key: a month's spending went out with a weekly digest
 
 
 async def inbound_job(settings: Settings, runtime: AgentRuntime, adapters: dict[Channel, ChannelAdapter],
@@ -212,9 +212,7 @@ async def _once_per_household(job: str, now: datetime,
         if key is None:
             continue
         async with tx() as conn:
-            if not await execute(
-                conn, "insert into job_runs (job, household_id, run_key) values (:job, :h, :key) "
-                      "on conflict do nothing", job=job, h=household["id"], key=key):
+            if not await _claim(conn, job, household["id"], key):
                 continue
             text = await build(conn, household, now)
             if text and await router.enqueue(conn, OutboundMessage(
@@ -224,6 +222,12 @@ async def _once_per_household(job: str, now: datetime,
                 sent += 1
                 log.info("digest_queued", job=job, household_id=household["id"], run_key=key)
     return sent
+
+
+async def _claim(conn: AsyncConnection, job: str, household_id: str, key: str) -> bool:
+    """True the first time this job is run for this household and key."""
+    return bool(await execute(conn, "insert into job_runs (job, household_id, run_key) values (:job, :h, :key) "
+                                    "on conflict do nothing", job=job, h=household_id, key=key))
 
 
 def _due(here: datetime, at: time) -> bool:
@@ -272,7 +276,11 @@ async def _weekly_digest(conn: AsyncConnection, household: dict[str, Any], now: 
                                           today=local(now, timezone).date())
     await consumption.refresh(conn, household["id"], now)
     probably = await consumption.running_out(conn, household["id"], now, timedelta(days=7))
-    if not (events or on_list or low or expiring or probably):
+    # The month before, once: with the first digest of each month, or the next one if that was missed.
+    last_month = spending.month_before(local(now, timezone).date())
+    spent = (await spending.month_report(conn, household["id"], last_month)
+             if await _claim(conn, MONTHLY_SPENDING, household["id"], f"{last_month:%Y-%m}") else None)
+    if not (events or on_list or low or expiring or probably or spent):
         return None
     lines = _section("The week ahead:", [o.line(timezone) for o in events]) or ["Nothing booked this week."]
     if on_list:
@@ -282,12 +290,14 @@ async def _weekly_digest(conn: AsyncConnection, household: dict[str, Any], now: 
     if probably:
         lines.append("Probably running low this week: " + ", ".join(row["item"] for row in probably) + ".")
     lines += _section("Use this week:", [f"{r['item']} ({r['location']}, {r['expires_on']:%-d %b})" for r in expiring])
+    if spent:
+        lines += ["", spent]
     return "\n".join(lines)
 
 
 async def weekly_digest(now: datetime | None = None) -> int:
     """Sunday 18:00 household time: the week ahead, the list, and what is low, likely to run
-    low, or expiring."""
+    low, or expiring. The first one of a month also says what was spent the month before."""
     def run_key(here: datetime, household: dict[str, Any]) -> str | None:
         year, week, _ = here.isocalendar()
         return f"{year}-W{week:02d}" if here.weekday() == 6 and _due(here, WEEKLY_DIGEST_AT) else None

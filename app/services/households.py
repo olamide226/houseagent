@@ -23,7 +23,8 @@ log = structlog.get_logger()
 PRESENCE = "presence"
 ONBOARDING_STEPS = ("family", "routines", "shops", "staples", "tour", "rhythm", PRESENCE)
 PLACE_KINDS = ("home", "store", "school", "clinic", "other")
-SETTING_KEYS = ("staples", "morning_brief", "quiet_hours")   # said like facts, stored as settings (ADR 0016)
+# Said like facts, stored as settings (ADR 0016).
+SETTING_KEYS = ("staples", "morning_brief", "quiet_hours", "currency")
 STORE_KEYS = ("shops", "main_supermarket")                   # facts whose values are also `places`
 PENDING = "pending:"   # a group asked for but not yet created: its thread is `pending:{subject}` until then
 SUBJECT_MAX = 128      # WhatsApp's limit on a group's name
@@ -415,6 +416,8 @@ EXPORTED = {
     "agent_actions": "household_id = :h", "outbox": "household_id = :h", "job_runs": "household_id = :h",
     "calendar_connections": "household_id = :h",
     "calendar_links": "connection_id in (select id from calendar_connections where household_id = :h)",
+    "receipts": "household_id = :h",
+    "receipt_lines": "receipt_id in (select id from receipts where household_id = :h)",
 }
 # Never in a file: the encrypted sign-in to someone's calendar, and the place in its changes.
 NOT_EXPORTED = ("secret", "sync_token")

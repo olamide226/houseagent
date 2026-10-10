@@ -52,7 +52,10 @@ TALK = {
                     "one reminder the evening before, a date that is not clear is asked about, and one undo takes "
                     "back everything that came from it",
     ("remember",): "have you remember a preference, where they shop, what to always keep in, the morning brief "
-                   "time and each adult's quiet hours",
+                   "time, each adult's quiet hours and what currency their money is in",
+    ("get_spending", "update_receipt"): "ask what was spent this month or any other time, at one shop, or on food or "
+                                        "another kind of thing, added up from the receipts they sent; and have a "
+                                        "receipt that was read wrongly put right or taken out",
     ("add_family_member",): "add a child or another adult",
     ("undo_last",): "say undo to take back their own last change (up to 5, from the last 24 hours)",
 }
@@ -61,6 +64,9 @@ TALK = {
 FILES = ("Files: a PDF sent as a file is read like a letter, when its words can be selected. A scanned PDF, a locked "
          "one or any other kind of file cannot be read: say so, and ask for a photo of the page or for the words "
          "pasted in.")
+# Spending is added up from receipts, so where photos cannot be read there is none to talk about.
+SPENDING = ("get_spending", "update_receipt")
+NO_SPENDING = "nothing to show in this household yet"
 
 # The words answered by code (app/pipeline/inbound.py), because the answer holds a private link.
 WORDS = {
@@ -82,9 +88,13 @@ PAGES = {
                              "any calendar app"),
     "jobs": ("Jobs", "household jobs, renewals and birthdays: what is coming up and whose it is, tick one off, "
                      "skip one or stop it"),
+    "spending": ("Spending", "what was spent each month from the receipts they sent, by shop and by kind of thing, "
+                             "how the months compare, price changes on what they always keep in, and a place to "
+                             "correct or remove a receipt"),
     "family": ("Family", "add someone, make or cancel an invite, choose which chat app an adult is messaged on"),
     "channels": ("Chat apps", "which chat apps are working, and the family group"),
-    "settings": ("Settings", "morning brief time, quiet hours, shops and places, what you were told to remember"),
+    "settings": ("Settings", "morning brief time, quiet hours, what currency their money is in, shops and places, "
+                             "what you were told to remember"),
     "activity": ("Activity", "what was said and what changed, with an Undo button"),
     "playground": ("Practice chat", "try a message without changing anything"),
     "system": ("System", "only for whoever set this up: whether everything is running, and a copy of all the "
@@ -97,7 +107,8 @@ SENDS = {
     "job_nudges": "a nudge when a household job is due, and once more the morning after if nobody has said it is "
                   "done (a renewal is also said two weeks ahead, and a birthday a week ahead and on the day)",
     "daily_brief": "a morning brief, only on days with something due",
-    "weekly_digest": "the week ahead on Sundays at 18:00",
+    "weekly_digest": "the week ahead on Sundays at 18:00, with what was spent the month before on the first one of "
+                     "each month",
     "low_stock_prompt": "at 17:30, a question about things that are probably running low",
     "sync_calendars": "a note to an adult whose own connected calendar has stopped working, with how to connect it "
                       "again",
@@ -147,19 +158,23 @@ def _chat_apps(setup: Setup) -> str:
 def product_guide(setup: Setup) -> str:
     """The guide for this installation. It is the same on every turn, so it stays in the cached
     part of the prompt."""
-    pages = "; ".join(f"{name} ({about})" for name, about in PAGES.values())
+    pages = "; ".join(f"{name} ({about if setup.photos or page != 'spending' else NO_SPENDING})"
+                      for page, (name, about) in PAGES.items())
+    talk = [line for tools, line in TALK.items() if setup.photos or tools != SPENDING]
     shops = WORDS["shops"] + ("" if setup.shop_shortcut else
                               " Here it is not ready for everyone yet: whoever set this up has one thing to do "
                               "first, shown on that person's own link.")
     lines = [
-        "By talking to you, in a DM or the family group: " + "; ".join(TALK.values()) + ".",
+        "By talking to you, in a DM or the family group: " + "; ".join(talk) + ".",
         "When you add an adult, a separate message with an invite goes to whoever asked, to pass on. The new person "
         "opens it, or sends its code to you in their own private chat. It works once in each chat app, for 7 days. "
         "Children have no chat and no login.",
-        "Photos: a photo of a receipt records what was bought, and a photo of the fridge, freezer or a cupboard "
-        "records what is there. A photo of a letter or an invite puts its dates on the calendar. Up to 4 photos in "
-        "one message." if setup.photos else
-        "Photos: you cannot read photos in this household yet. Say so, and ask them to type it instead.",
+        "Photos: a photo of a receipt records what was bought and what it cost, and a photo of the fridge, freezer "
+        "or a cupboard records what is there. A photo of a letter or an invite puts its dates on the calendar. Up "
+        "to 4 photos in one message. Spending is counted from receipts only: a price someone just tells you is not "
+        "added to it." if setup.photos else
+        "Photos: you cannot read photos in this household yet. Say so, and ask them to type it instead. That "
+        "includes receipts, so there is no spending to show here yet.",
         FILES,
         "Voice notes work like typed messages." if setup.voice_notes else
         "Voice notes: you cannot listen to voice notes in this household yet. Say so, and ask them to type it instead.",

@@ -15,7 +15,7 @@ from app.agent.resolve import (
     resolve_location,
     variety_of,
 )
-from app.services import inventory
+from app.services import inventory, spending
 
 
 class InventoryChange(BaseModel):
@@ -32,11 +32,23 @@ class InventoryChange(BaseModel):
     new_item: bool = Field(False, description=(
         "Leave false. True only after a result asked whether this is an item the household already has, "
         "and it is a different product"))
+    price: float | None = Field(None, ge=0, description=(
+        "Receipts only: what this line cost, exactly as printed. Empty if the receipt shows no price for it or "
+        "it cannot be read. Never a price you worked out or guessed"))
+
+
+class Receipt(BaseModel):
+    shop: str | None = Field(None, description="The shop's name as printed")
+    bought_on: date | None = Field(None, description="The date printed on it, YYYY-MM-DD")
+    total: float | None = Field(None, ge=0, description=(
+        "The total paid as printed, after any discount. Empty if it cannot be read: never a sum you worked out"))
 
 
 class LogInventory(BaseModel):
     changes: list[InventoryChange] = Field(min_length=1)
     source: Literal["message", "receipt", "photo"] = "message"
+    receipt: Receipt | None = Field(None, description=(
+        "With source receipt: what is printed on it, kept for the household's spending. One call per receipt"))
 
 
 async def log_inventory(ctx: Ctx, args: LogInventory) -> str:
@@ -47,7 +59,16 @@ async def log_inventory(ctx: Ctx, args: LogInventory) -> str:
     running low go on it, purchases are ticked off it. Leave it at that: add what ran out yourself
     only if the person asked for it to go on the list, and do not offer to. A result of only OK:,
     NEW: and NOTE: lines is routine, not news: the reply to it is ACK, or after a photo one line
-    saying what was read."""
+    saying what was read.
+    From a receipt, also give each line's printed price and the receipt's shop, date and total:
+    they are kept for the household's spending, and only what is printed counts."""
+    priced: list[spending.Line] = []
+    source = args.source
+    if source == "message" and any(change.price is not None for change in args.changes) and (
+            await spending.started(ctx.conn, ctx.household_id, ctx.message_id)):
+        # The rest of a receipt this turn is already reading: a model that had to correct a name
+        # logs it again in a second call and often leaves the source out.
+        source = "receipt"
     async with record(ctx, "log_inventory", args) as rec:
         for change in args.changes:
             location_id = None
@@ -70,15 +91,21 @@ async def log_inventory(ctx: Ctx, args: LogInventory) -> str:
                 continue
             if item.created:
                 rec.lines.append(f"NEW: {item.name}")
+            quantity = None if change.quantity is None else Decimal(str(change.quantity))
             await inventory.apply_change(
-                rec,
-                inventory.Change(
-                    item.id, change.action,
-                    None if change.quantity is None else Decimal(str(change.quantity)),
-                    change.unit, location_id, change.expires_on,
-                ),
-                args.source,
+                rec, inventory.Change(item.id, change.action, quantity, change.unit, location_id, change.expires_on),
+                source,
             )
+            if change.price is not None:
+                priced.append(spending.Line(item.id, item.name, spending.cents(change.price), quantity, change.unit))
+        if source == "receipt":
+            printed = args.receipt or Receipt()
+            await spending.keep(
+                rec, priced, shop=printed.shop, purchased_on=printed.bought_on,
+                total=None if printed.total is None else spending.cents(printed.total),
+                more_to_come=len(priced) < sum(1 for change in args.changes if change.price is not None))
+        elif priced or args.receipt:
+            rec.lines.append("NOTE: prices are kept from receipts only, so nothing was added to the spending")
     return rec.result
 
 
