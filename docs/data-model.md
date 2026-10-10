@@ -124,6 +124,9 @@ default location, else `store`.
 - Timestamps are `timestamptz` in UTC; household time is used only at the edges (the brief, pages).
 - Rows written inside one turn use `clock_timestamp()`, not `now()`, so their order is real
   even though the turn is one transaction.
+- Rows that can still share the time they are sorted by have a second sort column, so their order
+  is the same every time: family members made in one turn (`created_at`, then `name`), reminders
+  and jobs due at the same minute (then `text`), events that start together (then `title`).
 
 ## Receipts and spending
 

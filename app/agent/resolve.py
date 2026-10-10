@@ -98,7 +98,7 @@ select i.id, i.canonical_name as name, l.name as detail,
                 coalesce((select max(similarity(a, :key)) from unnest(i.aliases) a), 0)) as score
 from items i left join locations l on l.id = i.default_location_id
 where i.household_id = :household
-order by exact desc, score desc limit 8"""
+order by exact desc, score desc, name limit 8"""
 
 _LOCATIONS = """
 select l.id, l.name, null as detail,
@@ -107,7 +107,7 @@ select l.id, l.name, null as detail,
                 coalesce((select max(similarity(a, :key)) from unnest(l.aliases) a), 0)) as score
 from locations l
 where l.household_id = :household
-order by exact desc, score desc limit 8"""
+order by exact desc, score desc, name limit 8"""
 
 
 async def match_item(conn: AsyncConnection, household_id: str, raw: str) -> Match | Ambiguous | None:
@@ -167,7 +167,7 @@ _MEMBERS = """
 select m.id, m.name, m.role as detail, lower(m.name) = :key as exact, similarity(lower(m.name), :key) as score
 from members m
 where m.household_id = :household
-order by exact desc, score desc limit 8"""
+order by exact desc, score desc, name limit 8"""
 
 _ME = {"me", "i", "myself"}
 _ADULTS = {"us", "we", "both of us"}
@@ -179,7 +179,7 @@ async def resolve_members(conn: AsyncConnection, household_id: str, names: list[
     """Member ids for the people named, in order, and the names that matched nobody.
 
     "me" is the speaker, "us" every adult, "the kids" every child; anything else is a name."""
-    family = await fetch_all(conn, "select id, role from members where household_id = :h order by created_at",
+    family = await fetch_all(conn, "select id, role from members where household_id = :h order by created_at, name",
                              h=household_id)
     found: list[str] = []
     unknown: list[str] = []
@@ -215,7 +215,7 @@ select e.id, e.title, e.starts_at, e.rrule, e.exdates, h.timezone,
                 word_similarity(lower(e.title), :key),
                 word_similarity(:key, lower(e.title || ' ' || p.names))) as score
 from events e join households h on h.id = e.household_id,
-     lateral (select coalesce(string_agg(m.name, ' '), '') as names
+     lateral (select coalesce(string_agg(m.name, ' ' order by m.created_at, m.name), '') as names
               from members m where m.id = any(e.participant_ids)) p
 where e.household_id = :household and e.status = 'active'"""
 
@@ -230,4 +230,4 @@ async def rank_events(conn: AsyncConnection, household_id: str, raw: str, now: d
                     if row["rrule"] else row["starts_at"])
         if upcoming is not None and now <= upcoming <= now + EVENT_WINDOW:
             ranked.append(EventCandidate(row["id"], row["title"], upcoming, round(float(row["score"]), 2)))
-    return sorted(ranked, key=lambda candidate: (-candidate.score, candidate.next_start))
+    return sorted(ranked, key=lambda candidate: (-candidate.score, candidate.next_start, candidate.title))

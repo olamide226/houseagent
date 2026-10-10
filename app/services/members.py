@@ -35,7 +35,7 @@ async def family(conn: AsyncConnection, household_id: str, now: datetime) -> lis
                   case when m.invite_expires_at > :now then m.invite_expires_at end as invite_open_until,
                   coalesce((select array_agg(ci.channel order by ci.channel) from channel_identities ci
                             where ci.member_id = m.id), '{}') as channels
-           from members m where m.household_id = :h order by m.role, m.created_at""",
+           from members m where m.household_id = :h order by m.role, m.created_at, m.name""",
         h=household_id, now=now,
     )
 

@@ -145,5 +145,5 @@ async def test_the_brief_says_what_the_answer_depends_on_for_this_person_and_hou
     assert "Ola's setup: no personal link for the shops yet" in from_ola
     assert "Ada's setup: messaged on WhatsApp; has a personal link for the shops" in from_ada
     rhythm = next(line for line in from_ada.splitlines() if line.startswith("Morning brief: "))
-    assert rhythm.startswith("Morning brief: 06:45. Quiet hours: Ola 21:30-07:00, ")
-    assert "Ada off" in rhythm and "Grace 21:30-07:00" in rhythm and "Tobi" not in rhythm
+    # The adults, and no child. They were made together: by name.
+    assert rhythm == "Morning brief: 06:45. Quiet hours: Ada off, Grace 21:30-07:00, Ola 21:30-07:00"

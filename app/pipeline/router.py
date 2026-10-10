@@ -293,8 +293,8 @@ async def _fan_out(conn: AsyncConnection, adapters: dict[Channel, ChannelAdapter
     if primary and not (primary["channel"] in set(Channel) and degraded(adapters.get(Channel(primary["channel"])))):
         row["thread_id"] = primary["id"]
         return False
-    adults = await fetch_all(conn, "select id from members where household_id = :h and role = 'adult'",
-                             h=row["household_id"])
+    adults = await fetch_all(conn, "select id from members where household_id = :h and role = 'adult' "
+                                   "order by created_at, name", h=row["household_id"])
     for adult in adults:
         await enqueue(conn, OutboundMessage(
             household_id=row["household_id"], target="member", member_id=adult["id"], text=row["text"],

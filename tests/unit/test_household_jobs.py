@@ -36,7 +36,7 @@ TG = "https://api.telegram.org/bot424242:TEST-TOKEN"
 JOB = """select r.id, r.text, r.kind, r.status, r.target, r.fire_at, r.due_at, r.all_day, r.lead_days, r.rrule,
                 r.urgency, r.asked_at, r.done_at, m.name as owner, d.name as done_by
          from reminders r left join members m on m.id = r.member_id left join members d on d.id = r.done_by
-         where r.kind is not null order by r.due_at"""
+         where r.kind is not null order by r.due_at, r.text"""
 
 
 async def family(conn):
@@ -180,8 +180,7 @@ async def test_a_birthday_is_said_a_week_ahead_and_on_the_day_and_comes_round_ne
     assert sends == [(at, chat, text) for at, text in [                   # no family group: each adult is told
         ("Thu 5 Nov 09:00", "Coming up: Grandma's birthday, on Thu 12 Nov (in a week)."),
         ("Thu 12 Nov 09:00", "Today: Grandma's birthday."),
-    ] for chat in sorted(c for c, _, _ in adapter.sent[:2])]
-    assert sorted(chat for chat, _, _ in adapter.sent[:2]) == ["1001", "1002"]
+    ] for chat in ("1002", "1001")]                                       # Ada, then Ola. Made together: by name
     (job,) = await rows()
     assert (wall(job["due_at"]), job["due_at"].year, wall(job["fire_at"]), job["status"], job["asked_at"]) == (
         "Fri 12 Nov 09:00", 2027, "Fri 5 Nov 09:00", "scheduled", None)
@@ -198,11 +197,11 @@ async def test_a_daily_job_is_not_asked_about_again_once_the_next_day_has_its_ow
     adapter = FakeAdapter()
 
     sends = await said(NOW, london("2026-10-07 12:00"), adapter)
-    # A child has no chat: every adult is told, and told whose job it is. 08:00 comes before the
-    # morning after's 09:00, so there is one message a day and never a second.
+    # A child has no chat: every adult is told (Ada, then Ola: made together, by name), and told whose
+    # job it is. 08:00 comes before the morning after's 09:00, so there is one message a day and never a second.
     assert sends == [(at, chat, "To do today at 08:00: Feed the fish (Tobi). Reply done if it's sorted. "
                                 "If not, I'll leave it until the next one.")
-                     for at in ("Tue 6 Oct 08:00", "Wed 7 Oct 08:00") for chat in ("1001", "1002")] and home.ola
+                     for at in ("Tue 6 Oct 08:00", "Wed 7 Oct 08:00") for chat in ("1002", "1001")] and home.ola
 
 
 async def test_a_time_somebody_picked_is_said_then_even_in_quiet_hours_and_a_morning_nudge_waits_for_them_to_end():

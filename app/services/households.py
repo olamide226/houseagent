@@ -319,7 +319,7 @@ async def threads(conn: AsyncConnection, household_id: str) -> list[dict[str, An
                    where m.thread_id = t.id and m.direction = 'in') as last_in
            from threads t join households h on h.id = t.household_id
            where t.household_id = :h and t.channel in ('telegram', 'whatsapp', 'imessage')
-           order by t.scope desc, t.created_at""",
+           order by t.scope desc, t.created_at, t.channel, t.external_thread_id""",
         h=household_id,
     )
 

@@ -177,7 +177,8 @@ def named_in(key: str | None) -> dict[str, Any]:
 async def due_for_a_nudge(conn: AsyncConnection, now: datetime, limit: int = 100) -> list[dict[str, Any]]:
     return await fetch_all(
         conn, _JOB + """ where r.kind is not null and r.status = 'scheduled' and r.fire_at <= :now
-                         order by r.fire_at for update of r skip locked limit :limit""", now=now, limit=limit)
+                         order by r.fire_at, r.text, r.id for update of r skip locked limit :limit""",
+        now=now, limit=limit)
 
 
 async def nudge(conn: AsyncConnection, job: dict[str, Any], now: datetime) -> OutboundMessage | None:

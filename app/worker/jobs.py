@@ -128,7 +128,7 @@ async def fire_reminders(now: datetime | None = None, *, limit: int = 100) -> in
                from reminders r join households h on h.id = r.household_id
                left join events e on e.id = r.event_id
                where r.status = 'scheduled' and r.fire_at <= :now and r.kind is null
-               order by r.fire_at for update of r skip locked limit :limit""",
+               order by r.fire_at, r.text, r.id for update of r skip locked limit :limit""",
             now=now, limit=limit,
         )
         for reminder in due:
