@@ -38,6 +38,11 @@ not in this repository, so the line itself is all there is here.
   the server. [presence.md](presence.md#sharing-the-shortcut-once)
 - [ ] **Not verified.** A receipt or fridge photo sent from a phone to the server.
   [operations.md](operations.md#media-storage)
+- [ ] **Not verified.** A letter sent from a phone to the server: a photo of one, a message
+  forwarded in Telegram, and a PDF sent as a file. Tried only on drawn images, a written PDF and
+  stand-in webhooks. [agent-and-tools.md](agent-and-tools.md#letters-invites-and-forwards)
+- [ ] **Not verified.** Letters on the model the household runs on. The eval cases for them were
+  run on `deepseek-flash` only. [evals.md](evals.md#latest-results)
 - [x] **Done, 9 Oct 2026.** A voice note sent from a phone to the server. The owner sent one
   through Telegram; it was transcribed and answered. [llm.md](llm.md#speech-to-text)
 - [ ] **Not done.** Photos kept in a private S3-compatible bucket with a lifecycle rule. ImgBB
@@ -147,6 +152,16 @@ not in this repository, so the line itself is all there is here.
   assistant. [ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)
 - [ ] **Not done.** A change made in Google Calendar takes up to two minutes to arrive, and a
   date put back into a series there is not noticed. [ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)
+- [ ] **Not done.** A day with no time in a letter (a day off school, a form due back) is a
+  reminder the evening before, not an all-day event, so it is not in the calendar feed or in a
+  connected Google Calendar.
+  [ADR 0039](adr/0039-a-letter-is-one-call-and-a-day-with-no-time-is-a-reminder.md)
+- [ ] **Not done.** A scanned PDF, a Word file and a photo in Apple's HEIC format sent as a file
+  are not read; the assistant says so and asks for a photo. Nothing can be emailed to it.
+  [agent-and-tools.md](agent-and-tools.md#letters-invites-and-forwards)
+- [ ] **Not done.** A letter is not shown to the model a second time, so a question about it two
+  turns later is answered only from what was recorded.
+  [ADR 0039](adr/0039-a-letter-is-one-call-and-a-day-with-no-time-is-a-reminder.md)
 - [ ] **Not done.** A receipt can still add an item beside its twin ("coconut milk", "semi skimmed
   milk"). [ADR 0031](adr/0031-rules-the-model-kept-breaking.md)
 
@@ -167,6 +182,12 @@ not in this repository, so the line itself is all there is here.
   sent to the model provider. [ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)
 - [ ] **Not done.** A privacy policy and terms, naming the model provider that reads messages and
   photos. [operations.md](operations.md#media-storage)
+- [ ] **Not done.** The privacy policy says that letters sent in hold other people's names, a
+  school's and a clinic's details, that a PDF's words are kept with the message with no end date,
+  and how a household has one removed. [data-model.md](data-model.md)
+- [ ] **Not done.** A limit on how many files one household can have read in a day. One file is
+  bounded (15 MB, 10 pages, 20 seconds); the number of files is not.
+  [agent-and-tools.md](agent-and-tools.md#letters-invites-and-forwards)
 - [ ] **Not done.** A household can export and delete its data. Today an admin can download a
   copy, and nothing deletes. [dashboard.md](dashboard.md#system)
 - [ ] **Not done.** The cost of one household for a month, for each provider. Token counts are

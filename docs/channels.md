@@ -50,6 +50,12 @@ Any further payload a channel records is checked the same way. A new channel add
 - Verification: header `X-Telegram-Bot-Api-Secret-Token`, compared in constant time.
 - `chat.id` is the thread; `private` is a DM, `group` and `supergroup` are a group. `from.id` is the handle.
 - `text` or `caption` is the text. `voice.file_id` is audio; the largest `photo` size is the image; `location` gives lat/lng.
+- `document` is a file, with its `file_name` and `mime_type`. A JPEG, PNG, WebP or GIF sent as a file is taken as a
+  photo; anything else is a document, and only a PDF is read
+  ([agent-and-tools.md](agent-and-tools.md#letters-invites-and-forwards)). A GIF arrives as `animation` and
+  `document` together and is not read.
+- `forward_origin` marks a forwarded message. Its `date` is when the message was first sent, and the sender's
+  name is `sender_user.first_name`, `sender_user_name`, `sender_chat.title` or `chat.title`, by the kind of origin.
 - `message_reaction` becomes an event with `reaction_emoji`. It has no message id of its own, so
   its id is `reaction:{update_id}`, which keeps provider retries idempotent. A removed reaction is ignored.
 - `edited_message` is ignored.
@@ -66,6 +72,7 @@ Any further payload a channel records is checked the same way. A new channel add
   Without either the agent is told a photo arrived and that it could not read it. Telegram sends a
   photo's caption as the message text, so `MediaRef.caption` is not set.
 - At most four photos from one batch of messages reach the model.
+- A file over 20 MB cannot be fetched: the Bot API does not hand one over. The agent is told it could not be loaded.
 - Invite attempts are limited to 5 per handle per hour, counted in the api process's memory, so
   the count resets on restart.
 
@@ -129,8 +136,10 @@ If it is rejected, or later paused or disabled, see
   ([ADR 0019](adr/0019-whatsapp-members-are-identified-by-user-id.md)).
 - **Where:** a message with `group_id` is in that group; otherwise the thread is the sender's DM.
 - **What:** `text.body`; `interactive.button_reply.title`; `audio`, `image` and `document` by
-  media id, with a caption as the message text; `location`; `reaction` (a removed reaction is
-  ignored); `context.id` is the message being replied to. Stickers, contact cards and unsupported
+  media id, with a caption as the message text and a document's `filename`; `location`; `reaction`
+  (a removed reaction is ignored); `context.id` is the message being replied to;
+  `context.forwarded` or `context.frequently_forwarded` marks a forward, with no sender and no
+  time. Stickers, contact cards and unsupported
   types are dropped.
 - **Own messages:** only changes of the `messages` field are read, so `smb_message_echoes` is
   ignored, and a message whose `from` is the business number is dropped.
@@ -196,8 +205,9 @@ be on.
   guid is the thread. Anything else is a DM, and its thread is always `iMessage;-;{handle}`, whatever
   prefix the server reports ([ADR 0027](adr/0027-imessage-threads-tapbacks-and-voice-notes.md)).
 - **What:** `data.text` with the attachment placeholder character removed; each of
-  `data.attachments` by `guid`, typed from `mimeType`; `threadOriginatorGuid` is the message
-  being replied to.
+  `data.attachments` by `guid`, typed from `mimeType`, a file with its `transferName`;
+  `threadOriginatorGuid` is the message being replied to. iMessage does not mark a forward: it
+  arrives as a new message.
 - **Tapbacks** arrive as messages with `associatedMessageType` (`love`, `like`, `dislike`,
   `laugh`, `emphasize`, `question`) and `associatedMessageGuid` (`p:0/<guid>`). They become
   reactions with the matching emoji. A tapback taken back (`-like`), a sticker and any other kind

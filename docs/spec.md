@@ -549,7 +549,7 @@ How you behave:
 
 ## 9. Tools and resolution rules
 
-Fifteen tools; signatures and argument models are in the companion file `tools.py`. Every tool takes natural names, is batch-first, and returns short text lines the model can relay or act on.
+Sixteen tools; signatures and argument models are in the companion file `tools.py`. Every tool takes natural names, is batch-first, and returns short text lines the model can relay or act on.
 
 **Result line prefixes** (the model is shown these in tool descriptions): `OK:` what changed; `NEW:` items or people created; `AMBIGUOUS:` nothing recorded for that entry, with the options; `ERROR:` validation or domain problem; `NOTE:` side effects, such as "added to shopping list".
 
@@ -564,6 +564,7 @@ Fifteen tools; signatures and argument models are in the companion file `tools.p
 | `modify_event` | events, reminders | Move, edit or cancel; scope `this` on a recurring event adds an exception date (and a one-off event when moved) |
 | `list_upcoming` | none | Expands RRULEs in window, includes standalone reminders |
 | `set_reminder` | reminders | One-off (`fire_at`) or repeating (`rrule`); target me, household or a name |
+| `add_dates` | events, reminders | Every dated thing in a letter, an invite or a forward, in one call that one undo reverts; a day with no time is a reminder the evening before, and a date whose weekday does not fit is held back and asked about (ADR 0039) |
 | `add_job` | reminders | A household job, renewal or birthday: an owner, the day it is due, a time and a repeat if it has them (ADR 0037) |
 | `update_job` | reminders | `done`, `later`, `skip`, `change` or `stop` for a household job; done sets the next one (ADR 0037) |
 | `remember` | facts | Upsert; `value=None` deletes |

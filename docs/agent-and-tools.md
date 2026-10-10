@@ -22,7 +22,9 @@ The brief (`build_brief`) lists the time in household time, who is speaking, fam
 facts, the shopping list, low or out items, items expiring within 3 days and the events of the
 next 7 days and every open household job, each list capped at 25 entries with "+N more". Its last line is the speaker's most
 recent change that can still be undone, as the tool reported it: thread history holds what was
-said, not what was recorded ([ADR 0031](adr/0031-rules-the-model-kept-breaking.md)).
+said, not what was recorded ([ADR 0031](adr/0031-rules-the-model-kept-breaking.md)). After a turn
+that held a date back to ask about it, one more line says what is waiting for the answer
+([below](#letters-invites-and-forwards)).
 
 Three of the brief's lines are there for questions about the product itself. The family line
 says which chat apps each adult is on, or that they are not connected yet, and who set the
@@ -44,12 +46,14 @@ do?", "how do I see the list on my laptop?" or "switch me to WhatsApp" is answer
 built and not made up ([ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)). It follows
 the static prompt, before the cache break, and says: what people do by talking, the two words
 answered by code (`dashboard`, `shops`), each web page by the name in its menu, invites, chat
-apps, the family group, photos and voice notes, how a household job is answered, an adult's own
-Google Calendar, and what the
-assistant sends by itself. It opens
+apps, the family group, photos, files and voice notes, how a household job is answered, an adult's
+own Google Calendar, and what the assistant sends by itself. It opens
 with three rules: answer such a question in a DM or the group, in a line or two with the exact
 word or page; say "I can't do that yet" for anything not listed; never make up a feature, a page,
 a word or a link.
+
+What it says about files (`FILES` in the guide) is the same everywhere: reading a PDF depends on
+nothing an installation can switch off.
 
 **It is written for the installation.** `Setup` (built by `setup_of` in `app/agent/runtime.py`)
 holds what is switched on, and the guide only says what is true there:
@@ -99,7 +103,7 @@ Letta server names it.
   memory blocks: `persona` (the static prompt and the product guide) and `household` (the brief,
   and the setup section while setup is open). Thread history is not sent; Letta keeps its own,
   one for the whole household, DMs and group together.
-- **Tools** are the same fifteen, registered with Letta as functions whose whole body posts the
+- **Tools** are the same sixteen, registered with Letta as functions whose whole body posts the
   arguments to `POST /internal/tools/{name}` with `Authorization: Bearer INTERNAL_TOOL_TOKEN`.
   The household id, the address to call and the token come from the agent's tool environment,
   which is also rewritten before every turn.
@@ -144,6 +148,79 @@ When a photo cannot be shown to the model the turn still runs, with a note in pl
 | More than four photos in one batch | `[2 more photos not read: at most 4 per message]` |
 
 Earlier photos appear in thread history as `[photo]` lines only; the image is not sent again.
+
+## Letters, invites and forwards
+
+Someone sends a school letter, a party invite or an appointment message, as a photo, a forward,
+pasted words or a PDF. The static prompt sends all of these to `add_dates`, with one entry for
+each dated thing ([ADR 0039](adr/0039-a-letter-is-one-call-and-a-day-with-no-time-is-a-reminder.md)).
+The model reads; the rules are in code:
+
+| An entry | Becomes |
+| --- | --- |
+| Has a time | A calendar event through the same service as `schedule_event`: people resolved, the usual reminders a day and an hour before, a repeat rule if it repeats |
+| Has a day and no time (a day off school, a form due back) | One reminder at 18:00 the evening before, or at 07:30 that morning if the evening has gone. Its words carry the day: `Return the trip slip for Tobi, tomorrow (Fri 9 Oct)`, or `today` when quiet hours will hold it overnight. It goes to the household if a child or more than one adult is in it, to the one adult otherwise, and to the sender when nobody is named |
+| Names a weekday that is not the weekday of its date | Held back with an `AMBIGUOUS:` line. Nothing is written for it; the other entries are added. How the weekday is found is under the table |
+| Is marked `unsure` by the model, with what is unclear | Held back the same way. "This Friday" in a letter with no date on it is the usual case |
+| Has already passed | Left out with a `NOTE:`; the model says so and does not ask |
+| Is already on the calendar | Nothing changes, and the line says so |
+| Is today, with no time | Nothing to remind of: a `NOTE:` says it is today and nothing is added |
+
+**The weekday is checked against the words that arrived.** The model passes on the weekday the
+text gives (`weekday`), and sometimes does not: in one eval run it left the weekday out for the
+one entry whose weekday was wrong, and the date went in unasked. So for anything that arrives as
+words (a forward, pasted text, a PDF, a caption, a voice note) code reads the weekday itself. It
+looks in the turn's words (`Ctx.said`) for that entry's date written with a weekday, as
+"Wednesday 12 November", "Weds, the 12th of Nov", "Wed, November 12th" or "Wed 12/11". Where the
+words give one, that is the weekday that counts, whatever the model passed on, and the entry is
+held back unless one of them is the date's own. Where they give none, which is always so for a
+photo, the weekday the model passed on is all there is.
+
+The check runs the other way too. A model is poor at working out weekdays, and in one eval run it
+held back a correct date, saying "10 December 2026 is a Monday" of a Thursday the text had right.
+When the weekday the text gives fits its date, a doubt that says the date "is a" different weekday
+is overruled: the entry is added, with `NOTE: 10 Dec 2026 is a Thursday, as the text says, so it
+was added`. Any other doubt stands.
+
+**One call is one action.** With two or more entries added, the first result line is a summary
+(`OK: 3 added from one message, and one undo takes them all back: ...`). That line is what the
+brief shows as the speaker's last change, so on "undo" the model knows one `undo_last` takes back
+the trip, the slip and the day off together.
+
+**What was held back waits one turn in the brief.** The model asks one question about a held
+entry. The answer arrives as a new turn, in which the photo or file is not shown again and no row
+holds the entry. So the brief ends with the `AMBIGUOUS:` lines of the speaker's last turn in that
+thread, read from the stored turn (`messages.meta`), for up to 24 hours:
+
+```text
+Asked Ola about these and waiting for the answer; not added yet: Parents' evening (Thu 12 Nov 2026 16:00, for Tobi, Sunnyfield Primary) not added: the text says Wednesday, but 12 Nov 2026 is a Thursday. If this message is the answer, add them with add_dates.
+```
+
+The line is there for the one turn after the question. Whatever the person says next, it is gone
+on the turn after that.
+
+**A forward says that it is one.** Where the channel tells, the line above the text is
+`[forwarded message from Coach Bisi, first sent Sun 4 Oct 2026 20:00]`, in household time. The
+prompt says that "tomorrow" in it counts from when it was first sent. Telegram gives the sender
+and the time; WhatsApp gives only `[forwarded message]`; iMessage has no such thing as a forward.
+Pasted words carry no mark, and need none.
+
+**Files.** A file is fetched once by the pipeline (`app/pipeline/media.py`), as a voice note is,
+and a PDF's words are read there with `pypdf` and kept on the message's `MediaRef` as `text`. The
+agent reads them as part of the turn, and again in the thread's history:
+
+| File | What the agent reads |
+| --- | --- |
+| A PDF with words in it | `[file: Trip letter.pdf; its words follow]`, the words, `[end of file]` |
+| The same, over 10 pages or 8,000 characters | The first part, then `[the rest of the file was not read]` |
+| A scanned PDF, a locked one, one over 15 MB or one that will not parse | `[file: scan.pdf; no words could be read from it: it may be a scan or a locked file]` |
+| A PDF the channel would not hand over (Telegram refuses a file over 20 MB) | `[file: big.pdf; it could not be loaded]` |
+| Any other kind of file | `[file: newsletter.docx; this kind of file can't be read, only a PDF]` |
+| A picture sent as a file (JPEG, PNG, WebP, GIF) | It is a photo, and takes the photo path above |
+
+Reading needs no media backend and no image input: a household whose model cannot read photos
+can still send a PDF or paste the words. The guide tells the assistant to ask for a photo of the
+page, or the words pasted in, when a file cannot be read.
 
 ## Onboarding
 
@@ -193,7 +270,7 @@ Token usage, tool calls and latency for each turn are stored on the batch's last
 
 ## Tools
 
-`REGISTRY` in `app/agent/tools/__init__.py` holds the fifteen tools. Fourteen are always offered;
+`REGISTRY` in `app/agent/tools/__init__.py` holds the sixteen tools. Fifteen are always offered;
 `onboarding_advance` only while a household is being set up.
 
 | Tool | Writes | Behaviour |
@@ -207,6 +284,7 @@ Token usage, tool calls and latency for each turn are stored on the batch's last
 | `modify_event` | events, reminders | Finds the event from how it was described; moves, edits or cancels it; scope `this` on a series changes one date |
 | `list_upcoming` | none | Events in the next `days`, repeats expanded, plus standalone reminders; optional person filter |
 | `set_reminder` | reminders | One-off at `fire_at`, or repeating by `rrule`; for me, the household or a named member. Anything someone asks to be reminded of, a chore included. "Later" in answer to a reminder sets it again, two hours on or at the time they say |
+| `add_dates` | events, reminders | Every dated thing in a letter, an invite or a forward, in one call that one undo reverts ([below](#letters-invites-and-forwards)) |
 | `add_job` | reminders | A household job, renewal or date that someone describes: its owner, the day it is next due, a time of day if one was said, a repeat rule. A birthday is kind `date` |
 | `update_job` | reminders | `done`, `later`, `skip`, `change` or `stop` for the job named, or with no name the one the message answers or the only one waiting |
 | `remember` | facts; some settings | Upserts a fact for the household or one member; no value forgets it. The keys `staples`, `shops`, `main_supermarket`, `morning_brief` and `quiet_hours` are settings ([ADR 0016](adr/0016-settings-said-in-chat-go-through-remember.md)). Quiet hours are set for whoever `about` names (`us` is every adult), and for the speaker alone when nobody is named |
@@ -235,6 +313,10 @@ NOTE: first nudge on Tue 6 Oct at 19:00; it is ticked off when someone says done
 OK: Put the bins out done. Next: Tue 13 Oct at 19:00
 OK: nothing to tick off: Put the bins out was ticked off on Tue 6 Oct at 19:30, and is next due Tue 13 Oct at 19:00
 ERROR: 'prescription' could be Ada's prescription, Ola's prescription. Ask which, in one short question
+OK: 2 added from one message, and one undo takes them all back: School trip, Return the trip slip
+OK: Return the trip slip for Tobi on Fri 9 Oct, no time given: one reminder at Thu 8 Oct 18:00
+AMBIGUOUS: Parents' evening (Thu 12 Nov 2026 16:00, for Tobi, Sunnyfield Primary) not added: the text says Wednesday, but 12 Nov 2026 is a Thursday
+NOTE: Harvest assembly (Fri 2 Oct 2026 09:15, for Tobi) left out: it has already passed
 OK: staples done. Next step: tour
 ```
 
@@ -295,7 +377,9 @@ undoable change like any other, and "undo" takes it back. A meal that needs noth
 offset is honoured. A one-off event or reminder in the past is an `ERROR:` that states the current
 time, so the model can correct a wrong date.
 
-**Reminders for an event.** `remind_before_minutes` defaults to a day and an hour before.
+**Reminders for an event.** `remind_before_minutes` defaults to a day and an hour before. A day
+with no time is not an event; `add_dates` gives it one reminder
+([above](#letters-invites-and-forwards)).
 
 - An event that lasts all day has none. The morning brief names it on its day, and the day
   before under "Tomorrow". Such an event arrives only from a connected calendar.
@@ -423,7 +507,8 @@ action's inverse in `agent_actions.inverse`:
 ]
 ```
 
-Rows that existed are restored in full; rows the action created are deleted. Undoable tables are
+Rows that existed are restored in full; rows the action created are deleted. An action is one
+tool call, so everything `add_dates` added from one letter is one action. Undoable tables are
 `stock`, `shopping_list_items`, `items` (the staple flag and dashboard edits), `events`,
 `reminders` (household jobs are rows of it), `household_facts`, `places`, `members` and `households`. For the last two only the
 columns an action may change are put back (name, role, preferred channel and quiet hours; brief
