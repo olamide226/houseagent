@@ -1,6 +1,28 @@
-{# An adult's own Google Calendar, kept in step with the household's plans (ADR 0038). #}
+{# An adult's own Google or Apple calendar, kept in step with the household's plans (ADR 0038, ADR 0041). #}
 {% set mine = own.mine %}
+{% set theirs = own.names[mine.provider] if mine else "" %}
+{# Apple has no page to say yes on: the person makes a password for this app there and types it here. #}
+{% macro apple_form(button) %}
+<form class="stack" hx-post="/dashboard/calendar/connect/apple" hx-target="#calendar">
+  <p class="hint">Apple gives every app a password of its own, so the password you sign in to Apple with is never
+    typed here. Make one in two steps:</p>
+  <ol class="numbered">
+    <li><span>Open <a href="{{ own.apple_passwords }}" target="_blank" rel="noopener">account.apple.com</a> and sign
+      in. Under <strong>Sign-In and Security</strong>, choose <strong>App-Specific Passwords</strong>.</span></li>
+    <li><span>Choose <strong>Generate an app-specific password</strong>, give it a name such as Home, and copy the
+      password Apple shows you.</span></li>
+  </ol>
+  <label class="field">The email you sign in to Apple with
+    <input type="email" name="apple_id" value="{{ own.apple_id or (mine.account if mine and mine.provider == 'apple' else '') }}" autocomplete="off" autocapitalize="none" spellcheck="false" required></label>
+  <label class="field">The app-specific password
+    <input type="password" name="password" placeholder="xxxx-xxxx-xxxx-xxxx" autocomplete="off" required></label>
+  <button>{{ button }}</button>
+  <span class="sub">Apple only makes these passwords for an account with two-factor authentication switched on. You
+    can remove the password at Apple at any time, and that stops this.</span>
+</form>
+{% endmacro %}
 {% if own.error %}<p class="error" role="alert">{{ own.error }}</p>{% endif %}
+{% if own.notice %}<p class="notice">{{ own.notice }}</p>{% endif %}
 {% if mine and mine.status == "choosing" %}
 <div class="card stack">
   <form class="stack" hx-post="/dashboard/calendar/own/choose" hx-target="#calendar">
@@ -20,13 +42,13 @@
 <div class="card"{% if not mine.last_synced_at %} hx-get="/dashboard/calendar/own" hx-trigger="every 4s" hx-target="#own-calendar"{% endif %}>
   <div class="row">
     <span class="grow"><span class="title">{{ mine.calendar_name }}</span>
-      <span class="sub">{{ mine.account or "Google Calendar" }}</span></span>
+      <span class="sub">{{ theirs }}{% if mine.account %} · {{ mine.account }}{% endif %}</span></span>
     <span class="pill good">Connected</span>
   </div>
   {% if not mine.last_synced_at %}
   <p class="hint">Bringing your plans over. This takes about a minute.</p>
   {% elif mine.failures %}
-  <p class="hint">Google is not answering at the moment. It will be tried again by itself; last checked
+  <p class="hint">{{ theirs.split()[0] }} is not answering at the moment. It will be tried again by itself; last checked
     {{ local(mine.last_synced_at, session.timezone).strftime("%a %-d %b, %H:%M") }}.</p>
   {% else %}
   <p class="hint">Plans go both ways: what you tell the assistant appears in this calendar, and what you add, change
@@ -35,25 +57,47 @@
   <button class="quiet" hx-post="/dashboard/calendar/own/disconnect" hx-target="#calendar">Disconnect</button>
 </div>
 {% elif mine %}
-<div class="card">
-  <p class="notice warn">Your Google Calendar has stopped being kept in step, so plans are not copied either way.
+<div class="card stack">
+  <p class="notice warn">Your {{ theirs }} has stopped being kept in step, so plans are not copied either way.
     Connect it again to carry on. Nothing has been lost.</p>
+  {% if mine.provider == "apple" %}
+  <p class="hint">This happens when the password made for this is removed at Apple, or when you change the password
+    you sign in to Apple with: Apple then cancels the others. A new one puts it right.</p>
+  {{ apple_form("Connect again") }}
+  <button class="quiet" hx-post="/dashboard/calendar/own/disconnect" hx-target="#calendar">Disconnect</button>
+  {% else %}
   <div class="inline wrap">
     <a class="btn" href="/dashboard/calendar/connect/google">Connect again</a>
     <button class="quiet" hx-post="/dashboard/calendar/own/disconnect" hx-target="#calendar">Disconnect</button>
   </div>
+  {% endif %}
 </div>
-{% elif own.on %}
-<div class="card">
-  <p class="hint">Connect your Google Calendar and plans go both ways: what you tell the assistant appears there, and
-    what you add, change or delete there appears here. You pick one calendar to share, and can stop at any time.</p>
-  <a class="btn" href="/dashboard/calendar/connect/google">Connect Google Calendar</a>
+{% elif own.google or own.apple %}
+<div class="card stack">
+  <p class="hint">Connect the calendar you already use and plans go both ways: what you tell the assistant appears
+    there, and what you add, change or delete there appears here. You pick one calendar to share, and can stop at
+    any time.</p>
+  {% if own.google %}
+  <div><a class="btn" href="/dashboard/calendar/connect/google">Connect Google Calendar</a></div>
+  {% endif %}
+  {% if own.apple %}
+  <details class="fold add"{% if own.apple_id %} open{% endif %}>
+    <summary>{{ icon("plus") }}<span class="grow">Connect Apple Calendar</span>{{ icon("down", "chev") }}</summary>
+    {{ apple_form("Connect Apple Calendar") }}
+  </details>
+  {% endif %}
+  {% if not own.google %}
+  <span class="sub">Google Calendar is not switched on for this household yet.{% if session.is_admin %} As the person
+    who set this up, you can switch it on: the steps are in the operations guide, under Google Calendar.{% else %}
+    Whoever set this up can switch it on.{% endif %}</span>
+  {% endif %}
 </div>
 {% else %}
 <div class="card">
-  <p class="hint">Google Calendar is not switched on for this household yet.{% if session.is_admin %} As the person
-    who set this up, you can switch it on: the steps are in the operations guide, under Google Calendar.{% else %}
-    Whoever set this up can switch it on.{% endif %} Until then, the link below shows the plans in any calendar app.</p>
+  <p class="hint">Connecting a Google or Apple calendar is not switched on for this household yet.{% if session.is_admin %} As the person
+    who set this up, you can switch it on: the steps are in the operations guide, under Google Calendar and Apple
+    Calendar.{% else %} Whoever set this up can switch it on.{% endif %} Until then, the link below shows the plans
+    in any calendar app.</p>
 </div>
 {% endif %}
 {% if own.others %}

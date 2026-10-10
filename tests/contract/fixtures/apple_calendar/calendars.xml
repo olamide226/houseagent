@@ -1,0 +1,58 @@
+<multistatus xmlns="DAV:">
+  <response xmlns="DAV:">
+    <href>/17149682/calendars/</href>
+    <propstat>
+      <prop>
+        <resourcetype xmlns="DAV:">
+          <collection/>
+        </resourcetype>
+        <displayname xmlns="DAV:">Ny Test</displayname>
+      </prop>
+      <status>HTTP/1.1 200 OK</status>
+    </propstat>
+  </response>
+  <response xmlns="DAV:">
+    <href>/17149682/calendars/06888b87-397f-11eb-943b-3af9d3928d42/</href>
+    <propstat>
+      <prop>
+        <resourcetype xmlns="DAV:">
+          <collection/>
+          <calendar xmlns="urn:ietf:params:xml:ns:caldav"/>
+        </resourcetype>
+        <displayname xmlns="DAV:">calfoo3</displayname>
+      </prop>
+      <status>HTTP/1.1 200 OK</status>
+    </propstat>
+  </response>
+  <response xmlns="DAV:">
+    <href>/17149682/calendars/inbox/</href>
+    <propstat>
+      <prop>
+        <resourcetype xmlns="DAV:">
+          <collection/>
+          <schedule-inbox xmlns="urn:ietf:params:xml:ns:caldav"/>
+        </resourcetype>
+      </prop>
+      <status>HTTP/1.1 200 OK</status>
+    </propstat>
+    <propstat>
+      <prop>
+        <displayname xmlns="DAV:"/>
+      </prop>
+      <status>HTTP/1.1 404 Not Found</status>
+    </propstat>
+  </response>
+  <response xmlns="DAV:">
+    <href>/17149682/calendars/testcalendar-e2910e0a-feab-4b51-b3a8-55828acaa912/</href>
+    <propstat>
+      <prop>
+        <resourcetype xmlns="DAV:">
+          <collection/>
+          <calendar xmlns="urn:ietf:params:xml:ns:caldav"/>
+        </resourcetype>
+        <displayname xmlns="DAV:">Yep</displayname>
+      </prop>
+      <status>HTTP/1.1 200 OK</status>
+    </propstat>
+  </response>
+</multistatus>

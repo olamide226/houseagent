@@ -1,5 +1,6 @@
-"""Connecting an adult's own Google Calendar from the Calendar page (ADR 0038): the trip to Google
-and back, picking the one calendar to share, and disconnecting. Google is mocked with respx."""
+"""Connecting an adult's own calendar from the Calendar page: the trip to Google and back (ADR 0038),
+the email and app-specific password typed in for Apple (ADR 0041), picking the one calendar to share,
+and disconnecting. Google is mocked with respx; Apple is a CalDAV server on this machine (tests/caldav.py)."""
 from datetime import timedelta
 from urllib.parse import parse_qs, urlsplit
 
@@ -14,6 +15,7 @@ from app.core.timeutil import day_bounds, local, utcnow
 from app.dashboard import routes
 from app.db import execute, fetch_all, fetch_one, tx
 from app.services import calendar, calendar_sync
+from tests.caldav import PASSWORDS
 from tests.helpers import add_member, ctx_for, seed_home
 from tests.unit.test_dashboard import login
 
@@ -228,3 +230,143 @@ async def test_an_all_day_event_is_shown_without_a_time_on_the_calendar_and_toda
 
 def test_the_code_google_sends_back_is_kept_out_of_the_access_log():
     assert mask_secrets(f"{CALLBACK}?state=abc.def&code=4/0Ab_cd-EF&scope=x") == f"{CALLBACK}?state=…&code=…&scope=x"
+
+
+# ---------------------------------------------------------------- an Apple Calendar (ADR 0041)
+APPLE = "/dashboard/calendar/connect/apple"
+OLAS = {"apple_id": "ola@example.test", "password": PASSWORDS["ola@example.test"]}
+
+
+async def test_apple_calendar_is_connected_with_an_email_and_an_app_specific_password_typed_on_the_page(client, icloud):
+    home = await home_with_ada()
+    family = icloud.phone("ola@example.test", "family", "Family")
+    icloud.phone("ola@example.test", "tasks", "Reminders", holds=("VTODO",))
+    icloud.phone("ola@example.test", "school", "School")
+    assert (await client.post(APPLE, data=OLAS)).status_code == 401                   # not signed in
+    csrf = await login(client, home)
+    page = " ".join((await client.get("/dashboard/calendar")).text.split())
+    # The two steps, in the words Apple's own page uses, with the link.
+    assert "Connect Apple Calendar" in page and "Make one in two steps:" in page
+    assert ('Open <a href="https://account.apple.com" target="_blank" rel="noopener">account.apple.com</a> and sign '
+            "in. Under <strong>Sign-In and Security</strong>, choose <strong>App-Specific Passwords</strong>.") in page
+    assert "Choose <strong>Generate an app-specific password</strong>, give it a name such as Home" in page
+    assert "the password you sign in to Apple with is never typed here" in page
+    assert '<input type="password" name="password"' in page and 'autocomplete="off"' in page
+
+    assert (await client.post(APPLE, data=OLAS)).status_code == 403                   # no CSRF token
+    for typed, said in [
+        ({"apple_id": "ola@example.test", "password": "the-one-ola-signs-in-to-apple-with"},
+         "Apple did not accept that email and password. It has to be an app-specific password"),
+        ({"apple_id": "ola@example.test", "password": "  "}, "Type the email you sign in to Apple with"),
+        ({"apple_id": "ola", "password": "typed-with-half-an-email"}, "Type the email you sign in to Apple with"),
+    ]:
+        refused = await client.post(APPLE, data=typed, headers=csrf)
+        assert said in refused.text and 'role="alert"' in refused.text
+        assert "the-one-ola-signs" not in refused.text and "typed-with-half" not in refused.text   # never shown back
+        assert f'value="{typed["apple_id"]}"' in refused.text and "<details class=\"fold add\" open>" in refused.text
+    assert await connection() is None                                                 # nothing is kept of a try
+
+    typed = await client.post(APPLE, data=OLAS, headers=csrf)
+    assert "Which calendar do you want to share?" in typed.text and OLAS["password"] not in typed.text
+    assert typed.text.count('name="calendar_id"') == 2 and "Family" in typed.text and "School" in typed.text
+    assert "Reminders" not in typed.text                                              # nothing can be planned on it
+    stored = await connection()
+    assert (stored["status"], stored["provider"], stored["account"], stored["calendar_id"]) == (
+        "choosing", "apple", "ola@example.test", None)
+    assert OLAS["password"] not in stored["secret"]                                   # encrypted at rest
+    assert calendar_sync.unseal(get_settings(), stored["secret"]) == {
+        "username": "ola@example.test", "password": OLAS["password"]}
+
+    chosen = await client.post("/dashboard/calendar/own/choose", data={"calendar_id": family.folder}, headers=csrf)
+    stored = await connection()
+    assert (stored["status"], stored["calendar_name"], stored["calendar_id"]) == ("active", "Family", family.folder)
+    assert "Bringing your plans over" in chosen.text and "Apple Calendar · ola@example.test" in chosen.text
+    async with tx() as conn:
+        (logged,) = await fetch_all(conn, "select tool, args, result from agent_actions")
+    assert (logged["tool"], logged["result"]) == ("calendar.connect", "OK: Apple Calendar connected: Family")
+    assert OLAS["password"] not in str(logged)                                        # the sign-in is no logged action
+
+    # Signing in again while it is connected would swap one calendar for another without a word.
+    again = await client.post(APPLE, data=OLAS, headers=csrf)
+    assert "Disconnect the calendar you have connected first." in again.text
+    assert (await connection())["status"] == "active"
+
+    await login(client, home, home.members["Ada"])                                    # the other adult sees it
+    page = (await client.get("/dashboard/calendar")).text
+    assert '<span class="title">Ola</span>' in page and "Connect Apple Calendar" in page
+
+
+async def test_disconnecting_an_apple_calendar_says_where_to_remove_the_password_and_a_stopped_one_asks_again(
+        client, icloud):
+    home = await home_with_ada()
+    family = icloud.phone("ola@example.test")
+    csrf = await login(client, home)
+    await client.post(APPLE, data=OLAS, headers=csrf)
+    backed_out = await client.post("/dashboard/calendar/own/disconnect", headers=csrf)    # "Not now", before picking
+    assert await connection() is None and "still works at Apple" not in backed_out.text
+    await client.post(APPLE, data=OLAS, headers=csrf)
+    await client.post("/dashboard/calendar/own/choose", data={"calendar_id": family.folder}, headers=csrf)
+
+    async with tx() as conn:
+        await execute(conn, "update calendar_connections set status = 'broken', last_error = 'AuthLost: 401'")
+    page = " ".join((await client.get("/dashboard/calendar")).text.split())
+    assert "Your Apple Calendar has stopped being kept in step" in page and "Nothing has been lost." in page
+    assert "when you change the password you sign in to Apple with" in page and "A new one puts it right." in page
+    assert 'name="apple_id" value="ola@example.test"' in page and "<button>Connect again</button>" in page
+    assert "AuthLost" not in page and "connect/google" not in page                    # the reason is for the logs
+    await login(client, home, home.members["Ada"])
+    assert "Family · stopped working" in (await client.get("/dashboard/calendar")).text
+
+    csrf = await login(client, home)
+    again = await client.post(APPLE, data=OLAS, headers=csrf)                         # with a password that works
+    assert "Which calendar do you want to share?" in again.text
+    assert (await connection())["calendar_id"] == family.folder                       # the same one carries on if picked
+    await client.post("/dashboard/calendar/own/choose", data={"calendar_id": family.folder}, headers=csrf)
+
+    gone = await client.post("/dashboard/calendar/own/disconnect", headers=csrf)
+    assert await connection() is None and "Connect Apple Calendar" in gone.text
+    assert ("Apple Calendar is disconnected. The password you made for it still works at Apple until you remove it: "
+            "at account.apple.com, under App-Specific Passwords.") in gone.text
+    async with tx() as conn:
+        (logged,) = await fetch_all(conn, "select result from agent_actions where tool = 'calendar.disconnect'")
+    assert logged["result"] == "OK: Apple Calendar disconnected"
+
+
+async def test_when_apple_cannot_be_reached_or_has_no_calendar_the_page_says_so_and_keeps_nothing(
+        client, icloud, monkeypatch):
+    home = await home_with_ada()
+    csrf = await login(client, home)
+    empty = await client.post(APPLE, data=OLAS, headers=csrf)                         # an account with no calendar yet
+    assert "That Apple account has no calendar that plans can be added to." in empty.text
+    away = get_settings().model_copy(update={"apple_caldav_url": "http://127.0.0.1:9"})
+    monkeypatch.setattr(routes, "get_settings", lambda: away)
+    failed = await client.post(APPLE, data=OLAS, headers=csrf)
+    assert "Apple could not be reached just now. Try again in a minute." in failed.text
+    assert await connection() is None
+
+
+async def test_with_a_google_calendar_connected_an_apple_one_is_not_put_in_its_place(client, icloud):
+    home = await home_with_ada()
+    icloud.phone("ola@example.test")
+    async with tx() as conn:
+        await calendar_sync.begin(conn, home.id, home.ola, "google", "ola@example.test",
+                                  calendar_sync.seal(get_settings(), refresh_token="refresh-ola"),
+                                  [RemoteCalendar("family", "Family")])
+        await calendar_sync.choose(Recorder(ctx_for(conn, home)), "family")
+    csrf = await login(client, home)
+    page = (await client.get("/dashboard/calendar")).text
+    assert "Google Calendar · ola@example.test" in page and "Connect Apple Calendar" not in page
+    refused = await client.post(APPLE, data=OLAS, headers=csrf)
+    assert "Disconnect the calendar you have connected first." in refused.text
+    assert (await connection())["provider"] == "google"
+
+
+async def test_where_no_key_is_set_neither_calendar_can_be_connected_and_the_page_says_so(client, monkeypatch):
+    home = await home_with_ada()
+    off = get_settings().model_copy(update={"calendar_secret_key": None})
+    monkeypatch.setattr(routes, "get_settings", lambda: off)
+    csrf = await login(client, home)
+    page = " ".join((await client.get("/dashboard/calendar")).text.split())
+    assert "Connecting a Google or Apple calendar is not switched on for this household yet." in page
+    assert "connect/google" not in page and "connect/apple" not in page
+    assert (await client.post(APPLE, data=OLAS, headers=csrf)).status_code == 404

@@ -1,0 +1,25 @@
+<multistatus xmlns="DAV:">
+  <response>
+    <href>/17149682/calendars/testcalendar-84439d0b-ce46-4416-b978-7b4009122c64</href>
+    <propstat>
+      <prop>
+        <getetag>"folder-etag"</getetag>
+      </prop>
+      <status>HTTP/1.1 200 OK</status>
+    </propstat>
+  </response>
+  <response>
+    <href>/17149682/calendars/testcalendar-84439d0b-ce46-4416-b978-7b4009122c64/20010712T182145Z-123401%40example.com.ics</href>
+    <propstat>
+      <prop>
+        <getetag>"etag-of-the-party"</getetag>
+      </prop>
+      <status>HTTP/1.1 200 OK</status>
+    </propstat>
+  </response>
+  <response>
+    <href>/17149682/calendars/testcalendar-84439d0b-ce46-4416-b978-7b4009122c64/deleted-on-the-phone.ics</href>
+    <status>HTTP/1.1 404 Not Found</status>
+  </response>
+  <sync-token>place-after-first-read</sync-token>
+</multistatus>

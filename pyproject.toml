@@ -23,6 +23,7 @@ dependencies = [
     "aioboto3>=15.5.0",
     "cryptography>=45",
     "pypdf>=6.20.0",
+    "icalendar>=7",
 ]
 
 [project.optional-dependencies]
@@ -39,6 +40,7 @@ dev = [
     "respx",
     "ruff",
     "mypy",
+    "radicale>=3.8.3",
 ]
 
 [tool.uv]

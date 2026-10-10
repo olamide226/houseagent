@@ -67,11 +67,13 @@ class Settings(BaseSettings):
     bb_webhook_secret: str | None = None
     bb_private_api: bool = False
 
-    # Two-way calendar sync (ADR 0038). An adult can connect a Google Calendar once the OAuth client
-    # and the key that encrypts each stored sign-in are all set.
+    # Two-way calendar sync (ADR 0038, ADR 0041). An adult can connect a Google Calendar once the
+    # OAuth client and the key that encrypts each stored sign-in are all set. An Apple Calendar
+    # needs the key alone: the person brings their own app-specific password.
     google_client_id: str | None = None
     google_client_secret: str | None = None
     calendar_secret_key: str | None = None    # one Fernet key, or several with commas: the first encrypts
+    apple_caldav_url: str = "https://caldav.icloud.com"   # iCloud; another address only to try it out
 
     # The optional Letta runtime (spec 8.4). Its tools call back into `/internal/tools/*`.
     letta_base_url: str | None = None
@@ -94,6 +96,10 @@ class Settings(BaseSettings):
     @property
     def google_calendar_enabled(self) -> bool:
         return bool(self.google_client_id and self.google_client_secret and self.calendar_secret_key)
+
+    @property
+    def apple_calendar_enabled(self) -> bool:
+        return bool(self.calendar_secret_key)
 
     @property
     def telegram_enabled(self) -> bool:

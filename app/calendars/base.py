@@ -4,11 +4,13 @@
 sync needs from a calendar service. No module outside `app/calendars/` knows a provider's
 payloads, as no module outside `app/channels/` knows a chat app's.
 """
+from collections.abc import Collection
 from dataclasses import asdict, dataclass, fields
 from datetime import date, datetime, timedelta
 from typing import Any, Protocol
 
 DEFAULT_LENGTH = timedelta(hours=1)   # a household event with no end is given this one on a calendar
+NO_TITLE = "(No title)"               # what an event with no title on a calendar is called here
 
 
 @dataclass(frozen=True)
@@ -99,9 +101,13 @@ class Unavailable(CalendarError):
 class Provider(Protocol):
     """One connected calendar. Built per sync from the stored sign-in; holds no state between."""
 
-    async def changes(self, sync_token: str | None, since: datetime) -> tuple[list[Remote], str | None]:
+    async def changes(self, sync_token: str | None, since: datetime,
+                      followed: Collection[str] = ()) -> tuple[list[Remote], str | None]:
         """What changed since `sync_token`, and the token for next time. With no token: everything
-        that ends after `since`. A repeating event comes before its changed occurrences."""
+        that ends after `since`. A repeating event comes before its changed occurrences.
+
+        `followed` are the ids the sync holds a link for. A calendar that says an event is gone
+        only by leaving it out (CalDAV) reports those of them that are no longer there as deleted."""
         ...
 
     async def create(self, entry: Entry, owner: str) -> tuple[str, str | None]:

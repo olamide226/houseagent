@@ -23,8 +23,8 @@ from app.agent import actions
 from app.agent.actions import Recorder, record
 from app.agent.base import Ctx, ToolError
 from app.agent.resolve import Ambiguous, resolve_item, resolve_members
-from app.calendars import google
-from app.calendars.base import CalendarError, Refused
+from app.calendars import apple, google
+from app.calendars.base import AuthLost, CalendarError, Refused
 from app.channels.base import ADAPTERS, ChannelError, GroupHost
 from app.config import get_settings
 from app.core import crypto
@@ -52,6 +52,17 @@ NOT_CONNECTED = {
     "empty": "That Google account has no calendar that plans can be added to.",
     "failed": "Google could not be reached just now. Try again in a minute.",
 }
+# What it says when the Apple email and password typed on it connected nothing.
+APPLE_NOT_CONNECTED = {
+    "missing": "Type the email you sign in to Apple with, and the app-specific password.",
+    "refused": "Apple did not accept that email and password. It has to be an app-specific password, made in the "
+               "two steps below, not the password you sign in to Apple with.",
+    "empty": "That Apple account has no calendar that plans can be added to.",
+    "failed": "Apple could not be reached just now. Try again in a minute.",
+    "other": "Disconnect the calendar you have connected first.",
+}
+APPLE_DISCONNECTED = ("Apple Calendar is disconnected. The password you made for it still works at Apple until you "
+                      "remove it: at account.apple.com, under App-Specific Passwords.")
 
 
 def _ctx(conn: AsyncConnection, session: Session) -> Ctx:
@@ -334,16 +345,20 @@ async def spending_change(request: Request, receipt_id: str, verb: str, month: s
 
 
 # ---------------------------------------------------------------- Calendar
-async def _own_calendar(conn: AsyncConnection, session: Session, error: str | None = None) -> dict[str, Any]:
+async def _own_calendar(conn: AsyncConnection, session: Session, error: str | None = None,
+                        **more: Any) -> dict[str, Any]:
     """What the page shows about connected calendars: the viewer's own, and who else has one."""
     connected = await calendar_sync.connections(conn, session.household_id)
-    return {"on": get_settings().google_calendar_enabled, "error": error,
+    settings = get_settings()
+    return {"google": settings.google_calendar_enabled, "apple": settings.apple_calendar_enabled, "error": error,
+            "names": calendar_sync.PROVIDERS, "apple_passwords": apple.PASSWORDS_PAGE, **more,
             "mine": next((c for c in connected if c["member_id"] == session.member_id), None),
             "others": [c for c in connected if c["member_id"] != session.member_id and c["status"] != "choosing"]}
 
 
 async def _calendar(request: Request, session: Session, template: str = "_calendar.html",
-                    error: str | None = None, feed: str | None = None, own_error: str | None = None) -> Response:
+                    error: str | None = None, feed: str | None = None, own_error: str | None = None,
+                    **own: Any) -> Response:
     now = utcnow()
     until = now + timedelta(days=CALENDAR_DAYS)
     async with tx() as conn:
@@ -352,7 +367,7 @@ async def _calendar(request: Request, session: Session, template: str = "_calend
             "days": _by_day(coming, [], session.timezone),
             "series": await calendar.active_events(conn, session.household_id, recurring=True),
             "reminders": await calendar.standalone_reminders(conn, session.household_id, now, until, expand=False),
-            "own": await _own_calendar(conn, session, own_error),
+            "own": await _own_calendar(conn, session, own_error, **own),
         }
     return _page(request, template, session, error=error, feed=feed, repeats=REPEATS, **context)
 
@@ -491,6 +506,41 @@ async def calendar_connected(code: str = "", state: str = "", error: str = "",
     return back()
 
 
+# ---------------------------------------------------------------- Calendar: an adult's own Apple Calendar
+@router.post("/calendar/connect/apple")
+async def calendar_connect_apple(request: Request, apple_id: str = Form(""), password: str = Form(""),
+                                 session: Session = Depends(require_csrf)) -> Response:
+    """Sign in to iCloud with what was typed on the page (ADR 0041). Apple has no page to say yes
+    on: the person makes an app-specific password there and types it here. It is tried at once, and
+    kept, encrypted, only if Apple accepts it. It is in no address, no log line and no logged action."""
+    settings = get_settings()
+    if not settings.apple_calendar_enabled:
+        raise HTTPException(status_code=404)
+    email, secret = apple_id.strip(), "".join(password.split())   # as Apple shows it, or with spaces put in
+    async with tx() as conn:
+        mine = (await _own_calendar(conn, session))["mine"]
+    outcome = ""
+    if mine and mine["status"] == "active":
+        outcome = "other"
+    elif "@" not in email or not secret:
+        outcome = "missing"
+    else:
+        try:
+            found = await apple.calendars(settings.apple_caldav_url, email, secret)
+        except AuthLost:
+            outcome = "refused"
+        except CalendarError:
+            outcome = "failed"
+        else:
+            outcome = "" if found else "empty"
+    if not outcome:
+        async with tx() as conn:
+            await calendar_sync.begin(conn, session.household_id, session.member_id, "apple", email,
+                                      calendar_sync.seal(settings, username=email, password=secret), found)
+    return await _calendar(request, session, own_error=APPLE_NOT_CONNECTED.get(outcome),
+                           apple_id=email if outcome else "")
+
+
 @router.get("/calendar/own")
 async def calendar_own(request: Request, session: Session = Depends(current_session)) -> Response:
     """The connected-calendar card by itself: it asks again while the first copy is being made,
@@ -516,7 +566,8 @@ async def calendar_choose(request: Request, calendar_id: str = Form(...),
 
 @router.post("/calendar/own/disconnect")
 async def calendar_disconnect(request: Request, session: Session = Depends(require_csrf)) -> Response:
-    """Stop copying. Nothing is deleted on either side, and Google is told the sign-in is finished with."""
+    """Stop copying. Nothing is deleted on either side. Google is told the sign-in is finished with;
+    Apple has no way to be told, so the person is told where to remove the password."""
     gone: dict[str, Any] = {}
 
     async def disconnect(rec: Recorder) -> None:
@@ -527,7 +578,8 @@ async def calendar_disconnect(request: Request, session: Session = Depends(requi
         # If the key has changed since, the sign-in cannot be read, and so cannot be used either.
         with contextlib.suppress(crypto.Unreadable, KeyError):
             await google.revoke(calendar_sync.unseal(get_settings(), gone["secret"])["refresh_token"])
-    return await _calendar(request, session)
+    connected = gone.get("provider") == "apple" and gone.get("status") != "choosing"
+    return await _calendar(request, session, notice=APPLE_DISCONNECTED if connected else None)
 
 
 # ---------------------------------------------------------------- Jobs
