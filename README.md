@@ -47,7 +47,8 @@ on Telegram since October 2026**, and how much of it has met the real services d
 | Helm chart | Linted and rendered; never installed on a cluster |
 | One server with Docker Compose | Running since 9 Oct 2026 behind a cluster's ingress, with that household's data moved onto it: see [docs/operations.md](docs/operations.md#on-one-server) |
 
-Each page under `docs/` says, for its feature, what has been checked and what has not.
+Each page under `docs/` says, for its feature, what has been checked and what has not. What is
+still open before a public release is one list: [docs/go-live-checklist.md](docs/go-live-checklist.md).
 
 ## Run it locally
 
@@ -84,6 +85,7 @@ uv run pytest tests/unit tests/contract
 | [docs/presence.md](docs/presence.md) | The iPhone Shortcut, the arrival rules, predictions |
 | [docs/operations.md](docs/operations.md) | Environment variables, running on one server with compose, Helm, health, the BlueBubbles outage and WhatsApp template runbooks, logs, costs |
 | [docs/evals.md](docs/evals.md) | The eval suite, how to run it, the latest results |
+| [docs/go-live-checklist.md](docs/go-live-checklist.md) | What is still open before a public release, each item with its status |
 | [docs/data-model.md](docs/data-model.md), [docs/llm.md](docs/llm.md) | Tables and invariants; the model layer |
 | [docs/adr/](docs/adr/) | Thirty-two decisions, one per file |
 | [docs/spec.md](docs/spec.md) | The v1 implementation spec this was built from |
