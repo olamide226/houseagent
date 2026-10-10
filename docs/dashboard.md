@@ -87,7 +87,7 @@ itself is the secret, and a request that a browser marks as coming from another 
 
 | Page | Path | Shows | Actions |
 | --- | --- | --- | --- |
-| Today | `/dashboard` | Shopping list count, today's and tomorrow's events and reminders, what is running low or has run out, what goes out of date within 3 days | Quick-add to the list |
+| Today | `/dashboard` | Shopping list count, today's and tomorrow's events and reminders, what is running low or has run out, what goes out of date within 3 days, and a line saying how to ask the assistant what to cook | Quick-add to the list |
 | Shopping list | `/dashboard/shopping` | Active list, then "You might also need" | Add, tick off with the circle, remove, set the shop |
 | Pantry | `/dashboard/inventory` | Stock by location, filter by status; per-item history | Set a count, mark none left, edit an item (other names, always kept in, low threshold, usual place), merge a duplicate |
 | Calendar | `/dashboard/calendar` | The next 30 days with repeats expanded, the repeating series, standalone reminders | Add an event (once, daily, weekly or monthly), edit title, time and place, cancel, skip one date of a series, cancel a reminder, get the calendar link |

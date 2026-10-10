@@ -37,6 +37,9 @@ TALK = {
                                           "house",
     ("update_shopping_list", "get_shopping_list"): "add to, take off or read the shopping list, for one shop too; "
                                                    "what they always keep in goes on it by itself when it runs out",
+    ("meal_ideas",): "ask what to cook tonight, this week, with something they name or for the children: you "
+                     "suggest a few meals from the food in the house, what needs using up first, say what each "
+                     "one still needs, and put that on the shopping list when they pick one",
     ("schedule_event", "modify_event", "list_upcoming"): "book, move or cancel appointments and regular activities, "
                                                          "and ask what is coming up",
     ("set_reminder",): "reminders for one person or everyone, once or repeating",

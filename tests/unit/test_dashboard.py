@@ -240,6 +240,8 @@ async def test_today_shows_list_count_low_and_expiring_items(client):
     await client.post("/dashboard/shopping/add", data={"item": "eggs"}, headers=csrf)
     page = (await client.get("/dashboard")).text
     assert 'class="stat">1</span>' in page and "rice" in page and "bread" not in page
+    # Under "Use soon", how to ask for meal ideas: words on the page, no model call to draw it.
+    assert "Ask the assistant: “what can we cook tonight?”" in page
 
 
 async def test_shopping_page_writes_go_through_the_services_and_are_logged_as_dashboard(client):

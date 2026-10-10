@@ -75,6 +75,7 @@ _letta: list[AgentRuntime] = []
 CASES = [
     (path.stem, case) for path in sorted(HERE.glob("*.yaml")) for case in yaml.safe_load(path.read_text())
 ]
+RULED_OUT = re.compile(r"\b(no|not|without|free|skip\w*|avoid\w*|leav\w+ out)\b")   # in a suggested meal's line
 usage_by_provider: dict[str, Usage] = {}
 outcomes: dict[str, dict[str, str]] = {}
 
@@ -133,6 +134,13 @@ async def seed(case: dict[str, Any], now: datetime) -> Any:
                 conn, home, item["name"], location=location, staple=item.get("staple", False),
                 qty=stock.get(location), status=None if stock.get(location) is None else
                 ("out" if stock[location] == 0 else "in_stock"))
+            if "expires" in item:               # the date on the pack, for the stock row above
+                await execute(conn, "update stock set expires_on = :day where item_id = :item",
+                              day=date.fromisoformat(str(item["expires"])), item=ids[item["name"]])
+        for fact in spec.get("facts", []):      # something the household told the assistant to remember
+            await execute(conn, "insert into household_facts (household_id, member_id, key, value) "
+                                "values (:h, :member, :key, :value)", h=home.id, key=fact["key"], value=fact["value"],
+                          member=home.members[fact["about"]] if "about" in fact else None)
         for name in spec.get("list", []):
             await shopping.add_entry(_recorder(conn, home), ids[name], "explicit")
         for name in spec.get("guesses", []):    # on the list as "probably", as the consumption model leaves them
@@ -254,6 +262,14 @@ def check(expect: dict[str, Any], seen: dict[str, Any], seed: dict[str, Any], la
             f"reply was {last_reply!r}"
     for unwanted in expect.get("reply_avoids", []):
         assert unwanted.lower() not in last_reply.lower(), f"reply was {last_reply!r}"
+    if "called" in expect:                      # what the last turn read or did, where no row can show it
+        assert set(expect["called"]) <= set(seen["called"]), f"called {seen['called']}, reply was {last_reply!r}"
+    if "meals_avoid" in expect:                 # the suggested meals are the numbered or bulleted lines
+        meals = [line for line in last_reply.lower().splitlines() if re.match(r"\s*(\d+[.):]|[-*\u2022])\s", line)]
+        assert meals, f"no list of meals in {last_reply!r}"
+        for unwanted in expect["meals_avoid"]:       # "eggy bread (no peanuts)" names it to rule it out
+            assert not any(unwanted.lower() in line and not RULED_OUT.search(line) for line in meals), \
+                f"reply was {last_reply!r}"
     if expect.get("plain"):
         assert not technical_words(last_reply), f"reply was {last_reply!r}"
     if "reply" in expect:
@@ -396,7 +412,7 @@ async def test_case(provider: str, suite: str, case: dict[str, Any], sample: int
             for call in result.tool_calls:
                 print(f"  tool {call.name} {call.args} -> {call.result!r}")
             print(f"  reply: {reply!r}")
-    seen = await observed(home)
+    seen = await observed(home) | {"called": [call.name for call in result.tool_calls]}
     check(case["expect"], seen, case.get("seed", {}), reply)
     check_family(case["expect"], seen, home)
     outcomes[provider][name] = "passed"

@@ -79,6 +79,8 @@ it, by default `http://host.docker.internal:8011`. The result is written as `let
 | `reply_mentions` | Each of these texts is in the last reply: a reply that reads the list back has to name what is on it, and an answer about the product has to name the word to send or the page |
 | `reply_says_any` | At least one of these is in the last reply as a whole word, so `not` is not found in "note". For answers that have to say no |
 | `reply_avoids` | None of these texts is in the last reply |
+| `called` | The last turn called each of these tools. For a question that only reads, where no row can show what the answer was built on |
+| `meals_avoid` | No suggested meal, a numbered or bulleted line of the last reply, has any of these texts, and there is at least one such line. A remark beside the meals ("the chicken is not for Ada") may name them, and so may a meal's own line when it rules the thing out ("eggy bread (no peanuts)") |
 | `plain: true` | The last reply has no word from `TECHNICAL` in `tests/helpers.py` (api, url, token, database, webhook, endpoint, json, backend, server, config), no link, and no name_with_underscores such as a tool or a setting |
 | `calendar` | Exactly these active events, in any order. Each may give `title_contains`, `participants`, `local_start` ("Wed 7 Oct 11:00"), `location_contains`, `rrule_contains`, `repeats: false`, `exdates` |
 | `calendar_cancelled` | How many events are cancelled |
@@ -123,6 +125,19 @@ A case about something the assistant said first seeds that message, and any gues
     shopping_list_asked_for: [milk]
 ```
 
+A case about meals can give stock a date and the household something remembered:
+
+```yaml
+- name: a vegetarian is not offered the chicken that needs using
+  seed:
+    facts: [{key: diet, value: vegetarian, about: Ada}]     # about: a member; without it, the whole household
+    items:
+      - {name: chicken thigh, stock: {fridge: 1}, expires: "2026-10-06"}   # the date on the pack
+      - {name: egg, stock: {fridge: 6}}
+  turns: [{from: Ola, text: "what can I cook for Ada tonight?"}]
+  expect: {writes: 0, plain: true, called: [meal_ideas], meals_avoid: [chicken]}
+```
+
 A case about the product can say what the installation has switched on. Without `setup` there is
 Telegram only, photos are read, voice notes are not, and the shared Shortcut is not set:
 
@@ -139,11 +154,20 @@ inventory events here, so calendar expectations are under `calendar`.
 
 ## Suite
 
-71 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (7), reminders (4),
+81 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (7), reminders (4),
 photos (6: four receipts, two fridge or freezer photos), onboarding, family and settings (13),
-presence (4: answers to the low-stock prompt and the "out and about" offer), and product (10:
-what the assistant says about itself, [ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)).
+presence (4: answers to the low-stock prompt and the "out and about" offer), product (10:
+what the assistant says about itself, [ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)),
+and meals (10: what to cook, [ADR 0036](adr/0036-meal-ideas-from-a-short-stock-read.md)).
 The spec's target is 40.
+
+The meal cases ask what to cook tonight, for the week, with a named ingredient, for a vegetarian
+with chicken that needs using, for a child with a peanut allergy and peanut butter in the
+cupboard, with nothing recorded, and by name in the family group. Each asserts that the food was
+read (`called`), that nothing was written, and plain words. Two start from a suggestion already
+made: picking the meal that needs two things puts those two on the list, and picking the one
+that needs nothing writes nothing. The last is someone saying in the group what they are cooking,
+which is not a question and expects `NOOP`.
 
 The product cases ask what a family member asks: "what can you do?", "how do I see the list on my
 laptop?", "how do I add my wife?", "how does the shop thing work?", "can you read photos?" where
@@ -165,6 +189,65 @@ photo case reads its image through a read-only `MediaStore` over that folder, so
 the same path into the model as a stored Telegram photo.
 
 ## Latest results
+
+One run of the whole suite with the loop runtime, 10 Oct 2026, before and after meal ideas
+([ADR 0036](adr/0036-meal-ideas-from-a-short-stock-read.md)), model `deepseek-flash` through both
+adapters. Before: the 71 cases, 424 seconds. After: the same 71 and the 10 meal cases, 455 seconds.
+
+| Adapter | Before | After | NOOP | Undo | Input tokens after (cached) | Output tokens after |
+| --- | --- | --- | --- | --- | --- | --- |
+| `openai_compat` | 71/71 | **81/81** | 3/3 | 7/7 | 897,671 (739,328) | 18,857 |
+| `anthropic` | 70/71 | **79/81** | 3/3 | 7/7 | 892,115 (854,912) | 19,646 |
+
+| Category | `openai_compat` before | after | `anthropic` before | after |
+| --- | --- | --- | --- | --- |
+| inventory | 12/12 | 12/12 | 12/12 | 12/12 |
+| shopping list | 5/5 | 5/5 | 5/5 | 4/5 |
+| NOOP | 3/3 | 3/3 | 3/3 | 3/3 |
+| undo | 7/7 | 7/7 | 7/7 | 7/7 |
+| calendar | 7/7 | 7/7 | 7/7 | 7/7 |
+| reminders | 4/4 | 4/4 | 4/4 | 4/4 |
+| photos | 6/6 | 6/6 | 6/6 | 6/6 |
+| onboarding | 13/13 | 13/13 | 12/13 | 13/13 |
+| presence | 4/4 | 4/4 | 4/4 | 4/4 |
+| product | 10/10 | 10/10 | 10/10 | 10/10 |
+| meals (new) | not run | 10/10 | not run | 9/10 |
+
+The release bar (95% overall and 100% on NOOP and undo, on at least two providers) is met on both
+endpoints in both runs. It is one sample per case, and the two endpoints are one model on two
+wire formats.
+
+The three failures, all on the `anthropic` endpoint:
+
+| Case | Run | What happened |
+| --- | --- | --- |
+| quiet hours for the other adult by name | before | Ada ended at 20:00 to 08:00 where the case expects 19:00 to 08:00 |
+| bought one thing off the list | after | The eggs were logged as `added` where the case expects `restocked`; the stock and the list ended right. It passed in the before run, so it was run five more times on each side: 4/5 on the code before this change and 5/5 after it. It is the failure the 7 Oct runs had, on the same endpoint |
+| a child's allergy keeps the peanut butter out of the kids' tea | after | The answer was right: "2. Eggy bread with carrot sticks (no peanuts)". The check failed any meal line with "peanut" in it. It now lets a line pass that rules the thing out |
+
+**The meal cases, three more samples each** on both endpoints with that check corrected: 59/60,
+and `meal_ideas` was called in every run that asked what to cook. The one failure was the case
+that is not a question. It then read "I'm doing jollof tonight, be home by 7 if you want it
+hot", and one run of six booked "Jollof rice dinner" for 19:00 with a reminder. `meal_ideas` was
+not called in it: the time in the message was taken for a plan. The eight earlier runs of that
+message had ignored it. It was then run 24 more times after this change and 36 times on the code
+before it, and was ignored in all 60: one booking in 38 runs after against none in 36 before does
+not say the change caused it, and does not rule it out. The case now reads
+"I'm doing jollof tonight, hope everyone's hungry", which was ignored in 24 runs of 24: it is
+there to show that the new tool does not answer a statement, not to test times in group chat.
+
+**What it costs.** One model step reads 177 more tokens than before (4,898 to 5,075, the
+provider's own count for the prompt and the tools with and without the change), all in the
+cached part. The same 71 cases cannot be compared across the two runs by their totals, because
+the after total includes the meal cases.
+
+**What the meal cases do not show**: whether a suggested meal can be made from what was said to
+be there. Of the replies read, one called a bolognese complete with no tomatoes in the house.
+They also do not show a pick made from a suggestion the model wrote in the same run: the two
+pick cases start from a suggestion written for the case. That flow was run by hand on both
+endpoints (ask, pick, ask how to make it, undo) and did what it should.
+
+## Previous full run (the product guide)
 
 One run of the whole suite with the loop runtime, 7 Oct 2026, before and after the product guide
 ([ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)), model `deepseek-flash` through
