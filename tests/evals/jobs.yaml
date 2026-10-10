@@ -1,0 +1,109 @@
+# Household jobs: the bins, the MOT, a prescription, a birthday (ADR 0037). Every case starts on Monday
+# 5 October 2026 at 12:00, London time, unless it sets `now`. A seeded job with `asked: true` has had its
+# first nudge, five minutes ago, in the chat the worker would send it to.
+- name: the bins every Tuesday night are Ola's
+  turns: [{from: Ada, text: "the bins go out every Tuesday night, Ola does them"}]
+  expect:
+    jobs: [{title_contains: bin, kind: job, owner: Ola, due_day: "Tue 6 Oct", all_day: false, rrule_contains: FREQ=WEEKLY}]
+    reminders: []
+    calendar: []
+
+- name: the MOT is due on a day
+  turns: [{from: Ola, text: "the MOT is due on 14 March"}]
+  expect:
+    jobs: [{title_contains: MOT, kind: job, owner: Ola, due_day: "Sun 14 Mar", all_day: true}]
+    reminders: []
+    calendar: []
+
+- name: a prescription every 28 days belongs to whose it is
+  turns: [{from: Ola, text: "Ada's prescription needs picking up this Friday and then every 28 days"}]
+  expect:
+    jobs: [{title_contains: prescription, owner: Ada, due_day: "Fri 9 Oct", rrule_contains: "INTERVAL=28"}]
+    reminders: []
+    calendar: []
+
+- name: a birthday is a date with nothing to tick off
+  turns: [{from: Ada, text: "Grandma's birthday is on 12 November"}]
+  expect:
+    jobs: [{title_contains: birthday, kind: date, due_day: "Thu 12 Nov", all_day: true, rrule_contains: FREQ=YEARLY}]
+    reminders: []
+    calendar: []
+
+- name: done answers the nudge and next week's is set
+  now: "2026-10-06 19:10"
+  seed: {jobs: [{title: Put the bins out, due: "2026-10-06 19:00", rrule: "FREQ=WEEKLY;BYDAY=TU", owner: Ola, asked: true}]}
+  turns: [{from: Ola, text: "done"}]
+  expect:
+    jobs: [{title_contains: bin, owner: Ola, local_due: "Tue 13 Oct 19:00", waiting: false, done_by: Ola}]
+    reply: ACK
+
+# Two hours on is code's doing when the model gives no time. A model that works the two hours out itself
+# from the nudge's 19:00 lands on 21:00, which is as good to the person waiting.
+- name: later puts the nudge off two hours and nothing is ticked off
+  now: "2026-10-06 19:10"
+  seed: {jobs: [{title: Put the bins out, due: "2026-10-06 19:00", rrule: "FREQ=WEEKLY;BYDAY=TU", owner: Ola, asked: true}]}
+  turns: [{from: Ola, text: "later"}]
+  expect:
+    jobs: [{title_contains: bin, local_due: "Tue 6 Oct 19:00", waiting: true, done_by: null, local_fire: ["Tue 6 Oct 21:10", "Tue 6 Oct 21:00"]}]
+    reply: text
+
+- name: done in the family group is whoever said it
+  now: "2026-10-06 19:10"
+  seed: {jobs: [{title: Feed the fish, due: "2026-10-06 19:00", rrule: "FREQ=DAILY", owner: everyone, asked: true}]}
+  turns: [{from: Ada, scope: group, text: "done, fed them"}]
+  expect:
+    jobs: [{title_contains: fish, owner: null, local_due: "Wed 7 Oct 19:00", done_by: Ada}]
+
+- name: a job done before its day is ticked off for good
+  seed: {jobs: [{title: MOT, due: "2026-11-20"}]}
+  turns: [{from: Ola, text: "I got the MOT done this morning, it passed"}]
+  expect: {jobs: [], jobs_done: 1}
+
+- name: the right one of two waiting jobs is ticked off
+  now: "2026-10-06 09:30"
+  seed:
+    jobs:
+      - {title: Water the plants, due: "2026-10-06", rrule: "FREQ=WEEKLY", owner: Ola, asked: true}
+      - {title: Renew the parking permit, due: "2026-10-06", owner: Ola, asked: true}
+  turns: [{from: Ola, text: "plants are watered"}]
+  expect:
+    jobs:
+      - {title_contains: plants, due_day: "Tue 13 Oct", waiting: false, done_by: Ola}
+      - {title_contains: permit, due_day: "Tue 6 Oct", waiting: true, done_by: null}
+    jobs_done: 0
+
+- name: handing a job to someone else
+  seed: {jobs: [{title: Put the bins out, due: "2026-10-06 19:00", rrule: "FREQ=WEEKLY;BYDAY=TU", owner: Ola}]}
+  turns: [{from: Ola, text: "Ada does the bins from now on"}]
+  expect:
+    jobs: [{title_contains: bin, owner: Ada, local_due: "Tue 6 Oct 19:00", rrule_contains: FREQ=WEEKLY}]
+
+- name: skipping one week leaves the rest
+  seed: {jobs: [{title: Put the bins out, due: "2026-10-06 19:00", rrule: "FREQ=WEEKLY;BYDAY=TU", owner: Ola}]}
+  turns: [{from: Ola, text: "no bin collection this week, skip it"}]
+  expect:
+    jobs: [{title_contains: bin, owner: Ola, local_due: "Tue 13 Oct 19:00", done_by: null}]
+    jobs_stopped: 0
+
+- name: stopping a job leaves the others
+  seed:
+    jobs:
+      - {title: Put the bins out, due: "2026-10-06 19:00", rrule: "FREQ=WEEKLY;BYDAY=TU", owner: Ola}
+      - {title: MOT, due: "2027-03-14", owner: Ada}
+  turns: [{from: Ada, text: "we've got a bin service now, stop the bins job"}]
+  expect: {jobs: [{title_contains: MOT, owner: Ada}], jobs_stopped: 1}
+
+- name: whose job it is is answered without writing
+  seed:
+    jobs:
+      - {title: Put the bins out, due: "2026-10-06 19:00", rrule: "FREQ=WEEKLY;BYDAY=TU", owner: Ola}
+      - {title: MOT, due: "2027-03-14", owner: Ada}
+  turns: [{from: Ada, text: "who does the bins, and when?"}]
+  expect: {writes: 0, reply: text, reply_mentions: [Ola, Tue]}
+
+- name: a nudge between the two of them is not an answer to the assistant
+  seed: {jobs: [{title: Put the bins out, due: "2026-10-06 19:00", rrule: "FREQ=WEEKLY;BYDAY=TU", owner: Ola}]}
+  turns: [{from: Ada, scope: group, text: "Ola love, don't forget the bins tomorrow night x"}]
+  expect:
+    writes: 0
+    jobs: [{title_contains: bin, owner: Ola, local_due: "Tue 6 Oct 19:00", done_by: null}]
