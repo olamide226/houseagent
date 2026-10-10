@@ -190,6 +190,65 @@ the same path into the model as a stored Telegram photo.
 
 ## Latest results
 
+One run of the whole suite with the loop runtime, 10 Oct 2026, before and after meal ideas
+([ADR 0036](adr/0036-meal-ideas-from-a-short-stock-read.md)), model `deepseek-flash` through both
+adapters. Before: the 71 cases, 424 seconds. After: the same 71 and the 10 meal cases, 455 seconds.
+
+| Adapter | Before | After | NOOP | Undo | Input tokens after (cached) | Output tokens after |
+| --- | --- | --- | --- | --- | --- | --- |
+| `openai_compat` | 71/71 | **81/81** | 3/3 | 7/7 | 897,671 (739,328) | 18,857 |
+| `anthropic` | 70/71 | **79/81** | 3/3 | 7/7 | 892,115 (854,912) | 19,646 |
+
+| Category | `openai_compat` before | after | `anthropic` before | after |
+| --- | --- | --- | --- | --- |
+| inventory | 12/12 | 12/12 | 12/12 | 12/12 |
+| shopping list | 5/5 | 5/5 | 5/5 | 4/5 |
+| NOOP | 3/3 | 3/3 | 3/3 | 3/3 |
+| undo | 7/7 | 7/7 | 7/7 | 7/7 |
+| calendar | 7/7 | 7/7 | 7/7 | 7/7 |
+| reminders | 4/4 | 4/4 | 4/4 | 4/4 |
+| photos | 6/6 | 6/6 | 6/6 | 6/6 |
+| onboarding | 13/13 | 13/13 | 12/13 | 13/13 |
+| presence | 4/4 | 4/4 | 4/4 | 4/4 |
+| product | 10/10 | 10/10 | 10/10 | 10/10 |
+| meals (new) | not run | 10/10 | not run | 9/10 |
+
+The release bar (95% overall and 100% on NOOP and undo, on at least two providers) is met on both
+endpoints in both runs. It is one sample per case, and the two endpoints are one model on two
+wire formats.
+
+The three failures, all on the `anthropic` endpoint:
+
+| Case | Run | What happened |
+| --- | --- | --- |
+| quiet hours for the other adult by name | before | Ada ended at 20:00 to 08:00 where the case expects 19:00 to 08:00 |
+| bought one thing off the list | after | The eggs were logged as `added` where the case expects `restocked`; the stock and the list ended right. It passed in the before run, so it was run five more times on each side: 4/5 on the code before this change and 5/5 after it. It is the failure the 7 Oct runs had, on the same endpoint |
+| a child's allergy keeps the peanut butter out of the kids' tea | after | The answer was right: "2. Eggy bread with carrot sticks (no peanuts)". The check failed any meal line with "peanut" in it. It now lets a line pass that rules the thing out |
+
+**The meal cases, three more samples each** on both endpoints with that check corrected: 59/60,
+and `meal_ideas` was called in every run that asked what to cook. The one failure was the case
+that is not a question. It then read "I'm doing jollof tonight, be home by 7 if you want it
+hot", and one run of six booked "Jollof rice dinner" for 19:00 with a reminder. `meal_ideas` was
+not called in it: the time in the message was taken for a plan. The eight earlier runs of that
+message had ignored it. It was then run 24 more times after this change and 36 times on the code
+before it, and was ignored in all 60: one booking in 38 runs after against none in 36 before does
+not say the change caused it, and does not rule it out. The case now reads
+"I'm doing jollof tonight, hope everyone's hungry", which was ignored in 24 runs of 24: it is
+there to show that the new tool does not answer a statement, not to test times in group chat.
+
+**What it costs.** One model step reads 177 more tokens than before (4,898 to 5,075, the
+provider's own count for the prompt and the tools with and without the change), all in the
+cached part. The same 71 cases cannot be compared across the two runs by their totals, because
+the after total includes the meal cases.
+
+**What the meal cases do not show**: whether a suggested meal can be made from what was said to
+be there. Of the replies read, one called a bolognese complete with no tomatoes in the house.
+They also do not show a pick made from a suggestion the model wrote in the same run: the two
+pick cases start from a suggestion written for the case. That flow was run by hand on both
+endpoints (ask, pick, ask how to make it, undo) and did what it should.
+
+## Previous full run (the product guide)
+
 One run of the whole suite with the loop runtime, 7 Oct 2026, before and after the product guide
 ([ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)), model `deepseek-flash` through
 both adapters. Before: the 61 cases, 366 seconds. After: the same 61 and the 10 product cases, 433
