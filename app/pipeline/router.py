@@ -14,7 +14,7 @@ from app.channels.base import ChannelAdapter, NotSupported, PermanentError, degr
 from app.core.envelope import Channel, DeliveryStatus, OutboundMessage
 from app.core.timeutil import utcnow
 from app.db import execute, fetch_all, fetch_one, fetch_val, jsonb, tx
-from app.services import members
+from app.services import jobs, members
 
 log = structlog.get_logger()
 
@@ -151,7 +151,9 @@ async def _dispatch(conn: AsyncConnection, adapters: dict[Channel, ChannelAdapte
                              external_id = :external_id, last_error = null where id = :id""",
         channel=destination.channel.value, external_id=external_id, id=row["id"],
     )
-    await record_outbound(conn, row["household_id"], destination.thread_id, sent_text, meta, external_id)
+    # A nudge about a household job keeps which job it was about, so a tick on it can be matched.
+    await record_outbound(conn, row["household_id"], destination.thread_id, sent_text,
+                          {**meta, **jobs.named_in(row["dedupe_key"])}, external_id)
     log.info("outbox_sent", household_id=row["household_id"], outbox_id=row["id"],
              channel=destination.channel.value)
 

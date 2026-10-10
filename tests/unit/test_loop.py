@@ -36,7 +36,7 @@ async def test_tool_call_then_ack_records_and_reports_ack_only():
     assert {t.name for t in tools} == {
         "log_inventory", "query_inventory", "update_shopping_list", "get_shopping_list", "undo_last",
         "schedule_event", "modify_event", "list_upcoming", "set_reminder", "remember", "add_family_member",
-        "meal_ideas"}
+        "meal_ideas", "add_job", "update_job"}
 
 
 @pytest.mark.parametrize("answer,expected", [

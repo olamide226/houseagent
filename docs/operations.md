@@ -415,13 +415,13 @@ uv run python -m app.worker.main             # worker, in a second terminal
 
 ## Worker jobs
 
-`python -m app.worker.main` runs `inbound`, `outbox`, `fire_reminders` (every 15 s),
+`python -m app.worker.main` runs `inbound`, `outbox`, `fire_reminders` and `job_nudges` (every 15 s),
 `expand_recurrence` (hourly), `daily_brief`, `weekly_digest`, `consumption_model` and
 `low_stock_prompt` (checked every minute), when a media backend is configured
 `media_cleanup` (hourly), and when iMessage is set up `imessage_health` (every 5 minutes). What each
 does and why running it twice is harmless is in
 [architecture.md](architecture.md#scheduled-jobs). Log events worth watching:
-`reminder_queued`, `digest_queued`, `outbox_sent`, `outbox_held_for_quiet_hours`,
+`reminder_queued`, `job_nudge_queued`, `digest_queued`, `outbox_sent`, `outbox_held_for_quiet_hours`,
 `outbox_send_failed`, `outbox_delivery_failed`, `outbox_fallback_queued`, `group_created`,
 `group_not_created`, `media_failed`, `photo_unreadable`, `media_cleaned`, `media_cleanup_failed`,
 `invite_redeemed`, `imessage_health_changed`, `items_categorised`, `categorise_failed`, `categorise_unreadable`, `job_crashed`.

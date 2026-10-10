@@ -85,7 +85,9 @@ it, by default `http://host.docker.internal:8011`. The result is written as `let
 | `calendar` | Exactly these active events, in any order. Each may give `title_contains`, `participants`, `local_start` ("Wed 7 Oct 11:00"), `location_contains`, `rrule_contains`, `repeats: false`, `exdates` |
 | `calendar_cancelled` | How many events are cancelled |
 | `reminders_scheduled` | How many reminder rows are scheduled, for events and standalone |
-| `reminders` | Exactly these scheduled standalone reminders: `text_contains`, `local_fire`, `target`, `member`, `urgency`, `rrule_contains`, `repeats: false` |
+| `reminders` | Exactly these scheduled standalone reminders, household jobs not among them: `text_contains`, `local_fire` (one time, or a list of accepted times), `target`, `member`, `urgency`, `rrule_contains`, `repeats: false` |
+| `jobs` | Exactly these open household jobs, in any order. Each may give `title_contains`, `kind` (`job` or `date`), `owner` (`null` for everyone), `local_due` ("Tue 13 Oct 19:00"), `due_day` ("Sun 14 Mar", when any time of day will do), `all_day`, `rrule_contains`, `repeats: false`, `waiting` (asked about and not ticked off), `done_by`, `local_fire` (when it is next said; one time or a list of accepted times) |
+| `jobs_done`, `jobs_stopped` | How many jobs are ticked off for good; how many were stopped |
 | `events_include` | Photos: an event whose item name contains `item_contains`, of one of the `type`s, exists. A model may call the item "milk" or "semi skimmed milk" |
 | `events_all` | Every event has this `type`, `source` or `location` (a value or a list of accepted values) |
 | `events_max` | No more events than this, so totals, savings and invented items fail the case |
@@ -148,17 +150,36 @@ Telegram only, photos are read, voice notes are not, and the shared Shortcut is 
   expect: {writes: 0, plain: true, reply_says_any: ["can't", cannot, not, unable], reply_avoids: ["yes"]}
 ```
 
+A case about a household job can seed jobs, and say that one has already had its first nudge:
+
+```yaml
+- name: done answers the nudge and next week's is set
+  now: "2026-10-06 19:10"
+  seed:
+    jobs:                              # due: a day and a time, or a day alone; owner: a name, or everyone
+      - {title: Put the bins out, due: "2026-10-06 19:00", rrule: "FREQ=WEEKLY;BYDAY=TU", owner: Ola, asked: true}
+  turns: [{from: Ola, text: "done"}]
+  expect:
+    jobs: [{title_contains: bin, owner: Ola, local_due: "Tue 13 Oct 19:00", waiting: false, done_by: Ola}]
+    reply: ACK
+```
+
+A seeded job is set up through the service the day before it is first due. With `asked: true` the
+worker's own code has sent its first nudge, five minutes before the case starts, into the chat it
+would go to: the owner's, or the family group for a job that is everyone's.
+
 Seeded events go through the calendar service, so they have their reminders, but leave no undo
 record. The spec's example uses the key `events` for calendar events; that key already meant
 inventory events here, so calendar expectations are under `calendar`.
 
 ## Suite
 
-81 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (7), reminders (4),
+97 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (7), reminders (5),
 photos (6: four receipts, two fridge or freezer photos), onboarding, family and settings (13),
-presence (4: answers to the low-stock prompt and the "out and about" offer), product (10:
+presence (4: answers to the low-stock prompt and the "out and about" offer), product (11:
 what the assistant says about itself, [ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)),
-and meals (10: what to cook, [ADR 0036](adr/0036-meal-ideas-from-a-short-stock-read.md)).
+meals (10: what to cook, [ADR 0036](adr/0036-meal-ideas-from-a-short-stock-read.md)),
+and household jobs (14, [ADR 0037](adr/0037-a-household-job-is-a-reminder-that-is-to-be-done.md)).
 The spec's target is 40.
 
 The meal cases ask what to cook tonight, for the week, with a named ingredient, for a vegetarian
@@ -168,6 +189,15 @@ read (`called`), that nothing was written, and plain words. Two start from a sug
 made: picking the meal that needs two things puts those two on the list, and picking the one
 that needs nothing writes nothing. The last is someone saying in the group what they are cooking,
 which is not a question and expects `NOOP`.
+
+The job cases set one up four ways (the bins every Tuesday night with an owner, the MOT on a
+day, a prescription every 28 days for the person it is named for, a birthday), answer a nudge
+("done", "later", "done" in the family group, the right one of two that are waiting), tick off a
+job before its day, hand one to someone else, skip a week, stop one, ask whose job it is, and
+leave alone a nudge one adult gives the other in the group. With them came one reminder case
+("later" in answer to a plain reminder sets it again two hours on) and one product case (where
+to see the jobs). The reminder cases now fail if a reminder is set up as a job: "remind us
+every Sunday at 6pm to put the bins out" has to stay a reminder.
 
 The product cases ask what a family member asks: "what can you do?", "how do I see the list on my
 laptop?", "how do I add my wife?", "how does the shop thing work?", "can you read photos?" where
@@ -189,6 +219,73 @@ photo case reads its image through a read-only `MediaStore` over that folder, so
 the same path into the model as a stored Telegram photo.
 
 ## Latest results
+
+One run of the whole suite with the loop runtime, 10 Oct 2026, with household jobs
+([ADR 0037](adr/0037-a-household-job-is-a-reminder-that-is-to-be-done.md)) on top of meal ideas,
+model `deepseek-flash` through both adapters: 97 cases, 566 seconds. "Before" is a run of the 71
+cases the same day on the code before both changes (414 seconds); the 81 cases with meal ideas
+alone are the run [below](#previous-full-run-meal-ideas).
+
+| Adapter | Before | After | NOOP | Undo | Input tokens after (cached) | Output tokens after |
+| --- | --- | --- | --- | --- | --- | --- |
+| `openai_compat` | 71/71 | **97/97** | 3/3 | 7/7 | 1,396,816 (1,086,976) | 22,643 |
+| `anthropic` | 71/71 | **97/97** | 3/3 | 7/7 | 1,385,151 (1,343,740) | 24,319 |
+
+| Category | `openai_compat` before | after | `anthropic` before | after |
+| --- | --- | --- | --- | --- |
+| inventory | 12/12 | 12/12 | 12/12 | 12/12 |
+| shopping list | 5/5 | 5/5 | 5/5 | 5/5 |
+| NOOP | 3/3 | 3/3 | 3/3 | 3/3 |
+| undo | 7/7 | 7/7 | 7/7 | 7/7 |
+| calendar | 7/7 | 7/7 | 7/7 | 7/7 |
+| reminders | 4/4 | 5/5 | 4/4 | 5/5 |
+| photos | 6/6 | 6/6 | 6/6 | 6/6 |
+| onboarding | 13/13 | 13/13 | 13/13 | 13/13 |
+| presence | 4/4 | 4/4 | 4/4 | 4/4 |
+| product | 10/10 | 11/11 | 10/10 | 11/11 |
+| meals | not run | 10/10 | not run | 10/10 |
+| household jobs (new) | not run | 14/14 | not run | 14/14 |
+
+Nothing that passed before failed after. The release bar (95% overall and 100% on NOOP and undo,
+on at least two providers) is met on both endpoints. It is one sample per case, and the two
+endpoints are one model on two wire formats.
+
+**What the cases found while the change was being built.** Each of these was a run of the job
+and reminder cases, three samples a case on both endpoints unless it says otherwise.
+
+- **A reminder that was asked for became a job.** With `add_job` on offer, "remind us every
+  Sunday at 6pm to put the bins out" went to it in 4 runs of 6: the person would have been asked
+  to answer "done" every week and asked again on Mondays. One-off reminders were not affected
+  (18 of 18). Both tool descriptions now say that anything someone asks to be reminded of is
+  `set_reminder`, a chore included, and the next 6 runs were 6 of 6. The reminder cases no longer
+  count a job as a reminder, so this cannot come back unseen.
+- **A birthday without "every year".** "Grandma's birthday is on 12 November" was set up without
+  a repeat in 3 runs of 6. A date now repeats yearly by rule, in code.
+- **"Later" with a time of the model's own.** Asked "later" with no time, the model worked the
+  two hours out itself in 7 runs of 10, and once made it 21:00, two hours after the nudge, where
+  code makes it 21:10, two hours after the answer. The description now says to leave the time
+  out for a bare "later" (it was left out in both runs of the final suite), and the case
+  accepts both times: the person is asked again that evening either way.
+- **Whose prescription.** "Ada's prescription needs picking up this Friday" was given to the
+  speaker in 1 run of 2. The owner's description now says that something named as one of the
+  family's is theirs unless they say who does it; 6 of 6 after.
+
+With the first of those changes the job, reminder and Jobs-page cases were 117 of 120 over three
+samples, the three being the birthday, fixed afterwards. An earlier whole-suite run of this change, before it was
+put on top of meal ideas, is not in the table: a mistake in the harness (a loop variable named
+`key`, which hid the function that normalises item names) failed every case that names an item,
+56 runs. Of the 118 runs it could not touch, 117 passed, the one being "later" at 21:00.
+
+**What it costs.** The two tools' definitions, the longer `set_reminder` description and the
+guide's lines on jobs are about 5,900 characters, so roughly 1,500 more tokens on every model
+step, in the part of the prompt that is cached. A household with jobs also has one more line in
+its brief.
+
+**What the job cases do not show.** A tick on a nudge is code and is covered by unit tests, not
+here. Nothing here runs the worker: that a nudge goes out at its time, and what it says, are
+unit tests on a controlled clock.
+
+## Previous full run (meal ideas)
 
 One run of the whole suite with the loop runtime, 10 Oct 2026, before and after meal ideas
 ([ADR 0036](adr/0036-meal-ideas-from-a-short-stock-read.md)), model `deepseek-flash` through both

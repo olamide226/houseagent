@@ -43,6 +43,9 @@ TALK = {
     ("schedule_event", "modify_event", "list_upcoming"): "book, move or cancel appointments and regular activities, "
                                                          "and ask what is coming up",
     ("set_reminder",): "reminders for one person or everyone, once or repeating",
+    ("add_job", "update_job"): "set up a household job, a renewal or a birthday with whose it is and when it is due "
+                               "or how often (the bins every Tuesday night, the MOT on a date, a prescription every "
+                               "28 days), and afterwards skip one, change it or stop it",
     ("remember",): "have you remember a preference, where they shop, what to always keep in, the morning brief "
                    "time and each adult's quiet hours",
     ("add_family_member",): "add a child or another adult",
@@ -62,11 +65,13 @@ WORDS = {
 
 # The web pages by their address after /dashboard: the name in the menu, and what a person does there.
 PAGES = {
-    "": ("Today", "the day's plans, what is running low, what to use soon"),
+    "": ("Today", "the day's plans and jobs, what is running low, what to use soon"),
     "shopping": ("Shopping", "the list: add, tick off, set the shop"),
     "inventory": ("Pantry", "what food is in the house and where"),
     "calendar": ("Calendar", "add, change or cancel plans, cancel reminders, and get a link that shows the plans in "
                              "their phone's own calendar app"),
+    "jobs": ("Jobs", "household jobs, renewals and birthdays: what is coming up and whose it is, tick one off, "
+                     "skip one or stop it"),
     "family": ("Family", "add someone, make or cancel an invite, choose which chat app an adult is messaged on"),
     "channels": ("Chat apps", "which chat apps are working, and the family group"),
     "settings": ("Settings", "morning brief time, quiet hours, shops and places, what you were told to remember"),
@@ -79,10 +84,20 @@ PAGES = {
 # What you send without being asked, beside the worker job that sends it (app/worker/main.py).
 SENDS = {
     "fire_reminders": "reminders (for an appointment, the day before and an hour before unless told otherwise)",
+    "job_nudges": "a nudge when a household job is due, and once more the morning after if nobody has said it is "
+                  "done (a renewal is also said two weeks ahead, and a birthday a week ahead and on the day)",
     "daily_brief": "a morning brief, only on days with something due",
     "weekly_digest": "the week ahead on Sundays at 18:00",
     "low_stock_prompt": "at 17:30, a question about things that are probably running low",
 }
+
+
+# How a household job is answered. The times are the ones in app/services/jobs.py.
+JOBS = ("Household jobs: when one is due you tell whoever it belongs to, or everyone if it is nobody's or a "
+        "child's. They answer done, or put a thumbs-up or a tick on that message, and it is ticked off and the next "
+        "one is set. Later means ask again: in 2 hours for a job with a time, otherwise the next morning at 09:00. "
+        "One that nobody ticks off is asked about once more, the morning after, and then left alone. A birthday "
+        "has nothing to tick off.")
 
 
 def _listed(names: list[str]) -> str:
@@ -122,6 +137,7 @@ def product_guide(setup: Setup) -> str:
         "Voice notes work like typed messages." if setup.voice_notes else
         "Voice notes: you cannot listen to voice notes in this household yet. Say so, and ask them to type it instead.",
         "A thumbs-up from you means it was recorded.",
+        JOBS,
         WORDS["dashboard"],
         f"The web pages: {pages}.",
         _chat_apps(setup),

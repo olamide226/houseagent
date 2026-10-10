@@ -1,6 +1,7 @@
 # Data model
 
-The full DDL is [`schema.sql`](../schema.sql), applied verbatim by Alembic migration `0001`.
+The DDL is [`schema.sql`](../schema.sql), applied verbatim by Alembic migration `0001`, and the
+migrations after it: `0002` adds the household job columns to `reminders`.
 Table-by-table purpose is in [spec.md section 4](spec.md#4-data-model). This page covers what
 milestones 1 to 5 use and the rules the code enforces.
 
@@ -25,6 +26,7 @@ milestones 1 to 5 use and the rules the code enforces.
 | `inventory_events`, `stock` | `services/inventory.py` only |
 | `shopping_list_items` | `services/shopping.py`, the inventory side-effect rules, and the consumption model's guesses (`reason = 'predicted'`) |
 | `events`, `reminders` | `services/calendar.py` only; the recurrence job adds reminder rows, the reminders job updates their status |
+| `reminders` with a `kind` (household jobs) | `services/jobs.py` only, from `add_job`, `update_job`, a tick on a nudge and the Jobs page; the `job_nudges` job moves a row on as it speaks |
 | `households.calendar_token_hash` | the Calendar page's "New subscribe link" |
 | `agent_actions` | every tool call or dashboard action that wrote something, and each invite redemption |
 | `outbox` | turns, invites and welcomes, login links, reminders, digests |
@@ -131,7 +133,38 @@ after such an edit can differ from live stock for that item.
 - `reminders.event_id` is null for a standalone reminder. Only standalone reminders use
   `reminders.rrule`; after each send `fire_at` moves to the next occurrence.
 - `reminders.status`: `scheduled`, then `sent`. `cancelled` means the event or that occurrence was
-  cancelled, or the reminder was dropped as stale after an outage. `acked` is not used yet.
+  cancelled, or the reminder was dropped as stale after an outage. `acked` is only used by a
+  household job (below).
 - `reminders.target` is `household` when a child or more than one adult takes part, otherwise
   `member` with that adult (or whoever booked it when nobody is named).
 - Cancelling an event sets `events.status = 'cancelled'`; nothing is deleted except by undo.
+
+## Household jobs
+
+A household job is a `reminders` row with a `kind` and no event
+([ADR 0037](adr/0037-a-household-job-is-a-reminder-that-is-to-be-done.md)). A plain reminder has
+`kind` null and the other six columns null with it.
+
+| Column | Holds |
+| --- | --- |
+| `kind` | `job`: to be done and ticked off. `date`: a birthday or anniversary, only said |
+| `text` | The job's name, as the family calls it |
+| `member_id` | Whose job it is, a child included; null for everyone. `target` follows it, but who is told is worked out when a message is sent |
+| `due_at` | The occurrence the row is waiting on, in UTC. A day with no time is stored at 09:00 household time |
+| `all_day` | The job was given a day and no time |
+| `rrule` | How it comes round, anchored at `due_at`; null for a job that happens once |
+| `lead_days` | How many days before it is first said; 0 for none |
+| `fire_at` | When the worker next has something to do: the next message about this occurrence, or the first about the next |
+| `asked_at` | The first message about this occurrence; null until then. A job with this set is waiting to be ticked off |
+| `done_at`, `done_by` | When it was last ticked off, and by whom |
+
+- `status` is `scheduled` while `fire_at` is still to come, which for a repeating job is always.
+  A job that happens once becomes `acked` when it is ticked off, or `sent` once everything has
+  been said and nobody has. `cancelled` is a job that was stopped.
+- Ticking a repeating job off moves `due_at` to the next occurrence and clears `asked_at`.
+  Nothing is kept of earlier occurrences beyond `done_at` and `done_by`; the Activity page has
+  each "done" as an action.
+- The seven columns are nullable, so an undo copy of a reminder taken before migration `0002`
+  can still be put back.
+- A sent nudge's `messages.meta` has `job` (the row's id) and `due` (the occurrence, as epoch
+  seconds). That is how a tick on the message, or a reply that quotes it, finds the job.

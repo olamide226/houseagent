@@ -158,6 +158,7 @@ current time as an argument, so tests drive them on a controlled clock.
 | `inbound` | NOTIFY, or 2 s | Turns, as above | Messages are claimed with `SKIP LOCKED` under the household lock |
 | `outbox` | 2 s, or when woken | Sends due rows | `SKIP LOCKED`; a sent row is no longer pending |
 | `fire_reminders` | 15 s | Due reminders become outbox rows. A one-off becomes `sent`; a repeating one moves to its next time | `SKIP LOCKED`, and the outbox dedupe key is `reminder:{id}:{fire_at}` |
+| `job_nudges` | 15 s | Says what is due about each household job and moves its row on to whatever comes next: the morning after, or the next occurrence ([agent-and-tools.md](agent-and-tools.md#household-jobs)) | `SKIP LOCKED`; the row moves on in the transaction that queues the message, and the outbox dedupe key is `job:{id}:{due}:{asked at}` |
 | `expand_recurrence` | 1 h | Reminder rows for each recurring event's occurrences in the next 48 hours, skipping exception dates | Unique `(event_id, fire_at)` |
 | `daily_brief` | 1 min check | At the household's `digest_time`: today's events and reminders, items to use within 2 days. Nothing on an empty day | A `job_runs` row per household and date |
 | `weekly_digest` | 1 min check | Sunday 18:00: the week ahead, the list count, low and expiring items, and what will probably run low that week | A `job_runs` row per household and ISO week |

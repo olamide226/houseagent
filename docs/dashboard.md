@@ -12,7 +12,7 @@ It is for setup, looking things over and fixing mistakes; daily use happens in c
 ## How it looks
 
 A phone has four tabs along the bottom, Today, Shopping, Pantry and Calendar, and a fifth, More,
-that opens a page listing the rest: Family, Chat apps, Settings, Activity, Practice chat, System
+that opens a page listing the rest: Jobs, Family, Chat apps, Settings, Activity, Practice chat, System
 (admins only) and Log out. From 960 px wide the tabs become a sidebar that shows every page, so
 More is not needed there.
 
@@ -87,11 +87,12 @@ itself is the secret, and a request that a browser marks as coming from another 
 
 | Page | Path | Shows | Actions |
 | --- | --- | --- | --- |
-| Today | `/dashboard` | Shopping list count, today's and tomorrow's events and reminders, what is running low or has run out, what goes out of date within 3 days, and a line saying how to ask the assistant what to cook | Quick-add to the list |
+| Today | `/dashboard` | Shopping list count, today's and tomorrow's events and reminders, the household jobs that are waiting or due by tomorrow, what is running low or has run out, what goes out of date within 3 days, and a line saying how to ask the assistant what to cook | Quick-add to the list, tick a job off |
 | Shopping list | `/dashboard/shopping` | Active list, then "You might also need" | Add, tick off with the circle, remove, set the shop |
 | Pantry | `/dashboard/inventory` | Stock by location, filter by status; per-item history | Set a count, mark none left, edit an item (other names, always kept in, low threshold, usual place), merge a duplicate |
 | Calendar | `/dashboard/calendar` | The next 30 days with repeats expanded, the repeating series, standalone reminders | Add an event (once, daily, weekly or monthly), edit title, time and place, cancel, skip one date of a series, cancel a reminder, get the calendar link |
 | More | `/dashboard/more` | The pages below, each with a line about what it is for | Log out |
+| Jobs | `/dashboard/jobs` | Household jobs, renewals and birthdays: the ones asked about and not done yet, then what is coming up, each with whose it is, when it is due and how often it comes round | Tick a job off with the circle (the next one is then set), skip one, stop one |
 | Family | `/dashboard/family` | Everyone in the household, each adult's connected chat apps, open invites | Add an adult or a child, make a new invite (button, QR code and code, shown once), cancel an invite, choose which connected chat app an adult is messaged on |
 | Chat apps | `/dashboard/channels` | Each channel: whether it is set up, when it last heard from and sent to the family, sends failed in the last day, and for iMessage since when it has been unreachable. Each chat: whose it is, the main family chat, and for WhatsApp whether any message or only the standard reminder will be delivered | Create a WhatsApp group, forget one that was never confirmed, show a group's invite link and QR code, choose the main family chat |
 | Activity | `/dashboard/activity` | The last 200 turns and dashboard actions as a conversation: what was said, the reply and whether it was delivered, and what changed. An admin also gets "Technical details" on each: tool calls and results, tokens, latency, the error of a failed turn | Undo a change, send a failed reply again |
@@ -109,8 +110,16 @@ itself is the secret, and a request that a browser marks as coming from another 
   <img src="img/dashboard/settings.png" width="230" alt="Settings: morning brief and quiet hours">
 </p>
 
+<p>
+  <img src="img/dashboard/jobs.png" width="230" alt="Jobs: one not done yet, then what is coming up and whose it is">
+</p>
+
 Reminders are added in chat; the Calendar page lists
-and cancels them. "Always keep this in" (a staple) is set on an item's page. The calendar link
+and cancels them. Jobs are added and changed in chat too ("the bins go out every Tuesday night,
+Ola does them", "Ada does the bins now"); the Jobs page ticks them off, skips one and stops them
+([agent-and-tools.md](agent-and-tools.md#household-jobs)). A date such as a birthday has no
+circle: there is nothing to tick off. In the code and the address the page is `jobs`, and so is
+`app/services/jobs.py`; the worker's own scheduled jobs are `app/worker/jobs.py`. "Always keep this in" (a staple) is set on an item's page. The calendar link
 stays on the Calendar page.
 
 ## Presence links and places

@@ -1,11 +1,12 @@
 """The product guide says what is built: a chat word, a page, a tool or a scheduled message that
 has no line in it fails here, and so does a line that has outlived its code (ADR 0034)."""
 import re
+from datetime import timedelta
 from pathlib import Path
 
 import app.dashboard
 from app.agent import actions, loop
-from app.agent.guide import PAGES, SENDS, TALK, WORDS, Setup, product_guide
+from app.agent.guide import JOBS, PAGES, SENDS, TALK, WORDS, Setup, product_guide
 from app.agent.prompt import STATIC_PROMPT, build_brief, system_prompt
 from app.agent.runtime import make_runtime, setup_of
 from app.agent.tools import REGISTRY
@@ -16,6 +17,7 @@ from app.core.identity import INVITE_TTL
 from app.db import execute, tx
 from app.llm.types import CACHE_BREAK
 from app.pipeline import inbound
+from app.services import jobs as household_jobs
 from app.services import members
 from app.worker import jobs
 from app.worker.main import SCHEDULED
@@ -35,7 +37,7 @@ def menu() -> dict[str, str]:
 
 def test_every_word_page_tool_and_scheduled_message_has_a_line_and_no_line_is_left_over():
     assert set(WORDS) == set(inbound.KEYWORDS)
-    assert {page: name for page, (name, _) in PAGES.items()} == menu() and len(menu()) == 10
+    assert {page: name for page, (name, _) in PAGES.items()} == menu() and len(menu()) == 11
     assert {tool for tools in TALK for tool in tools} == {
         name for name, spec in REGISTRY.items() if not spec.onboarding_only}
     assert set(SENDS) == set(SCHEDULED) - SENDS_NOTHING
@@ -59,6 +61,10 @@ def test_the_numbers_in_the_guide_are_the_codes():
     assert "the day before and an hour before" in SENDS["fire_reminders"]
     assert f"Sundays at {jobs.WEEKLY_DIGEST_AT:%H:%M}" in SENDS["weekly_digest"]
     assert f"at {jobs.LOW_STOCK_PROMPT_AT:%H:%M}" in SENDS["low_stock_prompt"]
+    assert timedelta(hours=2) == household_jobs.LATER and "in 2 hours for a job with a time" in JOBS
+    assert f"the next morning at {household_jobs.MORNING:%H:%M}" in JOBS and JOBS in guide
+    assert (household_jobs.RENEWAL_LEAD_DAYS, household_jobs.DATE_LEAD_DAYS) == (14, 7)
+    assert "a renewal is also said two weeks ahead, and a birthday a week ahead" in SENDS["job_nudges"]
 
 
 def test_the_guide_is_in_family_words_whatever_is_switched_on():

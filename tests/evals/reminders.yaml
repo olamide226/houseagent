@@ -19,3 +19,12 @@
   turns: [{from: Ola, text: "remind me at 11pm tonight to put the bins out"}]
   expect:
     reminders: [{text_contains: bins, local_fire: "Mon 5 Oct 23:00", member: Ola, urgency: high}]
+
+# The assistant sent the reminder five minutes before; "later" has no time in it, so it is two hours on.
+- name: later after a reminder sets it again two hours on
+  now: "2026-10-06 09:05"
+  seed: {said: [{to: Ola, text: "call the landlord"}]}
+  turns: [{from: Ola, text: "later"}]
+  expect:
+    reminders: [{text_contains: landlord, local_fire: ["Tue 6 Oct 11:00", "Tue 6 Oct 11:05"], target: member, member: Ola, repeats: false}]
+    jobs: []

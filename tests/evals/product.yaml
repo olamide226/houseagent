@@ -40,6 +40,11 @@
   turns: [{from: Ada, text: "can you order the shopping online from Tesco for me?"}]
   expect: {writes: 0, reply: text, plain: true, reply_says_any: ["can't", cannot, not, unable]}
 
+- name: whose job is whose is on the Jobs page
+  seed: {jobs: [{title: Put the bins out, due: "2026-10-06 19:00", rrule: "FREQ=WEEKLY;BYDAY=TU", owner: Ola}]}
+  turns: [{from: Ada, text: "is there somewhere I can see all the household jobs and who does each one?"}]
+  expect: {writes: 0, plain: true, reply_mentions: [Jobs, dashboard]}
+
 - name: a how-to question in the family group is answered
   turns: [{from: Ada, scope: group, text: "Home, where do I see the calendar on my computer?"}]
   expect: {writes: 0, plain: true, reply_mentions: [dashboard]}

@@ -94,6 +94,9 @@ main { max-width: 42rem; margin: 0 auto; padding: .75rem 1rem 2rem; }
 .row.wrap { flex-wrap: wrap; }
 a.row:hover { text-decoration: none; }
 a.row:hover .title { color: var(--accent-text); }
+.row > a.grow { color: inherit; }                       /* a row whose words are the link, beside its own button */
+.row > a.grow:hover { text-decoration: none; }
+.row > a.grow:hover .title { color: var(--accent-text); }
 .grow { flex: 1 1 0; min-width: 0; }
 .title { display: block; font-weight: 550; overflow-wrap: anywhere; }
 .time { flex: none; min-width: 3.125rem; font-weight: 650; font-variant-numeric: tabular-nums; }
@@ -112,6 +115,7 @@ a.row:hover .title { color: var(--accent-text); }
 .dot.out { background: var(--bad); }
 .avatar { display: grid; place-items: center; flex: none; width: 2.5rem; height: 2.5rem; border-radius: 50%;
           background: var(--accent-soft); color: var(--accent-text); font-weight: 700; text-transform: uppercase; }
+.avatar.small { width: 2.25rem; height: 2.25rem; margin: .25rem; }   /* stands where a row's tick would */
 .empty { margin: 0; padding: 1.25rem .5rem; color: var(--muted); text-align: center; }
 .stat { font-size: 2rem; line-height: 1; font-weight: 750; letter-spacing: -.02em; color: var(--accent-text);
         font-variant-numeric: tabular-nums; }

@@ -19,7 +19,7 @@ import json
 import os
 import re
 from collections import Counter
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -44,6 +44,7 @@ from app.llm.types import Usage
 from app.pipeline.inbound import PLAYGROUND, _upsert_thread, simulate_turn
 from app.pipeline.router import record_outbound
 from app.services import calendar, households, shopping
+from app.services import jobs as household_jobs
 from tests.helpers import add_item, add_member, ctx_for, london, seed_home, technical_words, wall
 
 pytestmark = [pytest.mark.eval, pytest.mark.skipif(os.environ.get("RUN_EVALS") != "1", reason="set RUN_EVALS=1")]
@@ -146,6 +147,8 @@ async def seed(case: dict[str, Any], now: datetime) -> Any:
         for name in spec.get("guesses", []):    # on the list as "probably", as the consumption model leaves them
             await execute(conn, "insert into shopping_list_items (household_id, item_id, reason) "
                                 "values (:h, :item, 'predicted')", h=home.id, item=ids[name])
+        for job in spec.get("jobs", []):
+            await seed_job(conn, home, job, now)
         for said in spec.get("said", []):       # something the assistant sent this person a few minutes ago
             thread = await _upsert_thread(conn, home.id, PLAYGROUND, f"{PLAYGROUND}:{home.members[said['to']]}", "dm")
             await record_outbound(conn, home.id, str(thread), said["text"], {}, None, at=now - timedelta(minutes=5))
@@ -155,6 +158,26 @@ async def seed(case: dict[str, Any], now: datetime) -> Any:
             await execute(conn, "update households set onboarding_state = cast(:state as jsonb) where id = :h",
                           state=json.dumps({"step": spec["onboarding"], "done": done}), h=home.id)
     return home
+
+
+async def seed_job(conn: Any, home: Any, spec: dict[str, Any], now: datetime) -> None:
+    """A household job set up the day before it is first due, through the service. With `asked`, the
+    worker's first nudge about it has been sent, five minutes ago, to whoever the service sends it to."""
+    day, _, clock = spec["due"].partition(" ")
+    owner = home.members.get(spec.get("owner", "Ola"))                     # anything else, "everyone", is nobody's
+    created = min(now, london(f"{day} {clock or '09:00'}")) - timedelta(days=1)
+    job_id = await household_jobs.add(
+        Recorder(ctx_for(conn, home, now=created)), title=spec["title"], due_on=date.fromisoformat(day),
+        at_time=time.fromisoformat(clock) if clock else None, rrule=spec.get("rrule"), member_id=owner,
+        kind=spec.get("kind", "job"))
+    if spec.get("asked"):
+        (job,) = [job for job in await household_jobs.due_for_a_nudge(conn, now) if job["id"] == job_id]
+        message = await household_jobs.nudge(conn, job, job["fire_at"])
+        to_one = message.target == "member"
+        thread = await _upsert_thread(conn, home.id, PLAYGROUND, f"{PLAYGROUND}:{owner if to_one else home.id}",
+                                      "dm" if to_one else "group")
+        await record_outbound(conn, home.id, str(thread), message.text, household_jobs.named_in(message.dedupe_key),
+                              None, at=now - timedelta(minutes=5))
 
 
 def _recorder(conn: Any, home: Any) -> Recorder:
@@ -190,7 +213,14 @@ async def observed(home: Any) -> dict[str, Any]:
             conn,
             """select r.text, r.fire_at, r.rrule, r.target, r.urgency, r.event_id, m.name as member
                from reminders r left join members m on m.id = r.member_id
-               where r.household_id = :h and r.status = 'scheduled' order by r.fire_at""", h=home.id)
+               where r.household_id = :h and r.status = 'scheduled' and r.kind is null
+               order by r.fire_at""", h=home.id)
+        jobs = await fetch_all(
+            conn,
+            """select r.text, r.kind, r.status, r.due_at, r.fire_at, r.all_day, r.rrule, m.name as owner,
+                      d.name as done_by, r.kind = 'job' and r.asked_at is not null as waiting
+               from reminders r left join members m on m.id = r.member_id left join members d on d.id = r.done_by
+               where r.household_id = :h and r.kind is not null order by r.due_at""", h=home.id)
         family = await fetch_all(
             conn, """select id, name, role, to_char(quiet_start, 'HH24:MI') || '-' || to_char(quiet_end, 'HH24:MI') as quiet,
                             presence_token_hash is not null as has_link
@@ -208,7 +238,7 @@ async def observed(home: Any) -> dict[str, Any]:
             "asked_for": sorted(row["item"] for row in active if row["reason"] != "predicted"),
             "calendar": booked, "reminders": reminders, "family": family, "household": household, "facts": facts,
             "shops": [row["name"] for row in shops], "staples": [row["item"] for row in staples], "sends": sends,
-            "items": [row["canonical_name"] for row in items]}
+            "items": [row["canonical_name"] for row in items], "jobs": jobs}
 
 
 def key(name: str) -> str:
@@ -287,6 +317,14 @@ def check(expect: dict[str, Any], seen: dict[str, Any], seed: dict[str, Any], la
         _match_all("reminder", expect["reminders"], standalone, _reminder_matches)
 
 
+    if "jobs" in expect:                        # household jobs that are still open, and how the others ended
+        _match_all("job", expect["jobs"], [job for job in seen["jobs"] if job["status"] in ("scheduled", "sent")],
+                   _job_matches)
+    for ended, status in (("jobs_done", "acked"), ("jobs_stopped", "cancelled")):
+        if ended in expect:
+            assert len([job for job in seen["jobs"] if job["status"] == status]) == expect[ended], seen["jobs"]
+
+
 def check_family(expect: dict[str, Any], seen: dict[str, Any], home: Any) -> None:
     """Onboarding and settings: people, setup progress, staples, shops, facts, the brief and quiet hours."""
     if "members_added" in expect:
@@ -336,6 +374,10 @@ def _contains(wanted: str | list[str] | None, text: str | None) -> bool:
     return all(part.lower() in (text or "").lower() for part in parts)
 
 
+def _listed(wanted: str | list[str]) -> list[str]:
+    return [wanted] if isinstance(wanted, str) else wanted
+
+
 def _event_matches(want: dict[str, Any], event: dict[str, Any]) -> bool:
     return (
         _contains(want.get("title_contains"), event["title"])
@@ -351,11 +393,24 @@ def _event_matches(want: dict[str, Any], event: dict[str, Any]) -> bool:
 def _reminder_matches(want: dict[str, Any], reminder: dict[str, Any]) -> bool:
     return (
         _contains(want.get("text_contains"), reminder["text"])
-        and ("local_fire" not in want or wall(reminder["fire_at"]) == want["local_fire"])
+        and ("local_fire" not in want or wall(reminder["fire_at"]) in _listed(want["local_fire"]))
         and all(reminder[name] == want[name] for name in ("target", "member", "urgency") if name in want)
         and ("rrule_contains" not in want
              or (reminder["rrule"] and _contains(want["rrule_contains"], reminder["rrule"])))
         and (want.get("repeats", True) or reminder["rrule"] is None)
+    )
+
+
+def _job_matches(want: dict[str, Any], job: dict[str, Any]) -> bool:
+    return (
+        _contains(want.get("title_contains"), job["text"])
+        and all(job[name] == want[name] for name in ("owner", "kind", "waiting", "done_by") if name in want)
+        and ("all_day" not in want or bool(job["all_day"]) == want["all_day"])
+        and ("local_due" not in want or wall(job["due_at"]) == want["local_due"])
+        and ("due_day" not in want or wall(job["due_at"]).rsplit(" ", 1)[0] == want["due_day"])
+        and ("local_fire" not in want or wall(job["fire_at"]) in _listed(want["local_fire"]))
+        and ("rrule_contains" not in want or (job["rrule"] and _contains(want["rrule_contains"], job["rrule"])))
+        and (want.get("repeats", True) or job["rrule"] is None)
     )
 
 

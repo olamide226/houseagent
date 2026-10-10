@@ -29,7 +29,7 @@ from app.dashboard.auth import Session, current_session, invite_context, qr_svg,
 from app.db import advisory_lock, engine, fetch_all, fetch_one, fetch_val, tx
 from app.pipeline import inbound
 from app.pipeline import router as outbound
-from app.services import calendar, households, inventory, members, shopping
+from app.services import calendar, households, inventory, jobs, members, shopping
 
 router = APIRouter(prefix="/dashboard", default_response_class=HTMLResponse)
 
@@ -77,6 +77,9 @@ async def today(request: Request, session: Session = Depends(current_session)) -
             "days": _by_day(await calendar.occurrences_between(conn, session.household_id, now, tomorrow_night),
                             await calendar.standalone_reminders(conn, session.household_id, now, tomorrow_night),
                             session.timezone),
+            "now": now,
+            # What is waiting to be ticked off, and what falls due today or tomorrow.
+            "jobs": await jobs.upcoming(conn, session.household_id, tomorrow_night),
             "list_count": len(await shopping.active_entries(conn, session.household_id, include_predicted=False)),
             "low": await inventory.stock_rows(conn, session.household_id, statuses=["low", "out"]),
             "expiring": await inventory.stock_rows(conn, session.household_id, expiring_within_days=3,
@@ -325,6 +328,42 @@ async def calendar_feed(request: Request, session: Session = Depends(require_csr
     async with tx() as conn:
         token = await households.new_calendar_token(conn, session.household_id)
     return await _calendar(request, session, feed=f"{get_settings().public_base_url}/ics/{token}.ics")
+
+
+# ---------------------------------------------------------------- Jobs
+async def _jobs(request: Request, session: Session, template: str = "_jobs.html",
+                error: str | None = None) -> Response:
+    async with tx() as conn:
+        listed = await jobs.listing(conn, session.household_id)
+    return _page(request, template, session, error=error, now=utcnow(),
+                 waiting=[job for job in listed if job["waiting"]],
+                 coming=[job for job in listed if not job["waiting"]])
+
+
+@router.get("/jobs")
+async def jobs_page(request: Request, session: Session = Depends(current_session)) -> Response:
+    return await _jobs(request, session, "jobs.html")
+
+
+@router.post("/jobs/{job_id}/{verb}")
+async def jobs_change(request: Request, job_id: str, verb: str, session: Session = Depends(require_csrf)) -> Response:
+    async def change(rec: Recorder) -> None:
+        if verb == "done":
+            await jobs.done(rec, job_id, sure=True)   # a tap on the circle is meant, however early it is
+        elif verb == "skip":
+            await jobs.skip(rec, job_id)
+        elif verb == "stop":
+            await jobs.stop(rec, job_id)
+        else:
+            raise ToolError("unknown action")
+
+    error = await _write(session, f"jobs.{verb}", {"job_id": job_id}, change)
+    if request.headers.get("HX-Request"):
+        return await _jobs(request, session, error=error)
+    # The circle on Today is a plain form post: back to Today, or to Jobs to show what went wrong.
+    if error is None:
+        return RedirectResponse("/dashboard", status_code=303)
+    return await _jobs(request, session, "jobs.html", error)
 
 
 # ---------------------------------------------------------------- Family

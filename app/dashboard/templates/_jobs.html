@@ -1,0 +1,37 @@
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% macro rows(entries) %}
+<ul class="list">
+{% for job in entries %}
+  <li class="row top">
+    {% if job.kind == "job" %}
+    <button class="tick" hx-post="/dashboard/jobs/{{ job.id }}/done" hx-target="#jobs"
+            aria-label="Done: {{ job.text }}" title="Done"><span>{{ icon("check") }}</span></button>
+    {% else %}<span class="avatar small">{{ icon("bell") }}</span>{% endif %}
+    <details class="more grow">
+      <summary>
+        <span class="grow"><span class="title">{{ job.text }}</span>
+          <span class="sub">{{ [job.owner or "Everyone", job | due(now), job.rrule and (job.rrule | repeats)] | select | join(" · ") }}</span></span>
+        {{ icon("down", "chev") }}
+      </summary>
+      <div class="more-body">
+        {% if job.done_at %}<p class="sub">Last done on {{ local(job.done_at, session.timezone).strftime("%a %-d %b") }}{% if job.done_by_name %} by {{ job.done_by_name }}{% endif %}.</p>{% endif %}
+        {% if job.rrule %}<button class="quiet" hx-post="/dashboard/jobs/{{ job.id }}/skip" hx-target="#jobs">Skip this one</button>{% endif %}
+        <button class="danger" hx-post="/dashboard/jobs/{{ job.id }}/stop" hx-target="#jobs">Stop and remove</button>
+      </div>
+    </details>
+  </li>
+{% endfor %}
+</ul>
+{% endmacro %}
+{% if waiting %}
+<h2>Not done yet</h2>
+<div class="card rows">{{ rows(waiting) }}</div>
+{% endif %}
+<h2>Coming up</h2>
+{% if coming %}
+<div class="card rows">{{ rows(coming) }}</div>
+{% else %}
+<div class="card"><p class="empty">{{ "Nothing else is coming up." if waiting else "No jobs yet." }}</p></div>
+{% endif %}
+<p class="hint">Tap the circle when a job is done; the next one is then set by itself. Tap a name to skip one or stop it.</p>
+<p class="hint">To add one, tell the assistant: “the bins go out every Tuesday night, Ola does them”, “the MOT is due on 14 March” or “Grandma's birthday is on 12 November”.</p>
