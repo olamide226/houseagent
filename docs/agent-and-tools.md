@@ -20,7 +20,7 @@ optional second implementation ([below](#the-letta-runtime-optional)). The loop:
 The static prompt is `STATIC_PROMPT` in `app/agent/prompt.py`; that file is the source of truth.
 The brief (`build_brief`) lists the time in household time, who is speaking, family, locations,
 facts, the shopping list, low or out items, items expiring within 3 days and the events of the
-next 7 days, each list capped at 25 entries with "+N more". Its last line is the speaker's most
+next 7 days and every open household job, each list capped at 25 entries with "+N more". Its last line is the speaker's most
 recent change that can still be undone, as the tool reported it: thread history holds what was
 said, not what was recorded ([ADR 0031](adr/0031-rules-the-model-kept-breaking.md)).
 
@@ -43,7 +43,8 @@ do?", "how do I see the list on my laptop?" or "switch me to WhatsApp" is answer
 built and not made up ([ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)). It follows
 the static prompt, before the cache break, and says: what people do by talking, the two words
 answered by code (`dashboard`, `shops`), each web page by the name in its menu, invites, chat
-apps, the family group, photos and voice notes, and what the assistant sends by itself. It opens
+apps, the family group, photos and voice notes, how a household job is answered, and what the
+assistant sends by itself. It opens
 with three rules: answer such a question in a DM or the group, in a line or two with the exact
 word or page; say "I can't do that yet" for anything not listed; never make up a feature, a page,
 a word or a link.
@@ -71,7 +72,7 @@ it describes, and `tests/unit/test_guide.py` compares the keys both ways:
 A new page, word, tool or scheduled message therefore fails the suite until the guide has a line
 for it, and a removed or renamed one fails until its line goes. The numbers in the guide (10
 minutes, 7 days, 5 changes in 24 hours, 4 photos, 18:00, 17:30) are checked against the constants
-they repeat. What the test cannot check is that a line describes its page or tool truthfully.
+they repeat, as are those in the paragraph on household jobs (2 hours, 09:00, two weeks, a week). What the test cannot check is that a line describes its page or tool truthfully.
 
 Adding a feature: add the line to the dict the test names, in the words a family member would
 use. Tool names, setting names and addresses never appear in it; a test checks that as well.
@@ -95,7 +96,7 @@ Letta server names it.
   memory blocks: `persona` (the static prompt and the product guide) and `household` (the brief,
   and the setup section while setup is open). Thread history is not sent; Letta keeps its own,
   one for the whole household, DMs and group together.
-- **Tools** are the same thirteen, registered with Letta as functions whose whole body posts the
+- **Tools** are the same fifteen, registered with Letta as functions whose whole body posts the
   arguments to `POST /internal/tools/{name}` with `Authorization: Bearer INTERNAL_TOOL_TOKEN`.
   The household id, the address to call and the token come from the agent's tool environment,
   which is also rewritten before every turn.
@@ -173,7 +174,7 @@ link, as `dashboard` is answered with a login link
 
 ## Messages the assistant starts
 
-Three messages are written by code and answered through the agent, which finds the question in
+Four messages are written by code and answered through the agent, which finds the question in
 the thread history like any other assistant message:
 
 | Sent | Text | A reply |
@@ -181,6 +182,7 @@ the thread history like any other assistant message:
 | On arriving at a shop | "You're at Tesco Extra. On the list: ..." | "Got everything" ticks off what was asked for, not the "(probably)" entries |
 | On leaving home | "You're out. The list has 9 items, want it?" | "yes" reads the list with `get_shopping_list` |
 | At 17:30 | "Probably running low: milk, bread. Add to the list?" | "yes", or "just the milk", adds with `update_shopping_list`; the guessed entry becomes a real one |
+| When a household job is due | "To do today at 19:00: Put the bins out. Reply done when it's sorted, or later to be asked again." | "done" ticks it off and "later" puts it off, with `update_job`. A thumbs-up or a tick on the message ticks it off in code, without the agent ([below](#household-jobs)) |
 
 Token usage, tool calls and latency for each turn are stored on the batch's last message in
 `messages.meta` (`usage`, `turn`), and shown to an admin on the dashboard Activity page, under
@@ -188,7 +190,7 @@ Token usage, tool calls and latency for each turn are stored on the batch's last
 
 ## Tools
 
-`REGISTRY` in `app/agent/tools/__init__.py` holds the thirteen tools. Twelve are always offered;
+`REGISTRY` in `app/agent/tools/__init__.py` holds the fifteen tools. Fourteen are always offered;
 `onboarding_advance` only while a household is being set up.
 
 | Tool | Writes | Behaviour |
@@ -201,7 +203,9 @@ Token usage, tool calls and latency for each turn are stored on the batch's last
 | `schedule_event` | events, reminders | Resolves participants, creates the event and its reminders; a repeat is an RFC 5545 rule |
 | `modify_event` | events, reminders | Finds the event from how it was described; moves, edits or cancels it; scope `this` on a series changes one date |
 | `list_upcoming` | none | Events in the next `days`, repeats expanded, plus standalone reminders; optional person filter |
-| `set_reminder` | reminders | One-off at `fire_at`, or repeating by `rrule`; for me, the household or a named member |
+| `set_reminder` | reminders | One-off at `fire_at`, or repeating by `rrule`; for me, the household or a named member. Anything someone asks to be reminded of, a chore included. "Later" in answer to a reminder sets it again, two hours on or at the time they say |
+| `add_job` | reminders | A household job, renewal or date that someone describes: its owner, the day it is next due, a time of day if one was said, a repeat rule. A birthday is kind `date` |
+| `update_job` | reminders | `done`, `later`, `skip`, `change` or `stop` for the job named, or with no name the one the message answers or the only one waiting |
 | `remember` | facts; some settings | Upserts a fact for the household or one member; no value forgets it. The keys `staples`, `shops`, `main_supermarket`, `morning_brief` and `quiet_hours` are settings ([ADR 0016](adr/0016-settings-said-in-chat-go-through-remember.md)). Quiet hours are set for whoever `about` names (`us` is every adult), and for the speaker alone when nobody is named |
 | `add_family_member` | members, an invite | Adds a child or an adult; a name already there is not added twice. For an adult who has not connected, an invite is sent to the person asking, to pass on |
 | `undo_last` | inverse of the last actions | The caller's own actions from the past 24 hours, newest first, `n` up to 5 |
@@ -223,6 +227,11 @@ NOTE: reminders at Tue 6 Oct 10:30, Wed 7 Oct 09:30
 NEW: Ada (adult)
 NOTE: an invite for Ada was sent to this person in a separate message; they pass it on and Ada connects by opening it
 OK: quiet hours for Ada: 20:00 to 07:00
+OK: Put the bins out for Ola, due Tue 6 Oct at 19:00, repeating (FREQ=WEEKLY;BYDAY=TU)
+NOTE: first nudge on Tue 6 Oct at 19:00; it is ticked off when someone says done
+OK: Put the bins out done. Next: Tue 13 Oct at 19:00
+OK: nothing to tick off: Put the bins out was ticked off on Tue 6 Oct at 19:30, and is next due Tue 13 Oct at 19:00
+ERROR: 'prescription' could be Ada's prescription, Ola's prescription. Ask which, in one short question
 OK: staples done. Next step: tour
 ```
 
@@ -314,6 +323,58 @@ at the same time, changes nothing and says so. Models sometimes repeat a call fr
 by trigram similarity between the description and the title plus participant names, and takes the
 best if it scores at least 0.3, the soonest on a tie. No match is an `ERROR:` listing what is coming up.
 
+## Household jobs (`app/services/jobs.py`)
+
+The bins every Tuesday night, the MOT on a date, a prescription every 28 days, a birthday. A job
+is a reminder that is to be done, kept as a `reminders` row with a `kind`
+([ADR 0037](adr/0037-a-household-job-is-a-reminder-that-is-to-be-done.md),
+[data-model.md](data-model.md#household-jobs)). "Jobs" is the family's word for them; the
+worker's scheduled jobs are `app/worker/jobs.py`.
+
+**What is said, and when.** The worker's `job_nudges` job sends these, worded for the day they
+are read:
+
+| When | To a job's owner | For a date |
+| --- | --- | --- |
+| 09:00, some days before, for a job with a lead | "Coming up: MOT, due on Sun 14 Mar (in 2 weeks). Reply done when it's sorted, or later to be asked again." | "Coming up: Grandma's birthday, on Thu 12 Nov (in a week)." |
+| When it is due: at its time, or 09:00 for a day with no time | "To do today at 19:00: Put the bins out. Reply done when it's sorted, or later to be asked again." | "Today: Grandma's birthday." |
+| 09:00 the morning after, if nobody has ticked it off | "Still to do: Put the bins out, due yesterday at 19:00. Reply done if it's sorted. If not, I'll leave it until the next one." | Nothing |
+
+- **The lead** is 14 days for a job due on a day that comes round less than every 90 days, or
+  only once (a renewal), and 7 days for a date. Other jobs have none. The person can say how
+  long before, up to 60 days.
+- **The morning after is once.** A job that happens once ends there: "I won't keep asking." A
+  repeating one is left until its next occurrence, and a job whose next occurrence speaks before
+  09:00 the next morning (the fish at 08:00 every day) is not asked about a second time at all.
+- **Who is told**: the owner in their own chat if they are a connected adult; otherwise everyone
+  (the family group, or each adult), with the owner named: "Feed the fish (Tobi)".
+- **Quiet hours** hold the 09:00 messages until they end. A job's own time of day, and a "later"
+  with a time, are sent then even inside quiet hours, like a reminder set for 11pm.
+- **A day with no time** is due for the whole of that day. Set at noon for today, its 09:00
+  message has passed and is not sent late: the next thing said is the morning after.
+
+**Answers.** `update_job` and the Jobs page call the same functions:
+
+| | What changes |
+| --- | --- |
+| `done` | A repeating job waits on its next occurrence; one that happens once is ticked off for good. Who and when are kept |
+| `later` | Asked again in 2 hours for a job with a time on its day, else at 09:00 the next morning, or when the person says. Never past the next occurrence's own message |
+| `skip` | The next occurrence stands; nothing is ticked off |
+| `change` | A new name, owner, day, time, repeat or lead. A new day, time or repeat starts it afresh on its next occurrence |
+| `stop` | Nothing more is said. Undo brings it back |
+
+- **A thumbs-up or a tick on the nudge is `done`, in code** (`_ticked` in
+  `app/pipeline/inbound.py`). No model call; the assistant puts its own thumbs-up on the nudge.
+  A tick on a nudge whose occurrence is already ticked off changes nothing.
+- **"Done" said again does not tick off the next one.** For a job that has not been asked about
+  yet and is more than half its cycle away, the result is `OK: nothing to tick off` with when it
+  was last done. "I did the bins" on Wednesday is not next Tuesday's.
+- **Which job**: the one named, matched like an event, with "the", "my" and the like left out.
+  With no name, the one whose message is being answered, else the only one waiting. Anything
+  else is an `ERROR:` that lists the jobs, so the model can name one or ask.
+- **"Remind me" is not a job.** "Remind us every Sunday at 6pm to put the bins out" stays a
+  repeating reminder: said once each time, with nothing to tick off.
+
 ## Resolution (`app/agent/resolve.py`)
 
 1. **Normalise**: trim, drop leading articles and quantities ("a dozen", "2x"), singularise the
@@ -359,7 +420,7 @@ action's inverse in `agent_actions.inverse`:
 
 Rows that existed are restored in full; rows the action created are deleted. Undoable tables are
 `stock`, `shopping_list_items`, `items` (the staple flag and dashboard edits), `events`,
-`reminders`, `household_facts`, `places`, `members` and `households`. For the last two only the
+`reminders` (household jobs are rows of it), `household_facts`, `places`, `members` and `households`. For the last two only the
 columns an action may change are put back (name, role, preferred channel and quiet hours; brief
 time and onboarding state), never an invite, a token or the session version, so an undo cannot
 revive a revoked invite or a logged-out session. Undoing "add Tobi" removes him; once a member

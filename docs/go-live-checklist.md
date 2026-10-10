@@ -48,6 +48,13 @@ not in this repository, so the line itself is all there is here.
   [dashboard.md](dashboard.md#calendar-feed)
 - [ ] **Not verified.** A login link in a real Telegram chat is no longer spent by the preview.
   [ADR 0035](adr/0035-a-login-link-is-spent-by-its-button.md)
+- [ ] **Not verified.** A household job in a real Telegram chat: the nudge arriving, "done" and
+  "later", and a thumbs-up on the nudge ticking it off with the assistant's own thumbs-up put
+  back on its message. Tried against recorded Telegram payloads only.
+  [agent-and-tools.md](agent-and-tools.md#household-jobs)
+- [ ] **Not verified.** A tick on a job's nudge from WhatsApp or iMessage, and a job's nudge sent
+  inside the WhatsApp reminder template after 24 hours.
+  [ADR 0037](adr/0037-a-household-job-is-a-reminder-that-is-to-be-done.md)
 - [ ] **Not verified.** The Helm chart installed on a cluster. Linted and rendered only.
   [operations.md](operations.md#deploying-with-helm)
 - [ ] **Not verified.** A subscription provider in a signed-in container, and what happens when
@@ -108,8 +115,20 @@ not in this repository, so the line itself is all there is here.
   [channels.md](channels.md#payload-notes)
 - [ ] **Not done.** WhatsApp audio in AMR or AAC is not converted, so it is not transcribed.
   Build record: voice notes and the presence link.
-- [ ] **Not done.** A reminder cannot be snoozed. No pull request for it was open on 10 Oct 2026.
-  [data-model.md](data-model.md#calendar-rows)
+- [x] **Done, 10 Oct 2026, with household jobs.** A reminder can be put off. "Later" in answer to
+  a job's nudge asks again in two hours or the next morning, in code. "Later" in answer to a
+  plain reminder has the assistant set it again two hours on, which is the model's doing and
+  passed 6 runs of 6. [agent-and-tools.md](agent-and-tools.md#household-jobs)
+- [ ] **Not done.** A household job can only be added or changed in chat. The Jobs page ticks
+  off, skips and stops. [dashboard.md](dashboard.md#pages)
+- [ ] **Not done.** Household jobs and birthdays are not in the calendar feed, the morning brief
+  or the weekly digest. [ADR 0037](adr/0037-a-household-job-is-a-reminder-that-is-to-be-done.md)
+- [ ] **Not done.** A job cannot be counted from when it was last done ("every three months
+  after the last time"). Every repeat is a fixed schedule.
+  [ADR 0037](adr/0037-a-household-job-is-a-reminder-that-is-to-be-done.md)
+- [ ] **Not done.** A family that never answers "done" is asked again the morning after every
+  time. Nothing learns to stop asking, and nobody has lived with it yet.
+  [agent-and-tools.md](agent-and-tools.md#household-jobs)
 - [ ] **Not done.** There are no all-day events. Build record: milestone 2.
 - [ ] **Not done.** A receipt can still add an item beside its twin ("coconut milk", "semi skimmed
   milk"). [ADR 0031](adr/0031-rules-the-model-kept-breaking.md)
