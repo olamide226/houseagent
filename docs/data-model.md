@@ -54,7 +54,11 @@ not yet done, and `null` when setup is complete.
 `messages.media` is a list of `MediaRef`. A stored attachment has `storage_backend` and
 `storage_key` (S3: `{household}/{message_id}/{n}.{ext}`; ImgBB: the image id, plus `storage_url`
 and `delete_url`). Retention removes those four fields after `MEDIA_RETENTION_DAYS` and leaves
-the rest, including a voice note's `transcript`.
+the rest, including a voice note's `transcript` and a file's `name` and `text` (the words read
+from a PDF; an empty `text` means none could be read).
+
+`messages.meta` on a forwarded message holds `forwarded`, and `forwarded_from` and
+`forwarded_sent_at` where the channel gives them.
 
 `threads.channel` is free text. Besides real channels it holds `playground`: the threads the
 dashboard's Practice chat and the eval suite talk on. Their outbox rows have status `simulated` and

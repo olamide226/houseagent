@@ -61,7 +61,9 @@ it, by default `http://host.docker.internal:8011`. The result is written as `let
     items: [{name: egg, staple: true, stock: {fridge: 6}}, {name: bread, stock: {store: 1}}]
     list: []                      # item names already on the shopping list
   turns: [{from: Ola, text: "we're out of eggs and bread"}]   # from: Ola or Ada; scope: dm (default) or group
-  # a turn may also carry photos: [receipt_supermarket.png], files in tests/evals/fixtures/
+  # a turn may also carry photos: [receipt_supermarket.png], files in tests/evals/fixtures/;
+  # files: [autumn_dates.pdf], a PDF from there, read as the pipeline reads one;
+  # and forwarded: {from: Coach Bisi, sent: "2026-10-04 20:00"}, what a channel says of a forward
   expect:
     events: [{item: egg, type: finished}, {item: bread, type: finished}]
     shopping_list_active: [egg]
@@ -174,12 +176,14 @@ inventory events here, so calendar expectations are under `calendar`.
 
 ## Suite
 
-103 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (8), reminders (5),
+113 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (8), reminders (5),
 photos (6: four receipts, two fridge or freezer photos), onboarding, family and settings (13),
-presence (4: answers to the low-stock prompt and the "out and about" offer), product (16:
+presence (4: answers to the low-stock prompt and the "out and about" offer), product (17:
 what the assistant says about itself, [ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)),
 meals (10: what to cook, [ADR 0036](adr/0036-meal-ideas-from-a-short-stock-read.md)),
-and household jobs (14, [ADR 0037](adr/0037-a-household-job-is-a-reminder-that-is-to-be-done.md)).
+household jobs (14, [ADR 0037](adr/0037-a-household-job-is-a-reminder-that-is-to-be-done.md)),
+and letters (9: what someone sends on,
+[ADR 0039](adr/0039-a-letter-is-one-call-and-a-day-with-no-time-is-a-reminder.md)).
 The spec's target is 40.
 
 The meal cases ask what to cook tonight, for the week, with a named ingredient, for a vegetarian
@@ -198,6 +202,14 @@ leave alone a nudge one adult gives the other in the group. With them came one r
 ("later" in answer to a plain reminder sets it again two hours on) and one product case (where
 to see the jobs). The reminder cases now fail if a reminder is set up as a job: "remind us
 every Sunday at 6pm to put the bins out" has to stay a reminder.
+
+The letters cases send what a family sends: a photo of a school letter with a trip, a slip due
+back and a day off; a photo of a party invite; an appointment message forwarded from a clinic; a
+coach's message forwarded the next day, in which "tomorrow" is already today; pasted words with
+one date that has passed; and a PDF of term dates in which one weekday does not match its date.
+They assert the calendar and reminder rows, that "undo that" leaves none of them, that the
+doubtful date is asked about and added after the answer, and that a forwarded joke in the family
+group gets no reply. The last product case asks whether letters can be sent on.
 
 The product cases ask what a family member asks: "what can you do?", "how do I see the list on my
 laptop?", "how do I add my wife?", "how does the shop thing work?", "can you read photos?" where
@@ -224,11 +236,132 @@ asks to have listed is listed, and coconut milk on a receipt does not tick off t
 least two providers.
 
 The photo fixtures in `tests/evals/fixtures/` are drawn by `make_fixtures.py` in that folder
-(`uv run --with pillow python tests/evals/fixtures/make_fixtures.py`). None is a real photo. A
-photo case reads its image through a read-only `MediaStore` over that folder, so the image takes
-the same path into the model as a stored Telegram photo.
+(`uv run --with pillow python tests/evals/fixtures/make_fixtures.py`), which also writes the one
+PDF. None is a real photo or a real letter: the school, the people and the addresses are made
+up. A photo case reads its image through a read-only `MediaStore` over that folder, so the image
+takes the same path into the model as a stored Telegram photo. A PDF case reads its file with the
+pipeline's own reader. What no case exercises is the way in from a chat app: the webhook, the
+download and the forward mark are covered by unit tests with stand-in payloads.
 
 ## Latest results
+
+One run of the whole suite with the loop runtime, 10 Oct 2026, with letters, invites and
+forwards ([ADR 0039](adr/0039-a-letter-is-one-call-and-a-day-with-no-time-is-a-reminder.md)) on
+top of meal ideas, household jobs and calendar sync, model `deepseek-flash` through both
+adapters: the 113 cases, 747 seconds. "Before" is `main` as this change was put on top of it, the
+"after" of calendar sync [below](#previous-full-run-calendar-sync): the 103 cases it had.
+
+| Adapter | Before | After | NOOP | Undo | Input tokens after (cached) | Output tokens after |
+| --- | --- | --- | --- | --- | --- | --- |
+| `openai_compat` | 103/103 | **113/113** | 3/3 | 7/7 | 1,891,543 (1,472,128) | 30,583 |
+| `anthropic` | 102/103 | **112/113** | 3/3 | 7/7 | 1,909,471 (1,854,715) | 31,321 |
+
+| Category | `openai_compat` before | after | `anthropic` before | after |
+| --- | --- | --- | --- | --- |
+| inventory | 12/12 | 12/12 | 12/12 | 11/12 |
+| shopping list | 5/5 | 5/5 | 5/5 | 5/5 |
+| NOOP | 3/3 | 3/3 | 3/3 | 3/3 |
+| undo | 7/7 | 7/7 | 7/7 | 7/7 |
+| calendar | 8/8 | 8/8 | 8/8 | 8/8 |
+| reminders | 5/5 | 5/5 | 5/5 | 5/5 |
+| photos | 6/6 | 6/6 | 6/6 | 6/6 |
+| onboarding | 13/13 | 13/13 | 12/13 | 13/13 |
+| presence | 4/4 | 4/4 | 4/4 | 4/4 |
+| product | 16/16 | 17/17 | 16/16 | 17/17 |
+| meals | 10/10 | 10/10 | 10/10 | 10/10 |
+| household jobs | 14/14 | 14/14 | 14/14 | 14/14 |
+| letters (new) | not run | 9/9 | not run | 9/9 |
+
+The release bar (95% overall and 100% on NOOP and undo, on at least two providers) is met on both
+endpoints. It is one sample per case, and the two endpoints are one model on two wire formats.
+
+**One case that passed before failed after**, on `anthropic`: "batch finish with staple". The
+rows were right and the reply was `AC`, where the case expects `ACK`. This is the case that fails
+about one run in ten ([below](#previous-full-run-the-pass-on-repeat-mistakes)). It was run ten
+more times on each endpoint on `main` and on this change: 18 of 20 on `main`, 20 of 20 on this
+change.
+
+**The same question was asked one rebase earlier**, when this change sat on meal ideas and
+household jobs and the suite had 107 cases: 107/107 on `openai_compat` and 106/107 on
+`anthropic`, 700 seconds. The one failure was "bought one thing off the list", the eggs logged
+as `added` where the case expects `restocked`; the stock and the list ended right. It had passed
+on `main`. Five more runs on each endpoint gave 10 of 10 on `main` and 6 of 10 on this change,
+which looked like this change's doing; fifteen more on each gave 26 of 30 on both. Over the 40
+runs a side that is 36 against 32, which does not tell them apart. It is the failure the 7 Oct
+runs and the meal-ideas run had.
+
+**What the tool costs.** A one-step turn reads 6,966 input tokens on `main` and 8,174 with this
+change (the three NOOP cases, on both endpoints): 1,208 more on every model step, all in the
+cached part of the prompt. About three quarters are the tool's description and its eleven
+arguments, the rest the rule in the static prompt and the guide's lines. It is the dearest tool
+in the list. Money: the account balance read $4.12 before the first run for this change and
+$2.30 after the last, but three other changes were running evals on the same key all the while,
+so that is not the cost of these runs and cannot be split. These runs together read about 19.5
+million input tokens (about 90% cached) and wrote about 0.4 million. A 61-case run of 1.18
+million input tokens is recorded below at 2 to 4 cents, which puts these at 35 to 65 cents: the
+whole suite was run six times, once before and five times after, because the code changed twice
+and `main` moved three times; a seventh was cut short at 46 runs by the second of those moves.
+
+What the letters cases do not show: a real photo of a real letter, with a fold, a shadow or
+handwriting; the model the household runs on, which was not run; and whether a reply was right
+beyond the rows it left.
+
+**Before it was put on top of the other three changes**, this change was built and run on the
+71 cases `main` had that morning. One run of the whole suite before and after, on both adapters.
+Before: the 71 cases, 457 seconds. After: the same 71, the 9 letters cases and one more product
+case, 553 seconds.
+
+| Adapter | Before | After | NOOP | Undo | Input tokens after (cached) | Output tokens after |
+| --- | --- | --- | --- | --- | --- | --- |
+| `openai_compat` | 69/71 | **81/81** | 3/3 | 7/7 | 1,098,094 (1,031,552) | 23,342 |
+| `anthropic` | 71/71 | **81/81** | 3/3 | 7/7 | 1,097,676 (1,056,882) | 23,980 |
+
+| Category | `openai_compat` before | after | `anthropic` before | after |
+| --- | --- | --- | --- | --- |
+| inventory | 12/12 | 12/12 | 12/12 | 12/12 |
+| shopping list | 4/5 | 5/5 | 5/5 | 5/5 |
+| NOOP | 3/3 | 3/3 | 3/3 | 3/3 |
+| undo | 7/7 | 7/7 | 7/7 | 7/7 |
+| calendar | 7/7 | 7/7 | 7/7 | 7/7 |
+| reminders | 4/4 | 4/4 | 4/4 | 4/4 |
+| photos | 6/6 | 6/6 | 6/6 | 6/6 |
+| onboarding | 12/13 | 13/13 | 13/13 | 13/13 |
+| presence | 4/4 | 4/4 | 4/4 | 4/4 |
+| product | 10/10 | 11/11 | 10/10 | 11/11 |
+| letters (new) | not run | 9/9 | not run | 9/9 |
+
+Nothing that passed before failed after. The two failures before were on `openai_compat`:
+"bought one thing off the list" logged the eggs as `added` where the case expects `restocked`
+(the same answer as in the run below), and "quiet hours for the other adult by name" set Ada's
+quiet hours to start at 20:00 where she had said 7pm. Both passed after; nothing in this change
+touches either, so that is the model answering differently. The release bar (95% overall and 100%
+on NOOP and undo, on at least two providers) is met on both endpoints in the run after.
+
+**That table is the third whole run with the change, not the first.** The code changed after each
+of the first two, so each is reported:
+
+| Whole run | `openai_compat` | `anthropic` | What failed, and what was done |
+| --- | --- | --- | --- |
+| First | 79/81 | 80/81 | Below |
+| Second | 81/81 | 81/81 | Nothing failed. Three small changes followed (a clock time such as "Wed 3.10 pm" is not read as a date; a doubt that rests on a wrong weekday sum is overruled; one call takes up to 50 entries, not 20), so it was run again |
+| Third, the code that was then rebased | 81/81 | 81/81 | Nothing failed |
+
+The three failures of the first run:
+
+| Case | Endpoint | What the rows showed | What was done |
+| --- | --- | --- | --- |
+| a weekday that does not match its date is asked about, not guessed | `openai_compat` | The parents' evening was added for Thursday 12 November. The model had left the weekday out of that one entry, so the check had nothing to compare | The weekday is now read from the turn's own words in code, and believed over the model's ([agent-and-tools.md](agent-and-tools.md#letters-invites-and-forwards)) |
+| the same case | `anthropic` | Nothing was added. The model called no tool and answered as if it had: "here's what went on the calendar", with the reminder times | The tool's description now says nothing is on the calendar until the call has answered. Not seen again in 48 further runs of the two cases that send this file, 24 on each endpoint; one sentence is not proof it is gone |
+| batch finish with staple | `openai_compat` | Rows right; the reply was a sentence where the case expects `ACK`. This case fails about one run in ten ([below](#previous-full-run-the-pass-on-repeat-mistakes)) | Nothing. It passed 10 of 10 when sampled next, and in both later whole runs |
+
+**The letters cases, five samples each**, at the code of the second whole run: 45/45 on
+`openai_compat` and 44/45 on `anthropic`, 473 seconds, 1,411,493 input tokens (1,287,808 cached).
+The one failure was "pasted text leaves out the date that has passed": the model held the
+Christmas play back, saying "10 December 2026 is a Monday" of the Thursday the text had right. A
+doubt of that kind is now overruled in code. Before that, the two weekday cases, "batch finish
+with staple" and two product cases were run five times each on both endpoints: 50/50.
+
+## Previous full run (calendar sync)
 
 One run of the whole suite with the loop runtime, 10 Oct 2026, before and after two-way calendar
 sync ([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)), model

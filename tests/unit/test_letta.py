@@ -188,7 +188,7 @@ async def test_the_first_turn_creates_the_households_agent_with_our_tools_blocks
     assert [(r.name, r.args) for r in result.tool_calls] == [("log_inventory", EGGS_OUT)]
     assert result.usage.model_dump() == {"input_tokens": 2100, "output_tokens": 40, "cached_tokens": 1500}
 
-    # All fifteen tools, by name, each a function Letta can run and the schema the loop offers.
+    # All sixteen tools, by name, each a function Letta can run and the schema the loop offers.
     registered = [json.loads(c.request.content) for c in api["tool"].calls]
     assert [t["json_schema"]["name"] for t in registered] == list(REGISTRY)
     assert all(f"def {t['json_schema']['name']}(" in t["source_code"] and t["json_schema"]["description"]
@@ -242,7 +242,7 @@ async def test_later_turns_rewrite_both_blocks_and_the_tool_environment_and_reus
                                    now=london("2026-10-05 12:02"))
         lost = await simulate_turn(conn, one, home.id, home.ola, "and then?", now=london("2026-10-05 12:03"))
 
-    assert api["create"].call_count == 1 and api["tool"].call_count == 15          # once per process, not per turn
+    assert api["create"].call_count == 1 and api["tool"].call_count == 16          # once per process, not per turn
     assert api["message"].call_count == 4
     assert [(c.request.url.path.rsplit("/", 1)[1]) for c in api["block"].calls[:2]] == ["persona", "household"]
     household = json.loads(api["block"].calls[1].request.content)["value"]
@@ -264,7 +264,7 @@ async def test_later_turns_rewrite_both_blocks_and_the_tool_environment_and_reus
     other = LettaRuntime(one._client, tool_url="http://worker.internal:8001", tool_token="rotated-token")
     async with tx() as conn:
         parts = await simulate_turn(conn, other, home.id, home.ola, "add salt")
-    assert parts.reply == "On the list." and api["create"].call_count == 1 and api["tool"].call_count == 30
+    assert parts.reply == "On the list." and api["create"].call_count == 1 and api["tool"].call_count == 32
     assert sent(api["update"])["secrets"] == {ENV_HOUSEHOLD: home.id, ENV_URL: "http://worker.internal:8001",
                                               ENV_TOKEN: "rotated-token"}
 

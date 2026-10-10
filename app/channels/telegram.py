@@ -20,6 +20,7 @@ from app.core.envelope import (
 )
 
 API = "https://api.telegram.org"
+PHOTO_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")   # what a model takes as a picture
 
 
 class TelegramAdapter:
@@ -64,6 +65,8 @@ class TelegramAdapter:
                                   external_id=voice["file_id"]))
         if message.get("photo"):
             media.append(MediaRef(kind="image", mime="image/jpeg", external_id=message["photo"][-1]["file_id"]))
+        if "document" in message and "animation" not in message:   # a GIF arrives as both, and is not read
+            media.append(_document(message["document"]))
         if "location" in message:
             media.append(MediaRef(kind="location", lat=message["location"]["latitude"],
                                   lng=message["location"]["longitude"]))
@@ -71,6 +74,7 @@ class TelegramAdapter:
         if text and text.startswith("/start "):
             text = text.removeprefix("/start ").strip()   # invite deep link: "/start CODE" is the code
         reply = message.get("reply_to_message")
+        origin = message.get("forward_origin") or {}
         return InboundEvent(
             channel=Channel.telegram,
             external_message_id=str(message["message_id"]),
@@ -81,6 +85,9 @@ class TelegramAdapter:
             text=text,
             media=media,
             reply_to_external_id=str(reply["message_id"]) if reply else None,
+            forwarded=bool(origin),
+            forwarded_from=_origin_name(origin),
+            forwarded_sent_at=datetime.fromtimestamp(origin["date"], UTC) if origin.get("date") else None,
             sent_at=datetime.fromtimestamp(message["date"], UTC),
             raw=update,
         )
@@ -151,6 +158,20 @@ class TelegramAdapter:
             raise (PermanentError if final else ChannelError)(
                 f"telegram {method} failed: {data.get('description', response.status_code)}")
         return data["result"]
+
+
+def _document(document: dict[str, Any]) -> MediaRef:
+    """A file sent as a file. A picture sent that way ("send without compression") is still a photo."""
+    mime = document.get("mime_type") or "application/octet-stream"
+    return MediaRef(kind="image" if mime in PHOTO_TYPES else "document", mime=mime,
+                    external_id=document["file_id"], name=document.get("file_name"))
+
+
+def _origin_name(origin: dict[str, Any]) -> str | None:
+    """Who a forwarded message first came from: a person, a group or a channel, by the name shown."""
+    person = origin.get("sender_user") or {}
+    chat = origin.get("sender_chat") or origin.get("chat") or {}
+    return person.get("first_name") or origin.get("sender_user_name") or chat.get("title") or None
 
 
 def _scope(chat: dict[str, Any]) -> Any:

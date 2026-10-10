@@ -1,7 +1,7 @@
 {% macro when(at) %}{{ local(at, session.timezone).strftime("%-d %b, %H:%M") }}{% endmacro %}
 {% macro changes(action) %}
 {% for kind, words in action.result | lines %}
-<li class="{{ 'was-undone' if action.undone_at else 'note' if kind == 'note' }}">{% if kind != "note" %}{{ icon("check") }}{% endif %}<span class="cap">{{ words }}</span></li>
+<li class="{{ 'was-undone' if action.undone_at else 'note' if kind == 'note' }}">{% if kind != "note" %}{{ icon("alert" if kind in ("ambiguous", "error") else "check") }}{% endif %}<span class="cap">{{ words }}</span></li>
 {% else %}
 <li class="{{ 'was-undone' if action.undone_at }}">{{ icon("check") }}<span class="cap">{{ action.tool | replace(".", ": ") | replace("_", " ") }}</span></li>
 {% endfor %}

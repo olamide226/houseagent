@@ -25,6 +25,8 @@ class MediaRef(BaseModel):
     storage_url: str | None = None   # imgbb only: direct URL (public to anyone with the link)
     delete_url: str | None = None    # imgbb only: deletion link for early cleanup
     transcript: str | None = None    # audio only, set by media.py
+    name: str | None = None          # document only: the file's name as it was sent
+    text: str | None = None          # document only, set by media.py: what could be read; "" when nothing could
     lat: float | None = None
     lng: float | None = None
     caption: str | None = None
@@ -43,6 +45,9 @@ class InboundEvent(BaseModel):
     reply_to_external_id: str | None = None
     reaction_emoji: str | None = None        # set when the event IS a reaction
     reaction_target_external_id: str | None = None
+    forwarded: bool = False                  # passed on from another chat, where the channel says so
+    forwarded_from: str | None = None        # who first sent it, when the channel tells
+    forwarded_sent_at: datetime | None = None    # when it was first sent: "tomorrow" in it counts from then
     sent_at: datetime
     raw: dict[str, Any]
 

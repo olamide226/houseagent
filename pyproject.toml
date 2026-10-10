@@ -22,6 +22,7 @@ dependencies = [
     "python-dateutil>=2.9.0.post0",
     "aioboto3>=15.5.0",
     "cryptography>=45",
+    "pypdf>=6.20.0",
 ]
 
 [project.optional-dependencies]

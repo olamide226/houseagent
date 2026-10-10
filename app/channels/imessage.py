@@ -87,7 +87,8 @@ class IMessageAdapter:
         else:
             text = (data.get("text") or "").replace(ATTACHMENT_MARK, "").strip() or None
             media = [MediaRef(kind=_kind(a), mime=a.get("mimeType") or (CAF if _is_caf(a) else None),
-                              external_id=a["guid"]) for a in data.get("attachments") or [] if a.get("guid")]
+                              external_id=a["guid"], name=a.get("transferName") if _kind(a) == "document" else None)
+                     for a in data.get("attachments") or [] if a.get("guid")]
             if not (text or media):
                 return None   # group renames, people joining or leaving
         return InboundEvent(

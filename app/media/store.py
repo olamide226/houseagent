@@ -1,6 +1,6 @@
 """MediaStore protocol and factory (spec section 7.4). The pipeline and the agent only ever
 see MediaRef, so the backend is one environment variable."""
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from app.config import Settings
 from app.core.envelope import MediaRef
@@ -8,6 +8,12 @@ from app.core.envelope import MediaRef
 EXTENSIONS = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
               "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/wav": "wav",
               "audio/x-caf": "caf", "application/pdf": "pdf"}
+PDF = "application/pdf"
+
+
+def is_pdf(ref: dict[str, Any]) -> bool:
+    """A stored media ref that is a PDF, by its type or, when a channel sends none, by its name."""
+    return ref.get("mime") == PDF or str(ref.get("name") or "").lower().endswith(".pdf")
 
 
 def kind_of(mime: str) -> Literal["image", "audio", "video", "document"]:

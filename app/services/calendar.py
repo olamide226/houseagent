@@ -6,14 +6,14 @@ used only to expand recurrences and to word reminders.
 """
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.agent.actions import Recorder
 from app.agent.base import ToolError
-from app.core.timeutil import day_bounds, local, next_occurrence, normalise_rrule, occurrences
+from app.core.timeutil import day_bounds, local, next_occurrence, normalise_rrule, occurrences, to_utc
 from app.db import execute, fetch_all, fetch_one, fetch_val
 from app.services import households, jobs, members
 
@@ -21,6 +21,9 @@ DAY_MINUTES = 1440
 DEFAULT_LEADS = (DAY_MINUTES, 60)
 MAX_LEAD_MINUTES = 7 * DAY_MINUTES
 HORIZON = timedelta(hours=48)   # how far ahead a recurring event has reminder rows
+# When a day that has no time is announced: the evening before, or that morning if the evening has gone.
+EVENING_BEFORE = time(18, 0)
+MORNING_OF = time(7, 30)
 
 _EVENT = """
 select e.*, h.timezone,
@@ -415,6 +418,61 @@ async def cancel_reminder(rec: Recorder, reminder_id: str) -> None:
     await rec.before("reminders", id=reminder_id)
     await execute(rec.ctx.conn, "update reminders set status = 'cancelled' where id = :id", id=reminder_id)
     rec.lines.append(f"OK: reminder cancelled: {row['text']}")
+
+
+# ---------------------------------------------------------------- a day with no time
+async def remind_of_day(rec: Recorder, *, title: str, day: date, last_day: date | None = None,
+                        participant_ids: Sequence[str] = (), location: str | None = None,
+                        notes: str | None = None) -> bool:
+    """Something on a day with no time given (an inset day, a form due back): one reminder the
+    evening before, or that morning when the evening has already gone. An event needs a time, so
+    this is a reminder with the day in its words. False if it was too late for either."""
+    ctx = rec.ctx
+    timezone = await households.timezone(ctx.conn, ctx.household_id)
+    title = title.strip()
+    if not title:
+        raise ToolError("the entry needs a title")
+    if last_day is not None and last_day < day:
+        raise ToolError("the last day must be after the first")
+    names = await fetch_all(
+        ctx.conn, "select name from members where id = any(cast(:ids as uuid[])) order by created_at",
+        ids=list(participant_ids))
+    what = label({"title": title, "participants": [row["name"] for row in names]})
+    what = f"{what}, {location.strip()}" if location and location.strip() else what
+    moments = [to_utc(datetime.combine(day - timedelta(days=1), EVENING_BEFORE), timezone),
+               to_utc(datetime.combine(day, MORNING_OF), timezone)]
+    fire_at = next((moment for moment in moments if moment > ctx.now), None)
+    if fire_at is None:
+        rec.lines.append(f"NOTE: {what} is today ({day:%a %-d %b}), too late for a reminder: nothing added for it")
+        return False
+    target, member_id = await _target(ctx.conn, {"participant_ids": list(participant_ids),
+                                                 "created_by": ctx.member_id})
+    # Worded for when it is read: held by quiet hours, "tomorrow" may have become "today".
+    read_at = await members.quiet_until(ctx.conn, ctx.household_id, member_id, fire_at) or fire_at
+    days = (day - local(read_at, timezone).date()).days
+    when = f"today ({day:%a %-d %b})" if days == 0 else f"tomorrow ({day:%a %-d %b})" if days == 1 \
+        else f"on {day:%a %-d %b}"
+    if last_day is not None and last_day > day:
+        when = f"from {when.removeprefix('on ')} to {last_day:%a %-d %b}"
+    text = f"{what}, {when}" + (f". {notes.strip()}" if notes and notes.strip() else "")
+    sent = f"{local(fire_at, timezone):%a %-d %b %H:%M}"
+    if await fetch_val(
+        ctx.conn,
+        """select 1 from reminders where household_id = :h and event_id is null and kind is null
+             and status = 'scheduled' and lower(text) = lower(:text) and fire_at = :at""",
+        h=ctx.household_id, text=text, at=fire_at,
+    ):
+        rec.lines.append(f"OK: {what} on {day:%a %-d %b} is already down, with its reminder at {sent}")
+        return True
+    reminder_id = await fetch_val(
+        ctx.conn,
+        """insert into reminders (household_id, target, member_id, text, fire_at)
+           values (:h, :target, :member, :text, :at) returning id""",
+        h=ctx.household_id, target=target, member=member_id, text=text, at=fire_at,
+    )
+    rec.created("reminders", str(reminder_id))
+    rec.lines.append(f"OK: {what} on {day:%a %-d %b}, no time given: one reminder at {sent}")
+    return True
 
 
 # ---------------------------------------------------------------- reads

@@ -47,11 +47,20 @@ TALK = {
     ("add_job", "update_job"): "set up a household job, a renewal or a birthday with whose it is and when it is due "
                                "or how often (the bins every Tuesday night, the MOT on a date, a prescription every "
                                "28 days), and afterwards skip one, change it or stop it",
+    ("add_dates",): "send on a school letter, a party invite or an appointment message, as a forward or as pasted "
+                    "words, and every date in it goes on the calendar with its reminders; a day with no time gets "
+                    "one reminder the evening before, a date that is not clear is asked about, and one undo takes "
+                    "back everything that came from it",
     ("remember",): "have you remember a preference, where they shop, what to always keep in, the morning brief "
                    "time and each adult's quiet hours",
     ("add_family_member",): "add a child or another adult",
     ("undo_last",): "say undo to take back their own last change (up to 5, from the last 24 hours)",
 }
+
+# A file sent in the chat (app/pipeline/media.py reads a PDF's words; nothing else is opened).
+FILES = ("Files: a PDF sent as a file is read like a letter, when its words can be selected. A scanned PDF, a locked "
+         "one or any other kind of file cannot be read: say so, and ask for a photo of the page or for the words "
+         "pasted in.")
 
 # The words answered by code (app/pipeline/inbound.py), because the answer holds a private link.
 WORDS = {
@@ -148,8 +157,10 @@ def product_guide(setup: Setup) -> str:
         "opens it, or sends its code to you in their own private chat. It works once in each chat app, for 7 days. "
         "Children have no chat and no login.",
         "Photos: a photo of a receipt records what was bought, and a photo of the fridge, freezer or a cupboard "
-        "records what is there. Up to 4 photos in one message." if setup.photos else
+        "records what is there. A photo of a letter or an invite puts its dates on the calendar. Up to 4 photos in "
+        "one message." if setup.photos else
         "Photos: you cannot read photos in this household yet. Say so, and ask them to type it instead.",
+        FILES,
         "Voice notes work like typed messages." if setup.voice_notes else
         "Voice notes: you cannot listen to voice notes in this household yet. Say so, and ask them to type it instead.",
         "A thumbs-up from you means it was recorded.",
