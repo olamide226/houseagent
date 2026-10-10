@@ -7,7 +7,8 @@ Each line has a status and a pointer to where the detail is.
 
 - **Not done**: something has to be built, bought, decided or written.
 - **Not verified**: it is built, and has never been tried against the real thing.
-- **Done**: tick the box, change the status and name the pull request. Leave the line in place.
+- **Done**: tick the box, change the status, and name the pull request or the date it was tried.
+  Leave the line in place.
 
 A pull request that opens or closes an item changes this page in the same change. Where a line
 points to a "build record", the detail is in the notes kept while that part was built. Those are
@@ -37,8 +38,8 @@ not in this repository, so the line itself is all there is here.
   the server. [presence.md](presence.md#sharing-the-shortcut-once)
 - [ ] **Not verified.** A receipt or fridge photo sent from a phone to the server.
   [operations.md](operations.md#media-storage)
-- [ ] **Not verified.** A voice note sent from a phone to the server. The transcriber has only
-  been given a sample file. [llm.md](llm.md#speech-to-text)
+- [x] **Done, 9 Oct 2026.** A voice note sent from a phone to the server. The owner sent one
+  through Telegram; it was transcribed and answered. [llm.md](llm.md#speech-to-text)
 - [ ] **Not done.** Photos kept in a private S3-compatible bucket with a lifecycle rule. ImgBB
   links can be opened by anyone who has them. [operations.md](operations.md#media-storage)
 - [ ] **Not verified.** A voice note with three changes is acknowledged within 10 seconds (p95).
