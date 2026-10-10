@@ -77,6 +77,9 @@ it, by default `http://host.docker.internal:8011`. The result is written as `let
 | `shopping_list_asked_for` | Exactly these items are on the list as real entries, not as "probably" guesses |
 | `stock` | Per item: `status`, and `qty` and `location` when given |
 | `writes: 0` | No events, no logged actions, and the list is unchanged from the seed |
+| `actions` | How many changes were logged, for a case whose seed already holds events |
+| `receipts` | Exactly these kept receipts, in any order. Each may give `shop_contains`, `total` (`null`: no total was kept), `day`, `prices` (a line whose name contains the key has that price), `no_price` (nothing with that in its name has a line) and `lines_max` |
+| `receipts_removed` | How many receipts are out of the spending |
 | `reply` | The last turn's outcome: `ACK`, `NOOP`, or `text` for any other reply |
 | `reply_mentions` | Each of these texts is in the last reply: a reply that reads the list back has to name what is on it, and an answer about the product has to name the word to send or the page |
 | `reply_says_any` | At least one of these is in the last reply as a whole word, so `not` is not found in "note". For answers that have to say no |
@@ -170,20 +173,39 @@ A seeded job is set up through the service the day before it is first due. With 
 worker's own code has sent its first nudge, five minutes before the case starts, into the chat it
 would go to: the owner's, or the family group for a job that is everyone's.
 
+A spending case seeds receipts as a photo leaves them, with the section each item is sorted into,
+and can seed receipts that were read before prices were kept:
+
+```yaml
+- name: what was spent on food
+  seed:
+    receipts:
+      - {shop: Hilltop Grocers, day: "2026-10-04", total: 8.95, lines: [[butter, 2.40], [coconut milk, 1.10]]}
+      - {shop: Freshway Supermarket, day: "2026-10-03", total: 5.80, lines: [[milk, 1.65, 2, pints], [bread, 1.20]]}
+    sections: {butter: dairy and eggs, milk: dairy and eggs, bread: bakery}   # a line is [item, price, quantity, unit]
+    unpriced_receipts: ["2026-10-02"]      # the day of a receipt whose prices were never kept
+  turns: [{from: Ola, text: "how much of this month's spending was food?"}]
+  expect: {actions: 0, plain: true, reply_mentions: ["5.25"]}
+```
+
+The amount in `reply_mentions` is the one code adds up, so a model that does its own sum, or
+answers from the brief, fails the case.
+
 Seeded events go through the calendar service, so they have their reminders, but leave no undo
 record. The spec's example uses the key `events` for calendar events; that key already meant
 inventory events here, so calendar expectations are under `calendar`.
 
 ## Suite
 
-113 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (8), reminders (5),
+127 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (8), reminders (5),
 photos (6: four receipts, two fridge or freezer photos), onboarding, family and settings (13),
-presence (4: answers to the low-stock prompt and the "out and about" offer), product (17:
+presence (4: answers to the low-stock prompt and the "out and about" offer), product (18:
 what the assistant says about itself, [ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)),
 meals (10: what to cook, [ADR 0036](adr/0036-meal-ideas-from-a-short-stock-read.md)),
 household jobs (14, [ADR 0037](adr/0037-a-household-job-is-a-reminder-that-is-to-be-done.md)),
-and letters (9: what someone sends on,
-[ADR 0039](adr/0039-a-letter-is-one-call-and-a-day-with-no-time-is-a-reminder.md)).
+letters (9: what someone sends on,
+[ADR 0039](adr/0039-a-letter-is-one-call-and-a-day-with-no-time-is-a-reminder.md)),
+and spending (13, [ADR 0040](adr/0040-spending-is-kept-from-receipts-beside-the-stock-log.md)).
 The spec's target is 40.
 
 The meal cases ask what to cook tonight, for the week, with a named ingredient, for a vegetarian
@@ -211,11 +233,21 @@ They assert the calendar and reminder rows, that "undo that" leaves none of them
 doubtful date is asked about and added after the answer, and that a forwarded joke in the family
 group gets no reply. The last product case asks whether letters can be sent on.
 
+The spending cases: three receipt photos keep their shop, their total and each line's price (the
+long one keeps the printed total and no price for a saving; a torn one with a stained price keeps
+the three prices that can be read, no total and nothing for the stained line); undo after a
+receipt takes the prices back with the stock; a price only said in chat is not spending; then
+seven questions answered from seeded receipts (this month, one shop, food, last month, whether
+milk has gone up, a month whose receipts have no prices, which must not be answered with a
+zero), a total corrected and a receipt taken out. The amount each reply must name is the one code
+adds up.
+
 The product cases ask what a family member asks: "what can you do?", "how do I see the list on my
 laptop?", "how do I add my wife?", "how does the shop thing work?", "can you read photos?" where
 photos are on and where they are not, "switch me to WhatsApp" where it is set up and where it is
-not, a feature that does not exist (ordering the shopping online), and a how-to question in the
-family group. Each asserts no writes, plain words, and the word or page that has to be named.
+not, a feature that does not exist (ordering the shopping online), a how-to question in the family
+group, and where the jobs and the spending are shown. Each asserts no writes, plain words, and the
+word or page that has to be named.
 
 Five more are about an adult's own calendar
 ([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)): how to get plans
@@ -244,6 +276,126 @@ pipeline's own reader. What no case exercises is the way in from a chat app: the
 download and the forward mark are covered by unit tests with stand-in payloads.
 
 ## Latest results
+
+One run of the whole suite with the loop runtime, 10 Oct 2026, with spending from receipts
+([ADR 0040](adr/0040-spending-is-kept-from-receipts-beside-the-stock-log.md)) on top of meal
+ideas, household jobs, calendar sync and letters, model `deepseek-flash` through both adapters:
+the 127 cases, 896 seconds. "Before" is `main` as this change was put on top of it, the "after" of
+letters [below](#previous-full-run-letters-invites-and-forwards): the 113 cases it had.
+
+| Adapter | Before | After | NOOP | Undo | Input tokens after (cached) | Output tokens after |
+| --- | --- | --- | --- | --- | --- | --- |
+| `openai_compat` | 113/113 | **127/127** | 3/3 | 7/7 | 2,571,173 (2,044,672) | 37,119 |
+| `anthropic` | 112/113 | **127/127** | 3/3 | 7/7 | 2,566,921 (2,490,609) | 39,523 |
+
+| Category | `openai_compat` before | after | `anthropic` before | after |
+| --- | --- | --- | --- | --- |
+| inventory | 12/12 | 12/12 | 11/12 | 12/12 |
+| shopping list | 5/5 | 5/5 | 5/5 | 5/5 |
+| NOOP | 3/3 | 3/3 | 3/3 | 3/3 |
+| undo | 7/7 | 7/7 | 7/7 | 7/7 |
+| calendar | 8/8 | 8/8 | 8/8 | 8/8 |
+| reminders | 5/5 | 5/5 | 5/5 | 5/5 |
+| photos | 6/6 | 6/6 | 6/6 | 6/6 |
+| onboarding | 13/13 | 13/13 | 13/13 | 13/13 |
+| presence | 4/4 | 4/4 | 4/4 | 4/4 |
+| product | 17/17 | 18/18 | 17/17 | 18/18 |
+| meals | 10/10 | 10/10 | 10/10 | 10/10 |
+| household jobs | 14/14 | 14/14 | 14/14 | 14/14 |
+| letters | 9/9 | 9/9 | 9/9 | 9/9 |
+| spending (new) | not run | 13/13 | not run | 13/13 |
+
+The release bar (95% overall and 100% on NOOP and undo, on at least two providers) is met on both
+endpoints. It is one sample per case, and the two endpoints are one model on two wire formats.
+Nothing failed in this run. That is one run: the run before it lost three cases, and two of them
+are cases that fail some of the time with or without this change.
+
+**One rebase earlier**, on calendar sync without letters, the suite had 117 cases: 116/117 on
+`openai_compat` and 115/117 on `anthropic`, 797 seconds. That run kept no trace of the tool calls.
+
+| Case | Endpoint | What is known | What was done |
+| --- | --- | --- | --- |
+| whose job is whose is on the Jobs page | `anthropic` | The case that failed in the 111-case run, below | Nothing |
+| bought one thing off the list | `anthropic` | The case that failed on `main` that morning and in the runs of 7 Oct, where the eggs were logged as `added` | Nothing |
+| a long receipt keeps the printed total and no price for a saving | `openai_compat` | The receipt was kept with its total and seven line prices. The rice had none: it is the line the model has to log a second time, under the household's own name for it | Below |
+
+The long receipt was then run 28 more times on each endpoint with the trace on: 56 of 56 passed.
+Every second call carried the rice's price, 54 with the source given as a receipt and 2 without.
+So what the second call sent in the run that failed is not known. It is the one failure in the
+70 runs or more that this case has had. Reading the code for that call found one way a price could be lost: the second
+call was taken as the rest of the receipt when it left the source out, but not when it called the
+source a photo. That is closed, and a unit test holds it. It is not shown to be what happened.
+The spending, photo, inventory and undo cases were run again after it: 41 of 41 on both endpoints.
+
+**Two rebases earlier**, on meal ideas and household jobs without calendar sync: 111 cases, 729
+seconds. "Before" there is the run of the 97 cases [below](#previous-full-run-household-jobs).
+
+| Adapter | Before | After | NOOP | Undo | Input tokens after (cached) | Output tokens after |
+| --- | --- | --- | --- | --- | --- | --- |
+| `openai_compat` | 97/97 | **111/111** | 3/3 | 7/7 | 1,939,130 (1,535,744) | 30,476 |
+| `anthropic` | 97/97 | **110/111** | 3/3 | 7/7 | 1,956,219 (1,907,837) | 28,276 |
+
+| Category | `openai_compat` | `anthropic` |
+| --- | --- | --- |
+| inventory | 12/12 | 12/12 |
+| shopping list | 5/5 | 5/5 |
+| NOOP | 3/3 | 3/3 |
+| undo | 7/7 | 7/7 |
+| calendar | 7/7 | 7/7 |
+| reminders | 5/5 | 5/5 |
+| photos | 6/6 | 6/6 |
+| onboarding | 13/13 | 13/13 |
+| presence | 4/4 | 4/4 |
+| product | 12/12 | 11/12 |
+| meals | 10/10 | 10/10 |
+| household jobs | 14/14 | 14/14 |
+| spending (new) | 13/13 | 13/13 |
+
+The release bar (95% overall and 100% on NOOP and undo, on at least two providers) is met on both
+endpoints. It is one sample per case, and the two endpoints are one model on two wire formats.
+
+**The one failure of that run is not from this change.** "Whose job is whose is on the Jobs page" asks where
+the household jobs can be seen and requires both `Jobs` and `dashboard` in the reply. The reply
+was "Yes. Open the Jobs page — it lists what's coming up, whose each one is, and lets you tick one
+off, skip it or stop it." Eight samples on each endpoint gave an answer without the word
+`dashboard` 6 times in 16 on the code before this change and 7 times in 16 after it. The case was
+left as it is: it belongs to household jobs, and whether an answer that names the page must also
+say how to open it is that case's call.
+
+**Before the first two rebases** the same change was run on the 71 cases it started from, the same day:
+
+| Adapter | The 71 cases before | With spending: 85 cases, first run | Second run |
+| --- | --- | --- | --- |
+| `openai_compat` | 71/71 | 85/85 | 85/85 |
+| `anthropic` | 70/71 | 83/85 | 85/85 |
+
+The failure before was "bought one thing off the list" (the eggs logged as `added`). The two
+failures of the first run were followed up, and the second run is the code after that:
+
+- "A receipt keeps its shop, its total and the price of each line". The model logged "free range
+  eggs", was told the household has eggs, and logged them again in a second call that left the
+  source out. The eggs became a plain message and their price was not kept. Code now takes a call
+  that carries a price, in a turn whose photo has already started a receipt, as the rest of that
+  receipt. A unit test holds it.
+- "Seeing the list on a laptop is the word dashboard". The reply was right ("Message me the word
+  dashboard on its own and you'll get a private link...") and the case only accepted send, type,
+  text, write or say. Six samples on each endpoint gave that sentence once in twelve on the code
+  as it was and not at all after, so it is the case and not the change: `message` was added to
+  the words it accepts.
+
+**What it costs.** One model step reads 9,714 input tokens where `main` reads 8,174 (the three
+one-step NOOP cases; the figure for `main` is the one recorded with letters, below): 1,540 more,
+for two more tools, three more fields on `log_inventory` and five more lines of guide. Before the
+rebases the same three cases gave 8,428 against 6,889, which is 1,539. All of it is in the cached
+part of the prompt. The account balance read $3.86 before the first run for this change and $2.04
+after the last, but other work was drawing on the same key all day, so $1.82 is an upper bound,
+not the cost: the whole suite six times at 71 to 127 cases (a seventh was stopped half way when
+`main` moved), and about 270 runs of single cases and parts of the suite.
+
+What the spending cases do not show: a real receipt. All three are drawn, with eight lines at
+most, printed straight and in one currency.
+
+## Previous full run (letters, invites and forwards)
 
 One run of the whole suite with the loop runtime, 10 Oct 2026, with letters, invites and
 forwards ([ADR 0039](adr/0039-a-letter-is-one-call-and-a-day-with-no-time-is-a-reminder.md)) on

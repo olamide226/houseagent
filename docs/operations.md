@@ -129,6 +129,12 @@ git pull && docker compose up -d --build      # builds, migrates, then replaces 
 The api is away for a few seconds; Telegram and WhatsApp send again what was not taken. To go
 back, `git checkout <commit>` and run the same command. That does not undo a migration.
 
+The api's `/readyz` answers 503 while the database is at a migration the running code does not
+expect. Going back to code from before migration `0004` (spending from receipts) therefore needs the
+migration undone first, with the newer code still checked out:
+`docker compose run --rm migrate alembic downgrade 0003`. That drops `receipts` and
+`receipt_lines`, and with them every price kept so far; the stock they logged is untouched.
+
 ### Logs
 
 ```sh
@@ -408,7 +414,8 @@ uv run python -m app.worker.main             # worker, in a second terminal
 ## Health
 
 - `GET /healthz`: liveness.
-- `GET /readyz`: 200 when the database is reachable and at migration `0001`, else 503.
+- `GET /readyz`: 200 when the database is reachable and at the newest migration (`0004`),
+  else 503.
 - The worker logs `worker_heartbeat` every minute and restarts a crashed job after 5 seconds. Each
   heartbeat also touches `WORKER_HEARTBEAT_FILE` (default `/tmp/worker-heartbeat`), which is what a
   liveness probe should watch, and moves a `worker_heartbeat` row in `job_runs`, which is what the

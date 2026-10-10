@@ -1,8 +1,9 @@
 # Data model
 
 The DDL is [`schema.sql`](../schema.sql), applied verbatim by Alembic migration `0001`, and the
-migrations after it: `0002` adds the household job columns to `reminders`, and `0003` the two
-tables for connected calendars and `events.all_day`.
+migrations after it: `0002` adds the household job columns to `reminders`, `0003` the two
+tables for connected calendars and `events.all_day`, and `0004` the `receipts` and
+`receipt_lines` tables and `households.currency`.
 Table-by-table purpose is in [spec.md section 4](spec.md#4-data-model). This page covers what
 milestones 1 to 5 use and the rules the code enforces.
 
@@ -11,7 +12,7 @@ milestones 1 to 5 use and the rules the code enforces.
 | Table | Written by |
 | --- | --- |
 | `households`, `members`, `locations` | `/setup` (`services/households.py`); later members by `add_family_member` and the Family page (`services/members.py`) |
-| `households.onboarding_state`, `households.digest_time` | `onboarding_advance`, `remember`, the Settings page |
+| `households.onboarding_state`, `households.digest_time`, `households.currency` | `onboarding_advance`, `remember`, the Settings page |
 | `members.quiet_start`, `quiet_end`, `preferred_channel`, the invite hash | `remember`, the Settings and Family pages |
 | `household_facts` | `remember`, the Settings page (`services/households.py`) |
 | `places` | shops named in `remember` (kind `store`), the Settings page, and a presence ping naming a place for the first time (kind `other`, or `home` for Home) |
@@ -26,6 +27,7 @@ milestones 1 to 5 use and the rules the code enforces.
 | `items` | resolution (new items, learned aliases), dashboard item edits |
 | `inventory_events`, `stock` | `services/inventory.py` only |
 | `shopping_list_items` | `services/shopping.py`, the inventory side-effect rules, and the consumption model's guesses (`reason = 'predicted'`) |
+| `receipts`, `receipt_lines` | `services/spending.py` only: `log_inventory` reading a receipt, `update_receipt`, the Spending page |
 | `events`, `reminders` | `services/calendar.py` only; the recurrence job adds reminder rows, the reminders job updates their status |
 | `reminders` with a `kind` (household jobs) | `services/jobs.py` only, from `add_job`, `update_job`, a tick on a nudge and the Jobs page; the `job_nudges` job moves a row on as it speaks |
 | `households.calendar_token_hash` | the Calendar page's "New subscribe link" |
@@ -33,7 +35,7 @@ milestones 1 to 5 use and the rules the code enforces.
 | `calendar_links` | `services/calendar_sync.py` only |
 | `agent_actions` | every tool call or dashboard action that wrote something, each invite redemption, and each change read from a connected calendar (`source = 'calendar'`) |
 | `outbox` | turns, invites and welcomes, login links, reminders, digests |
-| `job_runs` | the daily brief, the weekly digest, the consumption model and the low-stock prompt, one row per household and run; and one `worker_heartbeat` row per household that the worker moves forward every minute |
+| `job_runs` | the daily brief, the weekly digest, the consumption model and the low-stock prompt, one row per household and run; `monthly_spending`, one row per household and month once that month's spending has gone out with a weekly digest; and one `worker_heartbeat` row per household that the worker moves forward every minute |
 | `households.letta_agent_id` | the Letta runtime, when it creates the household's agent |
 
 Every table in the schema is now written by something.
@@ -122,6 +124,25 @@ default location, else `store`.
 - Timestamps are `timestamptz` in UTC; household time is used only at the edges (the brief, pages).
 - Rows written inside one turn use `clock_timestamp()`, not `now()`, so their order is real
   even though the turn is one transaction.
+
+## Receipts and spending
+
+A receipt that is read keeps what it cost beside the stock it logged, never instead of it
+([ADR 0040](adr/0040-spending-is-kept-from-receipts-beside-the-stock-log.md)).
+
+- `receipts`: `shop` (null when it could not be read; otherwise the name the household uses for
+  it), `purchased_on` (the date printed, or the household-local day it was sent when that could
+  not be used), `total` (as printed, null when the receipt shows none), `currency` (the
+  household's when it was read), `status` (`kept`, or `removed`: taken out of the spending, or the
+  same receipt sent a second time), `source_message_id` (the photo it came in on).
+- `receipt_lines`: one row per line that was logged to stock and had a printed price: `item_id`,
+  `label` (the item's name then), `quantity`, `unit`, `price` (what the line cost).
+- A receipt counts for `total`, or for its lines added up when `total` is null. A receipt in a
+  currency other than the household's is left out of every sum.
+- A stock event with source `receipt` whose message has no `receipts` row is a receipt read
+  without prices. All receipts from before migration `0004` are that.
+- Undoing the `log_inventory` that read a receipt deletes its rows. Correcting or removing one
+  later is its own undoable action. `inventory_events` and `stock` are never touched by either.
 
 ## Known limit
 

@@ -76,6 +76,9 @@ it describes, and `tests/unit/test_guide.py` compares the keys both ways:
 | `TALK` | the tools in `REGISTRY`, except the setup-only one |
 | `SENDS` | the worker's scheduled jobs that send something (`SCHEDULED` in `app/worker/main.py`) |
 
+Spending is added up from receipts, so where photos cannot be read the guide leaves out the line
+for the two spending tools and says the Spending page has nothing to show yet.
+
 A new page, word, tool or scheduled message therefore fails the suite until the guide has a line
 for it, and a removed or renamed one fails until its line goes. The numbers in the guide (10
 minutes, 7 days, 5 changes in 24 hours, 4 photos, 18:00, 17:30) are checked against the constants
@@ -103,7 +106,7 @@ Letta server names it.
   memory blocks: `persona` (the static prompt and the product guide) and `household` (the brief,
   and the setup section while setup is open). Thread history is not sent; Letta keeps its own,
   one for the whole household, DMs and group together.
-- **Tools** are the same sixteen, registered with Letta as functions whose whole body posts the
+- **Tools** are the same eighteen, registered with Letta as functions whose whole body posts the
   arguments to `POST /internal/tools/{name}` with `Authorization: Bearer INTERNAL_TOOL_TOKEN`.
   The household id, the address to call and the token come from the agent's tool environment,
   which is also rewritten before every turn.
@@ -270,12 +273,12 @@ Token usage, tool calls and latency for each turn are stored on the batch's last
 
 ## Tools
 
-`REGISTRY` in `app/agent/tools/__init__.py` holds the sixteen tools. Fifteen are always offered;
+`REGISTRY` in `app/agent/tools/__init__.py` holds the eighteen tools. Seventeen are always offered;
 `onboarding_advance` only while a household is being set up.
 
 | Tool | Writes | Behaviour |
 | --- | --- | --- |
-| `log_inventory` | events, stock, list | Per change: resolve location and item, append the event, apply the stock transition, run the side-effect rules. Every `finished` and `low` line says what happened to the shopping list |
+| `log_inventory` | events, stock, list; receipts | Per change: resolve location and item, append the event, apply the stock transition, run the side-effect rules. Every `finished` and `low` line says what happened to the shopping list. From a receipt it also keeps the shop, date, total and each line's printed price ([below](#spending-appservicesspendingpy)) |
 | `query_inventory` | none | Filter by item, location, status, expiry; never creates an item |
 | `update_shopping_list` | list, events | `add`, `bought` (logs `restocked`, source `shopping`), `remove` (dismissed), `bought_all` |
 | `get_shopping_list` | none | Explicit, finished and low entries first, then predicted ones marked "(probably)"; the optional store filter keeps entries naming no shop and those whose shop reads like the one asked for |
@@ -287,8 +290,10 @@ Token usage, tool calls and latency for each turn are stored on the batch's last
 | `add_dates` | events, reminders | Every dated thing in a letter, an invite or a forward, in one call that one undo reverts ([below](#letters-invites-and-forwards)) |
 | `add_job` | reminders | A household job, renewal or date that someone describes: its owner, the day it is next due, a time of day if one was said, a repeat rule. A birthday is kind `date` |
 | `update_job` | reminders | `done`, `later`, `skip`, `change` or `stop` for the job named, or with no name the one the message answers or the only one waiting |
-| `remember` | facts; some settings | Upserts a fact for the household or one member; no value forgets it. The keys `staples`, `shops`, `main_supermarket`, `morning_brief` and `quiet_hours` are settings ([ADR 0016](adr/0016-settings-said-in-chat-go-through-remember.md)). Quiet hours are set for whoever `about` names (`us` is every adult), and for the speaker alone when nobody is named |
+| `remember` | facts; some settings | Upserts a fact for the household or one member; no value forgets it. The keys `staples`, `shops`, `main_supermarket`, `morning_brief`, `quiet_hours` and `currency` are settings ([ADR 0016](adr/0016-settings-said-in-chat-go-through-remember.md)). Quiet hours are set for whoever `about` names (`us` is every adult), and for the speaker alone when nobody is named |
 | `add_family_member` | members, an invite | Adds a child or an adult; a name already there is not added twice. For an adult who has not connected, an invite is sent to the person asking, to pass on |
+| `get_spending` | none | What was spent between two days (this month so far when none are given), in all, at one shop, or on one kind of thing or one item; with price changes on staples. Every amount is added up in code |
+| `update_receipt` | receipts | Finds a kept receipt by shop, day or total (the newest when nothing is said); corrects its shop, date, total or a line's price, or takes it out of the spending |
 | `undo_last` | inverse of the last actions | The caller's own actions from the past 24 hours, newest first, `n` up to 5 |
 | `onboarding_advance` | onboarding state | Marks a setup step done or skipped and names the next one |
 
@@ -317,6 +322,10 @@ OK: 2 added from one message, and one undo takes them all back: School trip, Ret
 OK: Return the trip slip for Tobi on Fri 9 Oct, no time given: one reminder at Thu 8 Oct 18:00
 AMBIGUOUS: Parents' evening (Thu 12 Nov 2026 16:00, for Tobi, Sunnyfield Primary) not added: the text says Wednesday, but 12 Nov 2026 is a Thursday
 NOTE: Harvest assembly (Fri 2 Oct 2026 09:15, for Tobi) left out: it has already passed
+OK: receipt kept for the spending: Freshway Supermarket, Tue 6 Oct, £5.80, 3 line prices
+NOTE: no price could be read on this receipt, so it is not in the spending
+OK: spent, 1 Oct to 10 Oct 2026: £37.44 on 3 receipts
+NOTE: 2 more receipts read in this time have no prices kept: what they cost is not known and is not in the total
 OK: staples done. Next step: tour
 ```
 
@@ -369,6 +378,43 @@ reads: the description is left with when to call it and what a pick means.
 **Picking one** is an ordinary turn. The suggestion is in the thread history, so "the first one"
 or "let's do the curry" becomes `update_shopping_list` with that meal's missing things: an
 undoable change like any other, and "undo" takes it back. A meal that needs nothing adds nothing.
+
+## Spending (`app/services/spending.py`)
+
+The model reads a receipt; code keeps it and does every sum
+([ADR 0040](adr/0040-spending-is-kept-from-receipts-beside-the-stock-log.md)).
+
+**Keeping a receipt.** `log_inventory` with source `receipt` takes a `price` on each change (what
+the line cost, as printed) and a `receipt` with `shop`, `bought_on` and `total`. After the stock
+changes, in the same action:
+
+- A change that was recorded and has a price becomes a line. A change with no price keeps no
+  line; a receipt with no readable total keeps none; a receipt with neither is not kept, and the
+  result says so.
+- The shop is stored under the name the household already uses when one reads like the printed
+  name. A date after today, or none, counts as today.
+- A second call in the same turn adds to the receipt the first one started, and skips a line it
+  repeats. If that call carries a price and leaves the source out, or calls it a photo, it is
+  still taken as the receipt, for the stock event as well. The same shop, date and total on another day is not counted again.
+- A price or a `receipt` given with any other source is not kept: "prices are kept from receipts
+  only".
+
+**Adding up.** A receipt counts for its printed total, or its lines when it has none. `get_spending`
+answers for a time, a shop (`Tesco` finds `Tesco Extra`), and `on`: `food` (seven supermarket
+sections), one section, or one item, which also lists the last three prices paid. Lines by section
+come from each item's category, so a new item is "not sorted yet" until the nightly job has sorted
+it. What the lines do not account for is "not listed line by line" or "discounts".
+
+**What is not known is said.** Receipts read without prices in the time asked about are counted
+and named in a `NOTE:`; with no priced receipt at all the result is "no receipt with prices", never
+an amount.
+
+**Price changes** are for staples: the newest price against the last comparable one at the same
+shop. The same pack by what it cost, two sizes in one unit by the price of a unit, otherwise no
+comparison.
+
+**Correcting.** `update_receipt` and the Spending page call the same `correct` and `remove`.
+Both are undoable; removing never changes stock.
 
 ## Calendar rules (`app/services/calendar.py`)
 
@@ -510,9 +556,10 @@ action's inverse in `agent_actions.inverse`:
 Rows that existed are restored in full; rows the action created are deleted. An action is one
 tool call, so everything `add_dates` added from one letter is one action. Undoable tables are
 `stock`, `shopping_list_items`, `items` (the staple flag and dashboard edits), `events`,
-`reminders` (household jobs are rows of it), `household_facts`, `places`, `members` and `households`. For the last two only the
-columns an action may change are put back (name, role, preferred channel and quiet hours; brief
-time and onboarding state), never an invite, a token or the session version, so an undo cannot
+`reminders` (household jobs are rows of it), `household_facts`, `places`, `receipts`, `receipt_lines`,
+`members` and `households`. For the last two only the columns an action may change are put back
+(name, role, preferred channel and quiet hours; brief time, onboarding state and currency), never an
+invite, a token or the session version, so an undo cannot
 revive a revoked invite or a logged-out session. Undoing "add Tobi" removes him; once a member
 has connected, or anything else depends on them, that undo is refused. Undoing a new event deletes it and its reminders; undoing a move, an edit, a skipped
 date or a cancellation puts the event and every reminder row back as they were. Undo:
