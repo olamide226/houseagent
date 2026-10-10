@@ -287,7 +287,7 @@ item it is.
 
 - [ ] **Not verified.** A real receipt keeps its shop, its total and the price of each line. Only
   drawn receipts of eight lines have been read: no weights, multi-buys, VAT lines or creases.
-  [evals.md](evals.md#latest-results)
+  [evals.md](evals.md#previous-full-run-spending-from-receipts)
 - [ ] **Not verified.** "On food" and the split by kind of thing rest on the nightly sorting of
   items, and price changes on staples have not been checked against a real run of receipts.
   [agent-and-tools.md](agent-and-tools.md#spending-appservicesspendingpy)

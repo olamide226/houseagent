@@ -571,7 +571,7 @@ The queries under [Looking at it](#looking-at-it) work for both kinds; `provider
 row is. For an Apple row `calendar_id` is the calendar's address and `account` the email.
 
 When a real account is first connected, the things to check are listed in the ADR's
-consequences and in [go-live-checklist.md](go-live-checklist.md#never-tried-against-the-real-service).
+consequences and in [go-live-checklist.md](go-live-checklist.md#apple-calendar).
 
 ## WhatsApp
 
