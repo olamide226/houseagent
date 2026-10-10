@@ -6,6 +6,7 @@ The tests replay responses built from the documented shapes.
 """
 import re
 import time
+from collections.abc import Collection
 from datetime import UTC, date, datetime
 from datetime import time as clock
 from typing import Any
@@ -17,6 +18,7 @@ import structlog
 
 from app.calendars.base import (
     DEFAULT_LENGTH,
+    NO_TITLE,
     AuthLost,
     Entry,
     Gone,
@@ -47,7 +49,6 @@ SLOW_DOWN = {"rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded"}
 # Birthdays, focus time, out of office and working location are Google's own kinds of entry, not
 # plans somebody made. An event Gmail made from an email (a flight, a booking) is a plan.
 IMPORTED_TYPES = {"default", "fromGmail"}
-NO_TITLE = "(No title)"
 
 _tokens: dict[str, tuple[str, float]] = {}   # refresh token -> (access token, when it stops working)
 
@@ -306,9 +307,11 @@ class GoogleCalendar:
         assert response is not None
         return response
 
-    async def changes(self, sync_token: str | None, since: datetime) -> tuple[list[Remote], str | None]:
-        # Deleted events are asked for on the first read too: after a reset it is how a deletion
-        # made in the meantime is seen. Nothing but `syncToken` may differ between reads.
+    async def changes(self, sync_token: str | None, since: datetime,
+                      followed: Collection[str] = ()) -> tuple[list[Remote], str | None]:
+        # Google names what was deleted, so `followed` is not needed. Deleted events are asked for
+        # on the first read too: after a reset it is how a deletion made in the meantime is seen.
+        # Nothing but `syncToken` may differ between reads.
         params: dict[str, Any] = {"maxResults": PAGE_SIZE, "showDeleted": "true", "singleEvents": "false"}
         if sync_token:
             params["syncToken"] = sync_token

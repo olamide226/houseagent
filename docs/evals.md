@@ -197,9 +197,9 @@ inventory events here, so calendar expectations are under `calendar`.
 
 ## Suite
 
-127 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (8), reminders (5),
+131 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (8), reminders (5),
 photos (6: four receipts, two fridge or freezer photos), onboarding, family and settings (13),
-presence (4: answers to the low-stock prompt and the "out and about" offer), product (18:
+presence (4: answers to the low-stock prompt and the "out and about" offer), product (22:
 what the assistant says about itself, [ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)),
 meals (10: what to cook, [ADR 0036](adr/0036-meal-ideas-from-a-short-stock-read.md)),
 household jobs (14, [ADR 0037](adr/0037-a-household-job-is-a-reminder-that-is-to-be-done.md)),
@@ -249,13 +249,19 @@ not, a feature that does not exist (ordering the shopping online), a how-to ques
 group, and where the jobs and the spending are shown. Each asserts no writes, plain words, and the
 word or page that has to be named.
 
-Five more are about an adult's own calendar
-([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)): how to get plans
+Nine more are about an adult's own calendar
+([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md),
+[ADR 0041](adr/0041-apple-calendar-is-caldav-with-an-app-specific-password.md)): how to get plans
 into Google Calendar where that is switched on (the Calendar page and its Connect button) and
-where it is not, whether an Apple calendar can be connected (no: the link, and no promise that
-changes come back), "is my Google calendar connected?" from someone whose calendar is, and "why
-have my plans stopped showing up there?" from someone whose connection stopped. `seed.own_calendar`
-gives an adult a connection in a named state. One calendar case goes with them: someone
+where it is not, "is my Google calendar connected?" from someone whose calendar is, and "why
+have my plans stopped showing up there?" from someone whose connection stopped. For Apple:
+whether an iPhone's calendar can be connected, where it is switched on (yes: the Calendar page
+and a password) and where it is not (no, and neither the button nor an app-specific password is
+named); the same two questions about a connection that is working and one that stopped; and
+someone who sends their Apple email and a password in chat, where nothing may be written (which
+is also what says it was not remembered), the password may not be said back, the reply may not
+claim to have connected anything, and the Calendar page has to be named. `seed.own_calendar`
+gives an adult a connection of either kind in a named state. One calendar case goes with them: someone
 connected books the dentist and then asks for it to be put in their Google calendar "as well",
 and there must still be one event.
 
@@ -276,6 +282,65 @@ pipeline's own reader. What no case exercises is the way in from a chat app: the
 download and the forward mark are covered by unit tests with stand-in payloads.
 
 ## Latest results
+
+One run of the whole suite with the loop runtime, 10 Oct 2026, with Apple Calendar
+([ADR 0041](adr/0041-apple-calendar-is-caldav-with-an-app-specific-password.md)) on top of
+spending, model `deepseek-flash` through both adapters: the 131 cases, 889 seconds. "Before" is
+`main` as this change was put on top of it, the "after" of spending
+[below](#previous-full-run-spending-from-receipts): the 127 cases it had. `main` was not run again.
+
+| Adapter | Before | After | NOOP | Undo | Input tokens after (cached) | Output tokens after |
+| --- | --- | --- | --- | --- | --- | --- |
+| `openai_compat` | 127/127 | **131/131** | 3/3 | 7/7 | 2,612,211 (2,140,160) | 36,747 |
+| `anthropic` | 127/127 | **130/131** | 3/3 | 7/7 | 2,611,897 (2,540,539) | 37,100 |
+
+| Category | `openai_compat` before | after | `anthropic` before | after |
+| --- | --- | --- | --- | --- |
+| inventory | 12/12 | 12/12 | 12/12 | 12/12 |
+| shopping list | 5/5 | 5/5 | 5/5 | 5/5 |
+| NOOP | 3/3 | 3/3 | 3/3 | 3/3 |
+| undo | 7/7 | 7/7 | 7/7 | 7/7 |
+| calendar | 8/8 | 8/8 | 8/8 | 8/8 |
+| reminders | 5/5 | 5/5 | 5/5 | 4/5 |
+| photos | 6/6 | 6/6 | 6/6 | 6/6 |
+| onboarding | 13/13 | 13/13 | 13/13 | 13/13 |
+| presence | 4/4 | 4/4 | 4/4 | 4/4 |
+| product | 18/18 | 22/22 | 18/18 | 22/22 |
+| meals | 10/10 | 10/10 | 10/10 | 10/10 |
+| household jobs | 14/14 | 14/14 | 14/14 | 14/14 |
+| letters | 9/9 | 9/9 | 9/9 | 9/9 |
+| spending | 13/13 | 13/13 | 13/13 | 13/13 |
+
+The release bar (95% overall and 100% on NOOP and undo, on at least two providers) is met on both
+endpoints. It is one sample per case, and the two endpoints are one model on two wire formats.
+
+**The one failure.** "Reminder in two hours" on `anthropic`: Ada asks at 12:00 to be reminded to
+ring her mum in two hours, and the reminder was set for 14:30, not 14:00. The case has nothing to
+do with calendars, but this change does make the guide longer on every turn, so it was run ten
+more times on each endpoint: 20 of 20 passed. That is one wrong time in 21 runs on that
+endpoint. Whether `main` does the same was not measured.
+
+**What changed in the suite.** Four product cases are new and one was rewritten. Before the full
+run the ten cases that touch an adult's own calendar (nine product cases and one calendar case)
+were run three times each on both endpoints: 57 of 60 passed. The three that failed were one case, "Apple Calendar gets the link and no promise"
+where neither calendar is switched on: the replies said, correctly, that it cannot be connected
+here and that whoever set this up has to switch it on, and did not go on to mention the one-way
+link, which the case required. A change made on the phone would not come back through that link
+anyway, so the case was asking for more than the question does. It now requires the "no", and
+that neither the button nor an app-specific password is named. It passed on both endpoints in
+the full run, once each.
+
+**What it costs.** With both calendars switched on the guide is 104 words longer than on `main`
+(1,545 against 1,441), all of it in the cached part of the prompt. With neither switched on a
+one-step turn reads 9,717 input tokens, against 9,714 before. The full run, the 60 runs before
+it and the 40 after it used about 6 million input tokens, most of them cached, and under 90,000
+output tokens. The account balance was not read before and after.
+
+What these cases do not show: anything about the sync itself. They ask the assistant how to
+connect a calendar and how one stands. The sync is covered by the unit and contract tests, and
+has never met iCloud.
+
+## Previous full run (spending from receipts)
 
 One run of the whole suite with the loop runtime, 10 Oct 2026, with spending from receipts
 ([ADR 0040](adr/0040-spending-is-kept-from-receipts-beside-the-stock-log.md)) on top of meal

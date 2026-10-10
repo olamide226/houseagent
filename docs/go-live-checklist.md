@@ -3,7 +3,8 @@
 What is still open before this is offered to the public. One household uses it today on one
 server, `houseagent.devng.host`, since 9 Oct 2026; nothing below stops that. Last checked against
 the code, the docs and that trial on 10 Oct 2026, with meal ideas, household jobs, Google
-Calendar, letters and spending merged.
+Calendar, letters and spending merged. Apple Calendar was added the same day and has its own
+heading.
 
 Each line has a status and a pointer to where the detail is.
 
@@ -73,8 +74,8 @@ item it is.
   [evals.md](evals.md#running)
 - [ ] **Not done.** Evals pass on a second model with an API key, several samples a case. The bar
   is met by one model on two wire formats. [evals.md](evals.md#latest-results)
-- [ ] **Not verified.** Meal ideas, household jobs, Google Calendar, letters and spending on the
-  model the server answers with. Their eval cases were run on `deepseek-flash` only;
+- [ ] **Not verified.** Meal ideas, household jobs, Google and Apple Calendar, letters and spending
+  on the model the server answers with. Their eval cases were run on `deepseek-flash` only;
   `claude-sonnet-5-5` has run the 10 product cases alone, twice each, 20 of 20.
   [evals.md](evals.md#previous-full-run-the-product-guide)
 - [ ] **Not done.** Choose the subscription providers' models. The whole suite was run on the
@@ -83,7 +84,8 @@ item it is.
 - [ ] **Not done.** The prompt has grown with each new tool and nobody has set a limit. One model
   step read 3,995 input tokens before the product guide and reads 9,714 now, before any of the
   conversation: about 990 for the guide, 177 for meal ideas, 1,500 for household jobs, 80 to 190
-  for Google Calendar, 1,208 for letters and 1,540 for spending. A turn is two or three steps, so
+  for Google Calendar, 1,208 for letters and 1,540 for spending. Apple Calendar added 104 words of
+  guide where it is switched on, and nothing where it is not. A turn is two or three steps, so
   19,000 to 29,000 tokens at the least, all in the cached part of the prompt. With an API key
   that is money on every turn of every household (eval runs on `deepseek-flash` cost 2 to 4
   cents for 1.18 million input tokens). On the subscription the server uses nothing is billed;
@@ -95,8 +97,9 @@ item it is.
 - [ ] **Not done.** A restore from such a backup is practised. One restore was done, when the
   household moved on 9 Oct 2026. [operations.md](operations.md#not-covered)
 - [ ] **Not done.** `CALENDAR_SECRET_KEY` is kept in the same backup as the database. Restored
-  without it, no connected calendar can be used until its owner connects again.
-  [operations.md](operations.md#the-key)
+  without it, no connected calendar can be used until its owner connects again. It opens each
+  adult's stored Apple password as well as their Google sign-in, so it is guarded as a password
+  is. [operations.md](operations.md#the-key)
 - [x] **Done, by 10 Oct 2026.** Migrations `0002` (household jobs), `0003` (calendar sync) and
   `0004` (receipts) applied on the server, each after a dump taken by hand. Nothing went wrong.
   [operations.md](operations.md#update-and-roll-back)
@@ -206,20 +209,53 @@ item it is.
   calendar scopes. While it is in Testing only listed people can connect, and each connection
   stops after 7 days. [operations.md](operations.md#testing-or-in-production)
 - [ ] **Not done.** An all-day event cannot be made in chat or on the Calendar page. One that
-  comes from a connected Google Calendar is kept, shown and named in the morning brief.
+  comes from a connected calendar is kept, shown and named in the morning brief.
   [data-model.md](data-model.md#calendar-rows)
-- [ ] **Not done.** Apple Calendar cannot be connected. It gets the one-way calendar link, and a
-  change made there does not come back. [ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)
-- [ ] **Not done.** An event made in Google Calendar can be reminded twice: by Google and by the
-  assistant. [ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)
-- [ ] **Not done.** A change made in Google Calendar takes up to two minutes to arrive, and a
-  date put back into a series there is not noticed. [ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)
+- [x] **Done, 10 Oct 2026, with Apple Calendar.** Apple Calendar can be connected, both ways. It
+  is built and has not met iCloud: see [Apple Calendar](#apple-calendar) below. [ADR 0041](adr/0041-apple-calendar-is-caldav-with-an-app-specific-password.md)
+- [ ] **Not done.** An event made in Google Calendar or on an iPhone can be reminded twice: by
+  the calendar and by the assistant. [ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)
+- [ ] **Not done.** A change made in a connected calendar takes up to two minutes to arrive, and
+  a date put back into a series in Google Calendar is not noticed (in Apple Calendar it is).
+  [ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)
 - [ ] **Not done.** Calendar sync for many households: Google's push notifications in place of a
   read every two minutes, and a way to find changed events without comparing every one every 15
   seconds. [ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)
 - [ ] **Not done.** The privacy policy says what is read from a connected calendar: every event
   on the one calendar picked, shown to the whole household and, as part of what is coming up,
   sent to the model provider. [ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)
+
+## Apple Calendar
+
+- [ ] **Not verified.** Apple Calendar sync against iCloud. It has only met a CalDAV server on
+  the test machine; no Apple account existed. With a real account, check: the sign-in with an
+  app-specific password and the list of calendars offered; the first read; a change each way,
+  and that it is not sent back; a moved and a deleted date of a series; an all-day event; that
+  iCloud accepts an event made here (its time zone, its name) and that the phone adds no alert
+  of its own to it; and that a removed password stops the connection with one message. [ADR 0041](adr/0041-apple-calendar-is-caldav-with-an-app-specific-password.md)
+- [ ] **Not verified.** What iCloud answers when it has forgotten our place in a calendar's
+  changes, whether it returns an `ETag` when an event is written, and how often it lets itself
+  be asked. Each was written to cope with more than one answer, and none was seen. [ADR 0041](adr/0041-apple-calendar-is-caldav-with-an-app-specific-password.md)
+- [ ] **Not verified.** The two steps on the page for making an app-specific password. They are
+  the words of Apple's own support page; nobody has followed them from this page.
+  [dashboard.md](dashboard.md#a-connected-apple-calendar)
+- [ ] **Not done.** `CALENDAR_SECRET_KEY` is set on the server. That alone lets an adult connect
+  an Apple Calendar; nothing is set up at Apple. The server has to be able to call out to
+  `caldav.icloud.com` and `pNN-caldav.icloud.com`. [operations.md](operations.md#apple-calendar)
+- [ ] **Not done.** Connecting asks the person to make an app-specific password at Apple, which
+  needs two-factor authentication on their account, and to make another whenever they change
+  their Apple password. Nothing simpler is published that this app could use. [ADR 0041](adr/0041-apple-calendar-is-caldav-with-an-app-specific-password.md)
+- [ ] **Not done.** The stored password is good for more than the one calendar picked. The
+  privacy policy says that it is kept, encrypted, what it could open, and that removing it at
+  Apple ends it. [operations.md](operations.md#apple-calendar)
+- [ ] **Not done.** A change made here to an event with guests on an Apple Calendar is not sent,
+  because iCloud would email the guests. The two copies then differ until the event next
+  changes on the phone. [ADR 0041](adr/0041-apple-calendar-is-caldav-with-an-app-specific-password.md)
+- [ ] **Not done.** A calendar with more than 10,000 events cannot be connected, and nothing on
+  the page says why: it stays on "Bringing your plans over". [ADR 0041](adr/0041-apple-calendar-is-caldav-with-an-app-specific-password.md)
+- [ ] **Not done.** The form does not limit how often a sign-in is tried. Apple counts wrong
+  passwords, and an adult could type someone else's address.
+  [dashboard.md](dashboard.md#a-connected-apple-calendar)
 
 ## Letters, invites and forwards
 
@@ -228,7 +264,7 @@ item it is.
   stand-in webhooks. [agent-and-tools.md](agent-and-tools.md#letters-invites-and-forwards)
 - [ ] **Not done.** A day with no time in a letter (a day off school, a form due back) is a
   reminder the evening before, not an all-day event, so it is not in the calendar feed or in a
-  connected Google Calendar.
+  connected calendar.
   [ADR 0039](adr/0039-a-letter-is-one-call-and-a-day-with-no-time-is-a-reminder.md)
 - [ ] **Not done.** A scanned PDF, a Word file and a photo in Apple's HEIC format sent as a file
   are not read; the assistant says so and asks for a photo. Nothing can be emailed to it.
@@ -251,7 +287,7 @@ item it is.
 
 - [ ] **Not verified.** A real receipt keeps its shop, its total and the price of each line. Only
   drawn receipts of eight lines have been read: no weights, multi-buys, VAT lines or creases.
-  [evals.md](evals.md#latest-results)
+  [evals.md](evals.md#previous-full-run-spending-from-receipts)
 - [ ] **Not verified.** "On food" and the split by kind of thing rest on the nightly sorting of
   items, and price changes on staples have not been checked against a real run of receipts.
   [agent-and-tools.md](agent-and-tools.md#spending-appservicesspendingpy)

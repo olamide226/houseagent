@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.agent.actions import Recorder, record
 from app.agent.base import Ctx, ToolError
-from app.calendars import google
+from app.calendars import apple, google
 from app.calendars.base import (
     DEFAULT_LENGTH,
     AuthLost,
@@ -43,7 +43,7 @@ from app.pipeline.router import enqueue
 from app.services import calendar, members
 
 log = structlog.get_logger()
-PROVIDERS = {"google": "Google Calendar"}    # as a person would name each
+PROVIDERS = {"google": "Google Calendar", "apple": "Apple Calendar"}    # as a person would name each
 PULL_EVERY = timedelta(minutes=2)            # how often a calendar is asked what changed
 LEASE = timedelta(minutes=5)                 # a round that died is picked up again after this
 FIRST_WAIT = timedelta(seconds=30)           # after a failure; doubled each time, up to MAX_WAIT
@@ -52,6 +52,8 @@ SEND_AT_ONCE = 50                            # events sent in one round; the res
 KEEP_ENDED = timedelta(days=30)              # a one-off this long over is no longer followed
 STOPPED = ("I can no longer reach your {calendar}, so plans are not being copied between it and me. To fix it, "
            "send me the word dashboard, open Calendar and tap Connect again.")
+# Apple shows a password once, so connecting again takes a new one.
+STOPPED_MORE = {"apple": " It needs a new app-specific password from Apple: the page shows how to make one."}
 
 
 # ---------------------------------------------------------------- connecting
@@ -145,6 +147,9 @@ def unseal(settings: Settings, sealed: str) -> dict[str, str]:
 def provider_for(settings: Settings, connection: dict[str, Any]) -> Any:
     """The connected calendar as something to `async with`."""
     secret = unseal(settings, connection["secret"])
+    if connection["provider"] == "apple":
+        return apple.AppleCalendar(settings.apple_caldav_url, secret["username"], secret["password"],
+                                   connection["calendar_id"], connection["timezone"])
     assert settings.google_client_id and settings.google_client_secret
     return google.GoogleCalendar(settings.google_client_id, settings.google_client_secret, secret["refresh_token"],
                                  connection["calendar_id"], connection["timezone"])
@@ -444,10 +449,13 @@ async def sync(connection: dict[str, Any], provider: Provider, now: datetime) ->
     done = {"read": 0, "applied": 0, "sent": 0, "refused": 0}
     pulled = None
     if connection["next_pull_at"] is None or connection["next_pull_at"] <= now:
+        async with tx() as conn:   # what is followed, for a calendar that says "gone" only by leaving it out
+            followed = [link["remote_id"] for link in await fetch_all(
+                conn, "select remote_id from calendar_links where connection_id = :c", c=connection["id"])]
         try:
-            pulled = await provider.changes(connection["sync_token"], now)
+            pulled = await provider.changes(connection["sync_token"], now, followed)
         except SyncReset:
-            pulled = await provider.changes(None, now)
+            pulled = await provider.changes(None, now, followed)
         done["read"] = len(pulled[0])
     async with tx() as conn:
         await advisory_lock(conn, connection["household_id"])   # as a turn does: no two writers at once
@@ -506,7 +514,8 @@ async def finish(connection: dict[str, Any], now: datetime, error: Exception | N
         log.warning("calendar_connection_broken", connection_id=connection["id"], reason=reason)
         return bool(await enqueue(conn, OutboundMessage(
             household_id=connection["household_id"], target="member", member_id=connection["member_id"],
-            text=STOPPED.format(calendar=PROVIDERS[connection["provider"]]),
+            text=STOPPED.format(calendar=PROVIDERS[connection["provider"]])
+            + STOPPED_MORE.get(connection["provider"], ""),
             dedupe_key=f"calendar_stopped:{connection['id']}:{now:%Y-%m-%d}"), send_after=now))
 
 

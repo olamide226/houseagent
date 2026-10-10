@@ -19,6 +19,7 @@ class Setup:
     voice_notes: bool = False    # a transcriber is configured
     shop_shortcut: bool = False  # the admin has shared the Shortcut (PRESENCE_SHORTCUT_URL)
     google_calendar: bool = False   # an adult can connect their own Google Calendar (GOOGLE_CLIENT_ID and the rest)
+    apple_calendar: bool = False    # and their own Apple Calendar (CALENDAR_SECRET_KEY alone)
 
 
 INTRO = (
@@ -113,19 +114,38 @@ SENDS = {
     "sync_calendars": "a note to an adult whose own connected calendar has stopped working, with how to connect it "
                       "again",
 }
-# An adult's own calendar, kept in step with the plans here (app/services/calendar_sync.py, ADR 0038).
+# An adult's own calendar, kept in step with the plans here (app/services/calendar_sync.py, ADR 0038
+# and ADR 0041). Which of the two can be connected depends on what the installation has switched on.
 OWN_CALENDAR = (
-    "Their own Google Calendar: an adult connects it on the Calendar page, by tapping Connect Google Calendar, "
-    "saying yes to Google, and picking one calendar to share with the household. From then on a plan made with you "
-    "appears in that calendar within a minute, and what they add, change or delete in it appears here within a few "
-    "minutes, things that last all day too. You still send the reminders. Each adult connects their own, and stops "
-    "it with Disconnect on the same page. If it stops working by itself they tap Connect again there. You cannot "
-    "connect or disconnect it from chat. Apple Calendar cannot be connected like this yet: the link on the Calendar "
-    "page shows the plans there, but a change made there does not come back here.")
+    "Their own calendar: an adult can connect the {which} they already use, on the Calendar page, under Your own "
+    "calendar. {how} From then on a plan made with you appears in that calendar within a minute, and what they add, "
+    "change or delete in it appears here within a few minutes, things that last all day too. You still send the "
+    "reminders. Each adult connects their own, and stops it with Disconnect on the same page. If it stops working "
+    "by itself they tap Connect again there. You cannot connect or disconnect it from chat.")
+CONNECT_GOOGLE = ("For Google they tap Connect Google Calendar, say yes to Google, and pick one calendar to share "
+                  "with the household.")
+CONNECT_APPLE = (
+    "For Apple (the iCloud calendar on an iPhone or a Mac) they tap Connect Apple Calendar, type the email they "
+    "sign in to Apple with and an app-specific password, and pick one calendar to share. An app-specific password "
+    "is a separate password that Apple makes for this at account.apple.com: the page shows the two steps. The "
+    "password they sign in to Apple with is never used. A password is only ever typed on that page: never ask for "
+    "one in chat, and if someone sends you one, do not repeat it or remember it, and say it goes on the Calendar "
+    "page. An Apple calendar that has stopped working needs a new app-specific password, made the same way.")
+NO_GOOGLE = (" Google Calendar cannot be connected in this household yet: whoever set this up has to switch it on "
+             "first.")
 NO_OWN_CALENDAR = (
     "Their own Google Calendar or Apple Calendar cannot be connected in this household yet, so a change made there "
-    "does not come back here: for Google, whoever set this up has to switch it on first. The link on the Calendar "
-    "page shows the plans in either.")
+    "does not come back here: whoever set this up has to switch it on first. The link on the Calendar page shows "
+    "the plans in either.")
+
+
+def _own_calendar(setup: Setup) -> str:
+    on = [(name, how) for switched, name, how in ((setup.google_calendar, "Google Calendar", CONNECT_GOOGLE),
+                                                   (setup.apple_calendar, "Apple Calendar", CONNECT_APPLE)) if switched]
+    if not on:
+        return NO_OWN_CALENDAR
+    text = OWN_CALENDAR.format(which=" or ".join(name for name, _ in on), how=" ".join(how for _, how in on))
+    return text if setup.google_calendar else text + NO_GOOGLE
 
 
 # How a household job is answered. The times are the ones in app/services/jobs.py.
@@ -186,7 +206,7 @@ def product_guide(setup: Setup) -> str:
         "A family group: they add you to a group chat they already have and write something there. What is for "
         "everyone then goes to it.",
         shops,
-        OWN_CALENDAR if setup.google_calendar else NO_OWN_CALENDAR,
+        _own_calendar(setup),
         "What you send by yourself: " + "; ".join(SENDS.values()) + ". Quiet hours hold these back until they are "
         "over, except a reminder set for a time inside them or asked for as urgent.",
     ]

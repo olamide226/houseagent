@@ -55,7 +55,7 @@
 
 # With a Google Calendar connected (ADR 0038) a plan is still booked once, here; the worker copies it.
 - name: asked to add a plan to Google Calendar as well it is not booked twice
-  seed: {setup: {google_calendar: true}, own_calendar: {Ola: {status: active, name: Family}}}
+  seed: {setup: {google_calendar: true, apple_calendar: true}, own_calendar: {Ola: {status: active, name: Family}}}
   turns:
     - {from: Ola, text: "Ada has the dentist on Friday at 2pm"}
     - {from: Ola, text: "can you put that in my Google calendar as well?"}

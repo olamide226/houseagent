@@ -47,7 +47,7 @@ built and not made up ([ADR 0034](adr/0034-the-assistant-is-told-what-is-built.m
 the static prompt, before the cache break, and says: what people do by talking, the two words
 answered by code (`dashboard`, `shops`), each web page by the name in its menu, invites, chat
 apps, the family group, photos, files and voice notes, how a household job is answered, an adult's
-own Google Calendar, and what the assistant sends by itself. It opens
+own Google or Apple Calendar, and what the assistant sends by itself. It opens
 with three rules: answer such a question in a DM or the group, in a line or two with the exact
 word or page; say "I can't do that yet" for anything not listed; never make up a feature, a page,
 a word or a link.
@@ -64,7 +64,8 @@ holds what is switched on, and the guide only says what is true there:
 | `photos` | `LLM_SUPPORTS_IMAGES` and a media backend | "A receipt or the fridge", or "you cannot read photos in this household yet" |
 | `voice_notes` | `STT_*` being set | The same for voice notes |
 | `shop_shortcut` | `PRESENCE_SHORTCUT_URL` | Without it, the list at the shop "is not ready for everyone yet" |
-| `google_calendar` | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `CALENDAR_SECRET_KEY` all set | How an adult connects their own Google Calendar and what then goes both ways, or that it "cannot be connected in this household yet". Either way it says Apple Calendar only gets the one-way link |
+| `google_calendar` | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `CALENDAR_SECRET_KEY` all set | How an adult connects their own Google Calendar and what then goes both ways, or that it "cannot be connected in this household yet" |
+| `apple_calendar` | `CALENDAR_SECRET_KEY` set | How an adult connects their own Apple Calendar: the email they sign in to Apple with and an app-specific password, typed on the Calendar page. It also says a password is never asked for in chat, and one that is sent is not repeated or remembered. With neither calendar switched on, both "cannot be connected in this household yet" and the one-way link is what there is |
 
 **It cannot drift without a test failing.** Each part of the guide is a dict keyed by the code
 it describes, and `tests/unit/test_guide.py` compares the keys both ways:

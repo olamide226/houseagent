@@ -25,7 +25,7 @@ from tests.helpers import add_member, london, seed_home, technical_words
 from tests.unit.test_loop import envelope
 
 EVERYTHING = Setup(chat_apps=("telegram", "whatsapp", "imessage"), photos=True, voice_notes=True, shop_shortcut=True,
-                   google_calendar=True)
+                   google_calendar=True, apple_calendar=True)
 SENDS_NOTHING = {"expand_recurrence"}   # makes the reminder rows that fire_reminders later sends
 NOW = london("2026-10-05 12:00")
 
@@ -70,7 +70,7 @@ def test_the_numbers_in_the_guide_are_the_codes():
 
 
 def test_the_guide_is_in_family_words_whatever_is_switched_on():
-    for setup in (Setup(), EVERYTHING, Setup(photos=False)):
+    for setup in (Setup(), EVERYTHING, Setup(photos=False), Setup(apple_calendar=True)):
         guide = product_guide(setup)
         assert technical_words(guide) == []
 
@@ -88,15 +88,27 @@ def test_the_guide_only_says_what_this_installation_has_switched_on():
     assert "this household can use Telegram, WhatsApp and iMessage. To be messaged in another" in full
     assert "whoever set this up has one thing to do first" in bare
     assert "one thing to do first" not in full
-    assert "tapping Connect Google Calendar" in full and "Apple Calendar cannot be connected like this yet" in full
-    assert "Connect Google Calendar" not in bare and "cannot be connected in this household yet" in bare
+    assert "connect the Google Calendar or Apple Calendar they already use" in full
+    assert "they tap Connect Google Calendar, say yes to Google" in full
+    assert "they tap Connect Apple Calendar, type the email they sign in to Apple with and an app-specific password" in full
+    assert "Connect Google Calendar" not in bare and "Connect Apple Calendar" not in bare
+    assert "Their own Google Calendar or Apple Calendar cannot be connected in this household yet" in bare
     assert "cannot be connected in this household yet" not in full
+    # The key alone switches Apple on; Google also needs its own client. The guide says which is which.
+    apple_only = product_guide(Setup(apple_calendar=True))
+    assert "connect the Apple Calendar they already use" in apple_only and "Connect Google Calendar" not in apple_only
+    assert "Google Calendar cannot be connected in this household yet: whoever set this up has to switch it on" in apple_only
+    for guide in (full, apple_only):                 # a password is typed on the page and nowhere else
+        assert "never ask for one in chat, and if someone sends you one, do not repeat it or remember it" in guide
+        assert "The password they sign in to Apple with is never used." in guide
 
 
 def test_what_is_switched_on_is_read_from_the_settings_and_the_media_store():
-    settings = get_settings()        # as the tests configure it: three chat apps, Google Calendar, no transcriber, no shortcut
+    settings = get_settings()        # as the tests configure it: three chat apps, both calendars, no transcriber, no shortcut
     assert setup_of(settings, None) == Setup(chat_apps=("telegram", "whatsapp", "imessage"), photos=False,
-                                             google_calendar=True)
+                                             google_calendar=True, apple_calendar=True)
+    assert setup_of(settings.model_copy(update={"google_client_id": None}), None) == Setup(
+        chat_apps=("telegram", "whatsapp", "imessage"), photos=False, apple_calendar=True)   # the key alone: Apple
     stored = object()
     assert setup_of(settings, stored).photos                                                    # type: ignore[arg-type]
     assert not setup_of(settings.model_copy(update={"llm_supports_images": False}), stored).photos   # type: ignore[arg-type]

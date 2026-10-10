@@ -8,6 +8,8 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from tests.caldav import Server, free_port
+
 TEST_DATABASE = "houseagent_test"
 TEST_URL = os.environ.get("TEST_DATABASE_URL", f"postgresql+asyncpg://localhost/{TEST_DATABASE}")
 
@@ -38,6 +40,9 @@ os.environ.update(
     GOOGLE_CLIENT_ID="test-client.apps.googleusercontent.test",
     GOOGLE_CLIENT_SECRET="test-client-secret",
     CALENDAR_SECRET_KEY=Fernet.generate_key().decode(),   # a new key every run: nothing is stored between runs
+    # Apple's iCloud is stood in for by a CalDAV server on this machine, started by the `icloud`
+    # fixture when a test first asks for it. No test reaches the real one.
+    APPLE_CALDAV_URL=f"http://127.0.0.1:{free_port()}",
 )
 for name in ("STT_PROVIDER", "STT_BASE_URL", "STT_MODEL", "WA_API_VERSION", "WA_REMINDER_TEMPLATE", "BB_PRIVATE_API"):
     os.environ.pop(name, None)
@@ -70,6 +75,21 @@ def _schema() -> None:
 async def _clean_tables(_schema: None) -> None:
     async with db.tx() as conn:
         await conn.execute(text("truncate households cascade"))
+
+
+@pytest.fixture(scope="session")
+def _caldav(tmp_path_factory):
+    server = Server(int(os.environ["APPLE_CALDAV_URL"].rpartition(":")[2]), tmp_path_factory.mktemp("caldav"))
+    server.start()
+    yield server
+    server.stop()
+
+
+@pytest.fixture
+def icloud(_caldav):
+    """The stand-in for iCloud (tests/caldav.py), with no calendars on it."""
+    _caldav.empty()
+    return _caldav
 
 
 @pytest.fixture

@@ -43,6 +43,7 @@ class FakeCalendar:
         self.refuse: set[str] = set()         # summaries the calendar will not take, new or changed
         self.forgotten = False                # the next read with a token is answered "start again"
         self.reads: list[str | None] = []
+        self.followed: list[list[str]] = []   # the ids the sync said it follows, at each read
         self._n = 0
 
     async def __aenter__(self) -> "FakeCalendar":
@@ -87,8 +88,9 @@ class FakeCalendar:
         return [call for call in self.calls if call[0] == what]
 
     # What the sync asks of it (`Provider`).
-    async def changes(self, sync_token, since):
+    async def changes(self, sync_token, since, followed=()):
         self.reads.append(sync_token)
+        self.followed.append(sorted(followed))
         if self.fail:
             failure, self.fail = self.fail, None
             raise failure
@@ -213,6 +215,20 @@ async def test_a_plan_made_in_chat_appears_on_the_calendar_once_and_is_never_sen
         logged = await fetch_all(conn, "select tool, source from agent_actions order by created_at")
     assert link["event_id"] == event["id"] and link["remote_id"] == remote_id
     assert logged == [{"tool": "schedule_event", "source": "agent"}]      # sending is not a change to the household
+
+
+async def test_each_time_it_is_asked_what_changed_the_calendar_is_told_what_is_followed_here(calendars):
+    """A CalDAV calendar says an event is gone only by leaving it out, so it has to know what to look for."""
+    async with tx() as conn:
+        home = await family(conn)
+    theirs = await connect(home, calendars=calendars)
+    hair = theirs.add("Hairdresser", "2026-10-07 16:00")
+    await say(home, "schedule_event", title="Dentist", starts_at="2026-10-09T14:00")
+    await rounds(2)
+    assert theirs.followed == [[], sorted([hair, theirs.named("Dentist").id])]
+    theirs.forgotten = True
+    await rounds(1, start=2)                        # and again when everything is read from the start
+    assert theirs.followed[2] == theirs.followed[3] == theirs.followed[1] and theirs.reads[-1] is None
 
 
 async def test_moving_an_event_sends_only_what_changed_and_cancelling_removes_it_there(calendars):

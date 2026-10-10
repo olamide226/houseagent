@@ -90,7 +90,7 @@ itself is the secret, and a request that a browser marks as coming from another 
 | Today | `/dashboard` | Shopping list count, today's and tomorrow's events and reminders, the household jobs that are waiting or due by tomorrow, what is running low or has run out, what goes out of date within 3 days, and a line saying how to ask the assistant what to cook | Quick-add to the list, tick a job off |
 | Shopping list | `/dashboard/shopping` | Active list, then "You might also need" | Add, tick off with the circle, remove, set the shop |
 | Pantry | `/dashboard/inventory` | Stock by location, filter by status; per-item history | Set a count, mark none left, edit an item (other names, always kept in, low threshold, usual place), merge a duplicate |
-| Calendar | `/dashboard/calendar` | The next 30 days with repeats expanded, the repeating series, standalone reminders, the viewer's own connected Google Calendar and who else has one | Add an event (once, daily, weekly or monthly), edit title, time and place, cancel, skip one date of a series, cancel a reminder, connect or disconnect a Google Calendar, get the calendar link |
+| Calendar | `/dashboard/calendar` | The next 30 days with repeats expanded, the repeating series, standalone reminders, the viewer's own connected Google or Apple Calendar and who else has one | Add an event (once, daily, weekly or monthly), edit title, time and place, cancel, skip one date of a series, cancel a reminder, connect or disconnect a Google or an Apple Calendar, get the calendar link |
 | More | `/dashboard/more` | The pages below, each with a line about what it is for | Log out |
 | Spending | `/dashboard/spending` | One month, from the receipts that were sent: the total, by shop, by kind of thing with what the lines do not account for, the last six months, price changes on staples, and each receipt. `?month=2026-09` shows another month | Correct a receipt's shop, day, total or a line's price, clear a line's price, take a receipt out |
 | Jobs | `/dashboard/jobs` | Household jobs, renewals and birthdays: the ones asked about and not done yet, then what is coming up, each with whose it is, when it is due and how often it comes round | Tick a job off with the circle (the next one is then set), skip one, stop one |
@@ -235,7 +235,7 @@ check can show that item as different until the next event or a rebuild.
 
 ## A connected Google Calendar
 
-Under "Google Calendar" on the Calendar page each adult can connect their own, and plans then go
+Under "Your own calendar" on the Calendar page each adult can connect their own, and plans then go
 both ways ([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)). It is two
 taps and one choice:
 
@@ -261,11 +261,12 @@ be reached, or the answer came back more than ten minutes later or to someone el
 
 | The card shows | When |
 | --- | --- |
-| "Connect Google Calendar" | Nothing is connected |
+| "Connect Google Calendar", and "Connect Apple Calendar" ([below](#a-connected-apple-calendar)) | Nothing is connected |
 | The calendars to pick from, and "Not now" | Signed in, none picked |
 | The calendar's name and address, "Connected", and "Disconnect" | Working. If Google is not answering it says so, and that it will be tried again |
 | "Your Google Calendar has stopped being kept in step", with "Connect again" | The sign-in no longer works. The person was also told in chat |
-| "Google Calendar is not switched on for this household yet" | The installation has no Google client or key ([operations.md](operations.md#google-calendar)) |
+| "Google Calendar is not switched on for this household yet", under the Apple form | The installation has the key and no Google client ([operations.md](operations.md#google-calendar)) |
+| "Connecting a Google or Apple calendar is not switched on for this household yet" | The installation has no key |
 
 Below the card, each other adult who has connected one is listed with its name. An adult can
 only disconnect their own. **Disconnect** deletes the stored sign-in and tells Google it is
@@ -277,6 +278,41 @@ What then happens to events, and what does not, is in
 Activity page under the owner's name, "in their own calendar", with an Undo button; undoing it
 removes it from the calendar as well. Connecting and disconnecting are logged there too, with
 nothing to undo.
+
+## A connected Apple Calendar
+
+The same card connects an Apple (iCloud) calendar
+([ADR 0041](adr/0041-apple-calendar-is-caldav-with-an-app-specific-password.md)). Apple has no
+page to say yes on, so the person makes a password for this at Apple and types it here:
+
+1. **Connect Apple Calendar** opens a short form. Above it are Apple's two steps, in Apple's own
+   words: open account.apple.com (a link) and choose App-Specific Passwords under Sign-In and
+   Security; then Generate an app-specific password, name it, and copy what Apple shows. The
+   form says that the password they sign in to Apple with is never typed here.
+2. They type the email they sign in to Apple with and the app-specific password, and the form is
+   posted to `/dashboard/calendar/connect/apple`. The pair is tried against iCloud at once. If
+   Apple accepts it, it is stored encrypted and the card asks **which calendar to share**, as
+   for Google; if not, the page says so and keeps nothing. The password is never shown back.
+3. From there it is the same: "Bringing your plans over", then Connected.
+
+<p>
+  <img src="img/dashboard/calendar-apple.png" width="230" alt="Calendar: the two steps and the form for connecting an Apple Calendar">
+  <img src="img/dashboard/calendar-apple-choose.png" width="230" alt="Calendar: picking which Apple calendar to share with the household">
+  <img src="img/dashboard/calendar-apple-connected.png" width="230" alt="Calendar: a connected Apple Calendar">
+</p>
+
+| The page says | When |
+| --- | --- |
+| "Apple did not accept that email and password. It has to be an app-specific password…" | Apple answered that the sign-in is wrong. It was asked once |
+| "That Apple account has no calendar that plans can be added to." | The account has only calendars that can be looked at, or reminders |
+| "Apple could not be reached just now. Try again in a minute." | A fault, a timeout or a rate limit at Apple |
+| "Disconnect the calendar you have connected first." | The person already has a working connection |
+| "Your Apple Calendar has stopped being kept in step", with the form again and "Connect again" | The password was removed at Apple, or the person changed their Apple password, which cancels every such password. They were also told in chat |
+| "Apple Calendar is disconnected. The password you made for it still works at Apple until you remove it…" | After **Disconnect**: Apple cannot be told, so the person is told where to remove it |
+
+A calendar that holds only reminders, and one that someone else lets them look at but not
+change, are not offered. An event with guests comes in as a plan, but a change made here to it
+is not sent: iCloud would email the guests.
 
 ## Calendar feed
 
