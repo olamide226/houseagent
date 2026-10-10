@@ -1,4 +1,4 @@
-"""Two-way calendar sync (ADR 0036): an adult's connected calendar, what each household event is
+"""Two-way calendar sync (ADR 0037): an adult's connected calendar, what each household event is
 on it, events that last all day, and `calendar` as a source of logged changes."""
 from alembic import op
 

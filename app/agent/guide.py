@@ -93,7 +93,7 @@ SENDS = {
     "sync_calendars": "a note to an adult whose own connected calendar has stopped working, with how to connect it "
                       "again",
 }
-# An adult's own calendar, kept in step with the plans here (app/services/calendar_sync.py, ADR 0036).
+# An adult's own calendar, kept in step with the plans here (app/services/calendar_sync.py, ADR 0037).
 OWN_CALENDAR = (
     "Their own Google Calendar: an adult connects it on the Calendar page, by tapping Connect Google Calendar, "
     "saying yes to Google, and picking one calendar to share with the household. From then on a plan made with you "

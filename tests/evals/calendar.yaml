@@ -53,7 +53,7 @@
   expect:
     calendar: [{title_contains: boiler, local_start: "Thu 8 Oct 14:00", repeats: false}]
 
-# With a Google Calendar connected (ADR 0036) a plan is still booked once, here; the worker copies it.
+# With a Google Calendar connected (ADR 0037) a plan is still booked once, here; the worker copies it.
 - name: asked to add a plan to Google Calendar as well it is not booked twice
   seed: {setup: {google_calendar: true}, own_calendar: {Ola: {status: active, name: Family}}}
   turns:

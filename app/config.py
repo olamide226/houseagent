@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     bb_webhook_secret: str | None = None
     bb_private_api: bool = False
 
-    # Two-way calendar sync (ADR 0036). An adult can connect a Google Calendar once the OAuth client
+    # Two-way calendar sync (ADR 0037). An adult can connect a Google Calendar once the OAuth client
     # and the key that encrypts each stored sign-in are all set.
     google_client_id: str | None = None
     google_client_secret: str | None = None

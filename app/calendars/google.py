@@ -1,6 +1,6 @@
 """Google Calendar, through its REST API v3 and OAuth 2.0 for web server applications.
 
-Everything here follows Google's documentation as read in October 2026 (ADR 0036 names the
+Everything here follows Google's documentation as read in October 2026 (ADR 0037 names the
 pages). None of it has been run against Google: no credentials existed when it was written.
 The tests replay responses built from the documented shapes.
 """

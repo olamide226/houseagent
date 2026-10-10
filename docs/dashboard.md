@@ -210,7 +210,7 @@ check can show that item as different until the next event or a rebuild.
 ## A connected Google Calendar
 
 Under "Google Calendar" on the Calendar page each adult can connect their own, and plans then go
-both ways ([ADR 0036](adr/0036-a-connected-calendar-is-a-second-copy-kept-in-step.md)). It is two
+both ways ([ADR 0037](adr/0037-a-connected-calendar-is-a-second-copy-kept-in-step.md)). It is two
 taps and one choice:
 
 1. **Connect Google Calendar** is a link to `/dashboard/calendar/connect/google`, which sends the

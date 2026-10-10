@@ -1,4 +1,4 @@
-"""Two-way calendar sync (ADR 0036): what a connected calendar and the household's events do to
+"""Two-way calendar sync (ADR 0037): what a connected calendar and the household's events do to
 each other, judged by rows here and by what the calendar was asked to do.
 
 The calendar is `FakeCalendar`, an in-memory one that keeps etags and a list of changes the way a

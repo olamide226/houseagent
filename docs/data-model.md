@@ -179,7 +179,7 @@ A household job is a `reminders` row with a `kind` and no event
 ## Connected calendars
 
 `calendar_connections` has one row per adult who has signed in to their own calendar
-([ADR 0036](adr/0036-a-connected-calendar-is-a-second-copy-kept-in-step.md)).
+([ADR 0037](adr/0037-a-connected-calendar-is-a-second-copy-kept-in-step.md)).
 
 - `status` is `choosing` (signed in; `choices` lists the calendars to pick from), `active`, or
   `broken` (it stopped for good and its owner was told; `last_error` says why).

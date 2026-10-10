@@ -1,4 +1,4 @@
-"""Two-way sync between the household's events and the calendars adults connect (ADR 0036).
+"""Two-way sync between the household's events and the calendars adults connect (ADR 0037).
 
 The household's `events` table stays the source of truth. A connected calendar is a second copy
 of it: each round reads what changed there and applies it here through `services/calendar.py`,

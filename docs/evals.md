@@ -174,9 +174,9 @@ inventory events here, so calendar expectations are under `calendar`.
 
 ## Suite
 
-97 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (7), reminders (5),
+103 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (8), reminders (5),
 photos (6: four receipts, two fridge or freezer photos), onboarding, family and settings (13),
-presence (4: answers to the low-stock prompt and the "out and about" offer), product (11:
+presence (4: answers to the low-stock prompt and the "out and about" offer), product (16:
 what the assistant says about itself, [ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)),
 meals (10: what to cook, [ADR 0036](adr/0036-meal-ideas-from-a-short-stock-read.md)),
 and household jobs (14, [ADR 0037](adr/0037-a-household-job-is-a-reminder-that-is-to-be-done.md)).
@@ -206,7 +206,7 @@ not, a feature that does not exist (ordering the shopping online), and a how-to 
 family group. Each asserts no writes, plain words, and the word or page that has to be named.
 
 Five more are about an adult's own calendar
-([ADR 0036](adr/0036-a-connected-calendar-is-a-second-copy-kept-in-step.md)): how to get plans
+([ADR 0037](adr/0037-a-connected-calendar-is-a-second-copy-kept-in-step.md)): how to get plans
 into Google Calendar where that is switched on (the Calendar page and its Connect button) and
 where it is not, whether an Apple calendar can be connected (no: the link, and no promise that
 changes come back), "is my Google calendar connected?" from someone whose calendar is, and "why

@@ -1,4 +1,4 @@
-"""Connecting an adult's own Google Calendar from the Calendar page (ADR 0036): the trip to Google
+"""Connecting an adult's own Google Calendar from the Calendar page (ADR 0037): the trip to Google
 and back, picking the one calendar to share, and disconnecting. Google is mocked with respx."""
 from datetime import timedelta
 from urllib.parse import parse_qs, urlsplit

@@ -48,7 +48,7 @@ not in this repository, so the line itself is all there is here.
   [dashboard.md](dashboard.md#calendar-feed)
 - [ ] **Not verified.** Google Calendar sync against Google: the sign-in, the first read, a
   change each way, a deleted and a moved date of a series, an all-day event. There are no Google
-  credentials yet, and the ADR lists what was taken from Google's docs on trust. [ADR 0036](adr/0036-a-connected-calendar-is-a-second-copy-kept-in-step.md)
+  credentials yet, and the ADR lists what was taken from Google's docs on trust. [ADR 0037](adr/0037-a-connected-calendar-is-a-second-copy-kept-in-step.md)
 - [ ] **Not done.** The owner makes the Google OAuth client and sets `GOOGLE_CLIENT_ID`,
   `GOOGLE_CLIENT_SECRET` and `CALENDAR_SECRET_KEY` on the server.
   [operations.md](operations.md#google-calendar)
@@ -142,11 +142,11 @@ not in this repository, so the line itself is all there is here.
   comes from a connected Google Calendar is kept, shown and named in the morning brief.
   [data-model.md](data-model.md#calendar-rows)
 - [ ] **Not done.** Apple Calendar cannot be connected. It gets the one-way calendar link, and a
-  change made there does not come back. [ADR 0036](adr/0036-a-connected-calendar-is-a-second-copy-kept-in-step.md)
+  change made there does not come back. [ADR 0037](adr/0037-a-connected-calendar-is-a-second-copy-kept-in-step.md)
 - [ ] **Not done.** An event made in Google Calendar can be reminded twice: by Google and by the
-  assistant. [ADR 0036](adr/0036-a-connected-calendar-is-a-second-copy-kept-in-step.md)
+  assistant. [ADR 0037](adr/0037-a-connected-calendar-is-a-second-copy-kept-in-step.md)
 - [ ] **Not done.** A change made in Google Calendar takes up to two minutes to arrive, and a
-  date put back into a series there is not noticed. [ADR 0036](adr/0036-a-connected-calendar-is-a-second-copy-kept-in-step.md)
+  date put back into a series there is not noticed. [ADR 0037](adr/0037-a-connected-calendar-is-a-second-copy-kept-in-step.md)
 - [ ] **Not done.** A receipt can still add an item beside its twin ("coconut milk", "semi skimmed
   milk"). [ADR 0031](adr/0031-rules-the-model-kept-breaking.md)
 
@@ -161,10 +161,10 @@ not in this repository, so the line itself is all there is here.
   stops after 7 days. [operations.md](operations.md#testing-or-in-production)
 - [ ] **Not done.** Calendar sync for many households: Google's push notifications in place of a
   read every two minutes, and a way to find changed events without comparing every one every 15
-  seconds. [ADR 0036](adr/0036-a-connected-calendar-is-a-second-copy-kept-in-step.md)
+  seconds. [ADR 0037](adr/0037-a-connected-calendar-is-a-second-copy-kept-in-step.md)
 - [ ] **Not done.** The privacy policy says what is read from a connected calendar: every event
   on the one calendar picked, shown to the whole household and, as part of what is coming up,
-  sent to the model provider. [ADR 0036](adr/0036-a-connected-calendar-is-a-second-copy-kept-in-step.md)
+  sent to the model provider. [ADR 0037](adr/0037-a-connected-calendar-is-a-second-copy-kept-in-step.md)
 - [ ] **Not done.** A privacy policy and terms, naming the model provider that reads messages and
   photos. [operations.md](operations.md#media-storage)
 - [ ] **Not done.** A household can export and delete its data. Today an admin can download a

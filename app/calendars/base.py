@@ -1,4 +1,4 @@
-"""What a connected calendar is to the rest of the app (ADR 0036).
+"""What a connected calendar is to the rest of the app (ADR 0037).
 
 `Entry` is one event in the form both sides can hold, and `Provider` is the handful of calls the
 sync needs from a calendar service. No module outside `app/calendars/` knows a provider's
