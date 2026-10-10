@@ -15,7 +15,7 @@ from app.config import get_settings
 from app.core.envelope import GroupUpdate, OutboundMessage
 from app.core.identity import hash_token
 from app.db import execute, fetch_all, fetch_one, fetch_val, jsonb
-from app.pipeline.router import enqueue
+from app.pipeline import router  # the module, not a name from it: the router imports this one, through jobs
 from app.services import inventory, members
 
 log = structlog.get_logger()
@@ -156,7 +156,7 @@ async def offer_shops(conn: AsyncConnection, household_id: str, *, member_id: st
            order by m.created_at, m.name""",
         h=household_id, member=member_id,
     )
-    return [adult["name"] for adult in adults if await enqueue(conn, OutboundMessage(
+    return [adult["name"] for adult in adults if await router.enqueue(conn, OutboundMessage(
         household_id=household_id, target="member", member_id=adult["id"], text=SHOPS_OFFER,
         respect_quiet_hours=adult["id"] != speaker,   # whoever is talking to us now is awake
         dedupe_key=f"shops_offer:{adult['id']}",

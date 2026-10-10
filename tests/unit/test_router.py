@@ -1,6 +1,9 @@
 """Outbound router: destinations, the allowlist property, quiet hours, degradation, splitting and retries."""
 import random
+import subprocess
+import sys
 from datetime import time, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -192,6 +195,11 @@ async def test_household_target_uses_the_primary_thread_or_each_adult():
     while await router.dispatch_due({Channel.telegram: adapter}):
         pass
     assert adapter.sent == [("-100555", "digest", None)]
+
+
+def test_the_router_can_be_the_first_module_imported():
+    """As it is when this file is run by itself. The services it sends for import it back."""
+    subprocess.run([sys.executable, "-c", "import app.pipeline.router"], check=True, cwd=Path(__file__).parents[2])
 
 
 async def test_dedupe_key_makes_enqueue_idempotent():
