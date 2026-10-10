@@ -382,8 +382,8 @@ async def test_the_weekly_digest_goes_out_once_on_sunday_evening():
         assert expected in digest["text"]
     assert "Next month" not in digest["text"]
     assert await jobs.weekly_digest(london("2026-10-18 18:00")) == 1         # next Sunday is a new week
-    assert [r["run_key"] for r in await rows("select run_key from job_runs order by run_key")] == [
-        "2026-W41", "2026-W42"]
+    assert [r["run_key"] for r in await rows(
+        "select run_key from job_runs where job = 'weekly_digest' order by run_key")] == ["2026-W41", "2026-W42"]
 
 
 async def test_no_weekly_digest_when_there_is_nothing_to_say():

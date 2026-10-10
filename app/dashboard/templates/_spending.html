@@ -1,0 +1,97 @@
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% set this = start.strftime("%Y-%m") %}
+<nav class="months" aria-label="Month">
+  <a class="chip" href="/dashboard/spending?month={{ before.strftime('%Y-%m') }}" aria-label="{{ before.strftime('%B %Y') }}">{{ icon("left") }}{{ before.strftime("%b") }}</a>
+  <span class="grow title center">{{ start.strftime("%B %Y") }}</span>
+  {% if not current %}<a class="chip" href="/dashboard/spending?month={{ after.strftime('%Y-%m') }}" aria-label="{{ after.strftime('%B %Y') }}">{{ after.strftime("%b") }}{{ icon("right") }}</a>{% else %}<span class="chip ghost" aria-hidden="true"></span>{% endif %}
+</nav>
+{% macro bar_rows(rows) %}
+<ul class="list">
+{% for row in rows %}
+  <li class="row wrap bar-row"><span class="grow title cap">{{ row.name }}</span><span class="amount">{{ money(row.amount) }}</span>
+    <span class="bar full" aria-hidden="true"><span style="width: {{ row.share }}%"></span></span></li>
+{% endfor %}
+</ul>
+{% endmacro %}
+{% if found.receipts %}
+<div class="card">
+  <p class="stat">{{ money(found.total) }}</p>
+  <p class="sub">Spent in {{ start.strftime("%B") }}{{ " so far" if current }}, from {{ found.receipts }} receipt{{ "" if found.receipts == 1 else "s" }}.</p>
+  {% if found.unpriced %}<p class="notice warn under">{{ found.unpriced }} more receipt{{ " was" if found.unpriced == 1 else "s were" }} read this month without {{ "its" if found.unpriced == 1 else "their" }} prices, so the real figure is higher.</p>{% endif %}
+  {% if found.elsewhere %}<p class="notice warn under">{{ found.elsewhere }} receipt{{ " is" if found.elsewhere == 1 else "s are" }} in another currency and {{ "is" if found.elsewhere == 1 else "are" }} not added in.</p>{% endif %}
+</div>
+<h2>By shop</h2>
+<div class="card rows">{{ bar_rows(shops) }}</div>
+<h2>By kind of thing</h2>
+<p class="hint">From the price of each line on your receipts.</p>
+<div class="card rows">
+  {{ bar_rows(kinds) }}
+  {% if found.unlisted or found.discounts %}
+  <ul class="list under">
+    {% if found.unlisted %}<li class="row"><span class="grow"><span class="title">Not listed line by line</span><span class="sub">Paid, going by the totals, but with no price read for the line.</span></span><span class="amount">{{ money(found.unlisted) }}</span></li>{% endif %}
+    {% if found.discounts %}<li class="row"><span class="grow"><span class="title">Discounts</span><span class="sub">Taken off at the till.</span></span><span class="amount">{{ money(found.discounts) }}</span></li>{% endif %}
+  </ul>
+  {% endif %}
+</div>
+{% else %}
+<div class="card">
+  {% if found.unpriced %}
+  <p class="empty">{{ found.unpriced }} receipt{{ " was" if found.unpriced == 1 else "s were" }} read in {{ start.strftime("%B") }}, but {{ "its" if found.unpriced == 1 else "their" }} prices were not kept, so what was spent is not known.</p>
+  {% else %}
+  <p class="empty">No receipts for {{ start.strftime("%B") }}{{ " yet" if current }}. Send the assistant a photo of a receipt and what it cost shows up here.</p>
+  {% endif %}
+</div>
+{% endif %}
+<h2>Month by month</h2>
+<div class="card rows">
+  <ul class="list">
+  {% for row in trend %}
+    <li class="row wrap bar-row"><a class="grow title" href="/dashboard/spending?month={{ row.month.start.strftime('%Y-%m') }}"{% if row.month.start == start %} aria-current="true"{% endif %}>{{ row.month.start.strftime("%B") }}</a>
+      {% if row.month.receipts %}<span class="amount">{{ money(row.month.total) }}</span>
+      <span class="bar full" aria-hidden="true"><span style="width: {{ row.share }}%"></span></span>
+      {% elif row.month.unpriced %}<span class="sub">Prices not kept</span>
+      {% else %}<span class="sub">No receipts</span>{% endif %}</li>
+  {% endfor %}
+  </ul>
+</div>
+<h2>Price changes</h2>
+<p class="hint">On things you always keep in, against the last time you bought them at the same shop.</p>
+<div class="card rows">
+  <ul class="list">
+  {% for change in changes %}<li class="row"><span class="grow cap">{{ change }}</span></li>
+  {% else %}<li class="empty">Nothing changed price in {{ start.strftime("%B") }}, as far as your receipts show.</li>{% endfor %}
+  </ul>
+</div>
+{% if receipts %}
+<h2>Receipts</h2>
+<p class="hint">Tap a receipt to put right what was read, or to take it out.</p>
+<div class="card rows">
+  <ul class="list">
+  {% for receipt in receipts %}
+    <li class="row top">
+      <details class="more grow">
+        <summary>
+          <span class="grow"><span class="title">{{ receipt.shop or "Shop not read" }}</span>
+            <span class="sub">{{ receipt.purchased_on.strftime("%a %-d %b") }} · {{ receipt.lines }} price{{ "" if receipt.lines == 1 else "s" }}{% if receipt.total is none %} · no total on it{% endif %}</span></span>
+          <span class="amount">{{ money(receipt.amount) }}</span>{{ icon("down", "chev") }}
+        </summary>
+        <div class="more-body">
+          <form class="stack" hx-post="/dashboard/spending/receipts/{{ receipt.id }}/edit?month={{ this }}" hx-target="#spending">
+            <label class="field">Shop<input type="text" name="shop" value="{{ receipt.shop or '' }}" autocomplete="off"></label>
+            <label class="field">Day<input type="date" name="purchased_on" value="{{ receipt.purchased_on.isoformat() }}" required></label>
+            <label class="field">Total paid<input type="text" inputmode="decimal" name="total" value="{{ receipt.total if receipt.total is not none }}" placeholder="None printed" autocomplete="off"></label>
+            {% for line in receipt["items"] %}
+            <label class="field"><span class="cap">{{ line.label }}{% if line.quantity %} <span class="muted">× {{ quantity_text(line.quantity, line.unit) }}</span>{% endif %}</span>
+              <input type="text" inputmode="decimal" name="price_{{ line.id }}" value="{{ line.price }}" aria-label="Price of {{ line.label }}" autocomplete="off"></label>
+            {% endfor %}
+            <button>Save</button>
+          </form>
+          <button class="danger" hx-post="/dashboard/spending/receipts/{{ receipt.id }}/remove?month={{ this }}" hx-target="#spending">Take this receipt out</button>
+          <span class="sub">Taking it out changes the spending only. What it added to the pantry stays.</span>
+        </div>
+      </details>
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}

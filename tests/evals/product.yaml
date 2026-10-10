@@ -8,7 +8,7 @@
 
 - name: seeing the list on a laptop is the word dashboard
   turns: [{from: Ola, text: "how do I see the list on my laptop?"}]
-  expect: {writes: 0, plain: true, reply_mentions: [dashboard], reply_says_any: [send, sends, type, text, write, say]}
+  expect: {writes: 0, plain: true, reply_mentions: [dashboard], reply_says_any: [send, sends, type, text, write, say, message]}
 
 - name: adding a wife is an invite and nobody is added yet
   turns: [{from: Ola, text: "how do I add my wife?"}]
@@ -48,6 +48,10 @@
 - name: a how-to question in the family group is answered
   turns: [{from: Ada, scope: group, text: "Home, where do I see the calendar on my computer?"}]
   expect: {writes: 0, plain: true, reply_mentions: [dashboard]}
+
+- name: where to see the spending is the Spending page
+  turns: [{from: Ada, text: "is there somewhere I can see what we spend each month?"}]
+  expect: {writes: 0, plain: true, reply_mentions: [Spending]}
 
 # An adult's own Google Calendar (ADR 0038). `seed.setup.google_calendar` is whether this installation
 # has it switched on, and `seed.own_calendar` whose is connected and how it stands.

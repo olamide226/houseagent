@@ -38,7 +38,7 @@ def menu() -> dict[str, str]:
 
 def test_every_word_page_tool_and_scheduled_message_has_a_line_and_no_line_is_left_over():
     assert set(WORDS) == set(inbound.KEYWORDS)
-    assert {page: name for page, (name, _) in PAGES.items()} == menu() and len(menu()) == 11
+    assert {page: name for page, (name, _) in PAGES.items()} == menu() and len(menu()) == 12
     assert {tool for tools in TALK for tool in tools} == {
         name for name, spec in REGISTRY.items() if not spec.onboarding_only}
     assert set(SENDS) == set(SCHEDULED) - SENDS_NOTHING
@@ -61,6 +61,7 @@ def test_the_numbers_in_the_guide_are_the_codes():
     assert ScheduleEvent.model_fields["remind_before_minutes"].default == [24 * 60, 60]
     assert "the day before and an hour before" in SENDS["fire_reminders"]
     assert f"Sundays at {jobs.WEEKLY_DIGEST_AT:%H:%M}" in SENDS["weekly_digest"]
+    assert "what was spent the month before on the first one of each month" in SENDS["weekly_digest"]
     assert f"at {jobs.LOW_STOCK_PROMPT_AT:%H:%M}" in SENDS["low_stock_prompt"]
     assert timedelta(hours=2) == household_jobs.LATER and "in 2 hours for a job with a time" in JOBS
     assert f"the next morning at {household_jobs.MORNING:%H:%M}" in JOBS and JOBS in guide
@@ -76,7 +77,9 @@ def test_the_guide_is_in_family_words_whatever_is_switched_on():
 
 def test_the_guide_only_says_what_this_installation_has_switched_on():
     bare, full = product_guide(Setup(photos=False)), product_guide(EVERYTHING)
-    assert "cannot read photos in this household yet" in bare and "receipt" not in bare
+    assert "cannot read photos in this household yet" in bare and "a photo of a receipt" not in bare
+    assert "ask what was spent" not in bare and "Spending (nothing to show in this household yet)" in bare
+    assert "ask what was spent" in full and "Spending (what was spent each month" in full
     assert "a photo of a receipt records what was bought" in full and "cannot read photos" not in full
     assert "cannot listen to voice notes in this household yet" in bare
     assert "Voice notes work like typed messages." in full

@@ -34,7 +34,7 @@ from app.dashboard.auth import Session, current_session, invite_context, qr_svg,
 from app.db import advisory_lock, engine, fetch_all, fetch_one, fetch_val, tx
 from app.pipeline import inbound
 from app.pipeline import router as outbound
-from app.services import calendar, calendar_sync, households, inventory, jobs, members, shopping
+from app.services import calendar, calendar_sync, households, inventory, jobs, members, shopping, spending
 
 router = APIRouter(prefix="/dashboard", default_response_class=HTMLResponse)
 
@@ -257,6 +257,80 @@ async def item_merge(request: Request, item_id: str, duplicate_id: str = Form(..
 
     args = {"keep_id": item_id, "duplicate_id": duplicate_id}
     return await _item(request, session, item_id, await _write(session, "inventory.merge_items", args, merge))
+
+
+# ---------------------------------------------------------------- Spending
+def _month(value: str, today: date) -> date:
+    """The month a page address names ('2026-09'), never one after this month."""
+    try:
+        month = date.fromisoformat(f"{value}-01") if value else today.replace(day=1)
+    except ValueError:
+        month = today.replace(day=1)
+    return min(month, today.replace(day=1))
+
+
+def _bars(rows: list[tuple[Any, Decimal]]) -> list[dict[str, Any]]:
+    """Rows with how long each one's bar is, as a share of the largest."""
+    most = max((amount for _, amount in rows), default=Decimal(0))
+    return [{"name": name, "amount": amount, "share": round(amount / most * 100) if most > 0 else 0}
+            for name, amount in rows]
+
+
+async def _spending(request: Request, session: Session, template: str, month: str = "",
+                    error: str | None = None) -> Response:
+    today = local(utcnow(), session.timezone).date()
+    start, end = spending.month_of(_month(month, today))
+    async with tx() as conn:
+        found = await spending.summary(conn, session.household_id, start, end)
+        trend = await spending.months(conn, session.household_id, start)
+        context = {
+            "found": found, "start": start, "current": start == today.replace(day=1),
+            "before": spending.month_before(start), "after": (end + timedelta(days=1)),
+            "shops": _bars(found.shops), "kinds": _bars(found.kinds),
+            "trend": [{"month": one, **bar} for one, bar in
+                      zip(trend, _bars([(one.start, one.total) for one in trend]), strict=True)],
+            "changes": [spending.change_text(change, found.currency) for change in
+                        await spending.staple_price_changes(conn, session.household_id, start, end)],
+            "receipts": await spending.receipts_between(conn, session.household_id, start, end),
+        }
+    return _page(request, template, session, error=error, quantity_text=inventory.quantity_text,
+                 money=lambda amount: spending.money(amount, found.currency), **context)
+
+
+@router.get("/spending")
+async def spending_page(request: Request, month: str = "", session: Session = Depends(current_session)) -> Response:
+    return await _spending(request, session, "spending.html", month)
+
+
+@router.post("/spending/receipts/{receipt_id}/{verb}")
+async def spending_change(request: Request, receipt_id: str, verb: str, month: str = "",
+                          session: Session = Depends(require_csrf)) -> Response:
+    """Correct what was read on a receipt, or take it out of the spending. The form sends every
+    field it shows: an empty total means the receipt shows none, an empty price that the line has none."""
+    form = await request.form()
+
+    async def change(rec: Recorder) -> None:
+        if verb == "remove":
+            await spending.remove(rec, receipt_id)
+        elif verb == "edit":
+            try:
+                day = date.fromisoformat(str(form.get("purchased_on", "")))
+            except ValueError:
+                raise ToolError("pick the day the receipt is from") from None
+            total = _decimal(str(form.get("total", "")))
+            prices = {name.removeprefix("price_"): _decimal(str(value))
+                      for name, value in form.items() if name.startswith("price_")}
+            await spending.correct(
+                rec, receipt_id,
+                {"shop": str(form.get("shop", "")), "purchased_on": day,
+                 "total": None if total is None else spending.cents(total)},
+                {line: None if price is None else spending.cents(price) for line, price in prices.items()})
+        else:
+            raise ToolError("unknown action")
+
+    args = {"receipt_id": receipt_id, **{name: str(value) for name, value in form.items()}}
+    return await _spending(request, session, "_spending.html", month,
+                           await _write(session, f"spending.{verb}", args, change))
 
 
 # ---------------------------------------------------------------- Calendar
@@ -652,9 +726,10 @@ async def _settings(request: Request, session: Session, template: str = "_settin
             "facts": await households.facts(conn, session.household_id),
             "digest_time": await households.digest_time(conn, session.household_id),
             "places": await households.places(conn, session.household_id),
+            "currency": await spending.currency(conn, session.household_id),
         }
     return _page(request, template, session, error=error, presence=presence, kinds=households.PLACE_KINDS,
-                 **context)
+                 currencies=spending.CURRENCIES, **context)
 
 
 def _clock(value: str) -> time | None:
@@ -678,6 +753,16 @@ async def settings_brief(request: Request, at: str = Form(...), session: Session
         await households.set_digest_time(rec, when)
 
     return await _settings(request, session, error=await _write(session, "settings.brief", {"at": at}, change))
+
+
+@router.post("/settings/currency")
+async def settings_currency(request: Request, currency: str = Form(...),
+                            session: Session = Depends(require_csrf)) -> Response:
+    async def change(rec: Recorder) -> None:
+        await spending.set_currency(rec, currency)
+
+    error = await _write(session, "settings.currency", {"currency": currency}, change)
+    return await _settings(request, session, error=error)
 
 
 @router.post("/settings/quiet/{member_id}")

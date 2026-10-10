@@ -12,7 +12,7 @@ It is for setup, looking things over and fixing mistakes; daily use happens in c
 ## How it looks
 
 A phone has four tabs along the bottom, Today, Shopping, Pantry and Calendar, and a fifth, More,
-that opens a page listing the rest: Jobs, Family, Chat apps, Settings, Activity, Practice chat, System
+that opens a page listing the rest: Spending, Jobs, Family, Chat apps, Settings, Activity, Practice chat, System
 (admins only) and Log out. From 960 px wide the tabs become a sidebar that shows every page, so
 More is not needed there.
 
@@ -92,12 +92,13 @@ itself is the secret, and a request that a browser marks as coming from another 
 | Pantry | `/dashboard/inventory` | Stock by location, filter by status; per-item history | Set a count, mark none left, edit an item (other names, always kept in, low threshold, usual place), merge a duplicate |
 | Calendar | `/dashboard/calendar` | The next 30 days with repeats expanded, the repeating series, standalone reminders, the viewer's own connected Google Calendar and who else has one | Add an event (once, daily, weekly or monthly), edit title, time and place, cancel, skip one date of a series, cancel a reminder, connect or disconnect a Google Calendar, get the calendar link |
 | More | `/dashboard/more` | The pages below, each with a line about what it is for | Log out |
+| Spending | `/dashboard/spending` | One month, from the receipts that were sent: the total, by shop, by kind of thing with what the lines do not account for, the last six months, price changes on staples, and each receipt. `?month=2026-09` shows another month | Correct a receipt's shop, day, total or a line's price, clear a line's price, take a receipt out |
 | Jobs | `/dashboard/jobs` | Household jobs, renewals and birthdays: the ones asked about and not done yet, then what is coming up, each with whose it is, when it is due and how often it comes round | Tick a job off with the circle (the next one is then set), skip one, stop one |
 | Family | `/dashboard/family` | Everyone in the household, each adult's connected chat apps, open invites | Add an adult or a child, make a new invite (button, QR code and code, shown once), cancel an invite, choose which connected chat app an adult is messaged on |
 | Chat apps | `/dashboard/channels` | Each channel: whether it is set up, when it last heard from and sent to the family, sends failed in the last day, and for iMessage since when it has been unreachable. Each chat: whose it is, the main family chat, and for WhatsApp whether any message or only the standard reminder will be delivered | Create a WhatsApp group, forget one that was never confirmed, show a group's invite link and QR code, choose the main family chat |
 | Activity | `/dashboard/activity` | The last 200 turns and dashboard actions as a conversation: what was said, the reply and whether it was delivered, and what changed, each line with a tick, or with a warning mark where something was not recorded (an item whose name was unclear, a date in a letter that was held back to ask about). An admin also gets "Technical details" on each: tool calls and results, tokens, latency, the error of a failed turn | Undo a change, send a failed reply again |
 | Practice chat | `/dashboard/playground` | A chat with the agent in the browser | A practice run by default; tick "Save it for real" to keep the result |
-| Settings | `/dashboard/settings` | The morning brief time, each adult's quiet hours, whether each adult has a link for arriving at a shop, places and their kinds, things to remember | Change the brief time, change or clear quiet hours, make or replace a link, add a place or change its kind, add, change or forget a fact |
+| Settings | `/dashboard/settings` | The morning brief time, the currency, each adult's quiet hours, whether each adult has a link for arriving at a shop, places and their kinds, things to remember | Change the brief time, choose the currency, change or clear quiet hours, make or replace a link, add a place or change its kind, add, change or forget a fact |
 | System (admin only) | `/dashboard/system` | Whether the worker is alive, the newest runs of the once-a-day jobs, the runtime, provider and model, the last eval result, whether stock matches the event log, the version and migration | Rebuild stock from the event log, download everything as JSON |
 
 <p>
@@ -108,6 +109,7 @@ itself is the secret, and a request that a browser marks as coming from another 
 <p>
   <img src="img/dashboard/activity.png" width="230" alt="Activity: what was said, the reply and what changed, with Undo">
   <img src="img/dashboard/settings.png" width="230" alt="Settings: morning brief and quiet hours">
+  <img src="img/dashboard/spending.png" width="230" alt="Spending: the month's total, by shop and by kind of thing">
 </p>
 
 <p>
@@ -121,6 +123,29 @@ Ola does them", "Ada does the bins now"); the Jobs page ticks them off, skips on
 circle: there is nothing to tick off. In the code and the address the page is `jobs`, and so is
 `app/services/jobs.py`; the worker's own scheduled jobs are `app/worker/jobs.py`. "Always keep this in" (a staple) is set on an item's page. The calendar link
 stays on the Calendar page.
+
+## Spending
+
+Everything on the page is added up from receipts the assistant read
+([ADR 0040](adr/0040-spending-is-kept-from-receipts-beside-the-stock-log.md)); nothing is typed in.
+
+- **The month.** One figure, "Spent in October so far, from 4 receipts". A month whose receipts
+  were read before prices were kept says "its prices were not kept, so what was spent is not
+  known" and shows no figure; a month with both says how many more receipts had no prices.
+- **By shop** and **By kind of thing**, each row with a bar for its share of the largest. Kinds
+  are the supermarket sections items are sorted into overnight; a line not sorted yet is "Not
+  sorted yet". Under them, where they apply: "Not listed line by line" (paid, going by the totals,
+  with no price read for the line) and "Discounts".
+- **Month by month.** The six months up to the one shown: an amount and a bar, "Prices not kept",
+  or "No receipts". Each is a link to that month.
+- **Price changes** on things the household always keeps in, against the last time they were
+  bought at the same shop.
+- **Receipts.** Tapping one opens what was read: the shop, the day, the total paid and each line's
+  price, with Save, and "Take this receipt out". An empty total means none was printed, and the
+  receipt then counts for its lines; an empty price drops that line's price. Taking a receipt out
+  changes the spending only, never the pantry. Each is logged in Activity and can be undone there.
+
+The currency is on Settings. Amounts already kept stay in the currency they were read in.
 
 ## Presence links and places
 
@@ -183,7 +208,8 @@ the installation.
   of the last one, or that the worker is probably not running once the last is more than three
   minutes old. Nothing is answered, sent or reminded while the worker is down.
 - **Job runs.** The 30 newest runs of the jobs that happen once a day or week (`daily_brief`,
-  `weekly_digest`, `consumption_model`, `low_stock_prompt`), from `job_runs`. Messages, sends and
+  `weekly_digest`, `consumption_model`, `low_stock_prompt`, and `monthly_spending` for a month
+  whose spending went out with a digest), from `job_runs`. Messages, sends and
   reminders are handled continuously and leave no row; they show on Activity.
 - **Model.** `AGENT_RUNTIME`, `LLM_PROVIDER`, the endpoint's host (or that the provider is a CLI
   on a subscription sign-in), `LLM_MODEL`, `LLM_FAST_MODEL` when set, and whether photos are
@@ -267,8 +293,8 @@ block ([ADR 0015](adr/0015-ics-feed-token-and-time-zones.md)).
 Pages never write SQL. A write calls the same `app/services/` function the agent tool uses, inside
 `record(...)` with `source = 'dashboard'`, so stock rules, undo and the Activity log behave exactly
 as they do from chat. Ticking an item's circle in the browser logs a restock, just as "got the
-eggs" does. Brief time, quiet hours, facts, added members and the preferred channel can be undone
-from Activity. Creating or revoking an invite, creating a group and choosing the main family chat
+eggs" does. Brief time, quiet hours, the currency, facts, added members, the preferred channel and a
+corrected or removed receipt can be undone from Activity. Creating or revoking an invite, creating a group and choosing the main family chat
 are logged but not undoable, and a member who has connected can no longer be removed by undo.
 
 Practice chat calls `simulate_turn()`, the same service the eval suite uses. A practice run executes

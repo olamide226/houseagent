@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from app.agent.base import Ctx
 from app.db import execute, fetch_all, fetch_val
 from app.llm.types import ChatMessage, LLMResponse, ToolCall, ToolDef, Usage
-from app.services import households, inventory
+from app.services import households, inventory, spending
 
 # Words for whoever runs the installation. The family is never shown one, a link the model wrote
 # itself, or a name_with_underscores (a tool, a setting).
@@ -91,6 +91,35 @@ async def add_item(conn: AsyncConnection, home: Home, name: str, *, location: st
 async def location_id_of(conn: AsyncConnection, home: Home, name: str) -> str:
     return str(await fetch_val(conn, "select id from locations where household_id = :h and name = :n",
                                h=home.id, n=name))
+
+
+async def add_receipt(conn: AsyncConnection, home: Home, shop: str | None, day: str, total: float | None = None,
+                      lines: tuple[tuple[Any, ...], ...] = (), *, staples: bool = False) -> str:
+    """A receipt kept on `day` ("2026-10-06"), through the service and with no undo record. A line is
+    (item, price) or (item, price, quantity, unit); an item the household does not have is created.
+    Stock is not touched."""
+    from datetime import date
+
+    from app.agent.actions import Recorder
+
+    kept = []
+    for name, price, *amount in lines:
+        item_id = await fetch_val(conn, "select id from items where household_id = :h and canonical_name = :name",
+                                  h=home.id, name=name) or await inventory.create_item(conn, home.id, name,
+                                                                                         is_staple=staples)
+        quantity = Decimal(str(amount[0])) if amount and amount[0] is not None else None
+        kept.append(spending.Line(str(item_id), name, spending.cents(price), quantity, amount[1] if amount[1:] else None))
+    await spending.keep(Recorder(ctx_for(conn, home, now=london(f"{day} 12:00"))), kept, shop=shop,
+                        purchased_on=date.fromisoformat(day), total=None if total is None else spending.cents(total))
+    return str(await fetch_val(conn, "select id from receipts where household_id = :h order by created_at desc limit 1",
+                               h=home.id))
+
+
+async def sort_items(conn: AsyncConnection, home: Home, **sections: str) -> None:
+    """Give items their supermarket section, as the nightly job would: `sort_items(conn, home, milk="dairy and eggs")`."""
+    for name, section in sections.items():
+        await execute(conn, "update items set category = :section where household_id = :h and canonical_name = :name",
+                      section=section, h=home.id, name=name.replace("_", " "))
 
 
 def ctx_for(conn: AsyncConnection, home: Home, member: str = "Ola", **kwargs: Any) -> Ctx:

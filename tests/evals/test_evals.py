@@ -46,7 +46,17 @@ from app.pipeline.media import pdf_text
 from app.pipeline.router import record_outbound
 from app.services import calendar, households, shopping
 from app.services import jobs as household_jobs
-from tests.helpers import add_item, add_member, ctx_for, london, seed_home, technical_words, wall
+from tests.helpers import (
+    add_item,
+    add_member,
+    add_receipt,
+    ctx_for,
+    london,
+    seed_home,
+    sort_items,
+    technical_words,
+    wall,
+)
 
 pytestmark = [pytest.mark.eval, pytest.mark.skipif(os.environ.get("RUN_EVALS") != "1", reason="set RUN_EVALS=1")]
 
@@ -159,6 +169,22 @@ async def seed(case: dict[str, Any], now: datetime) -> Any:
                           member=home.members[fact["about"]] if "about" in fact else None)
         for name in spec.get("list", []):
             await shopping.add_entry(_recorder(conn, home), ids[name], "explicit")
+        for receipt in spec.get("receipts", []):    # kept with their prices, as a receipt photo leaves them
+            await add_receipt(conn, home, receipt.get("shop"), receipt["day"], receipt.get("total"),
+                              tuple(tuple(line) for line in receipt.get("lines", [])))
+        await sort_items(conn, home, **spec.get("sections", {}))
+        for day in spec.get("unpriced_receipts", []):   # read before prices were kept: stock events and nothing else
+            thread = await _upsert_thread(conn, home.id, PLAYGROUND, f"{PLAYGROUND}:{home.ola}", "dm")
+            await execute(
+                conn,
+                """with photo as (insert into messages (household_id, thread_id, member_id, direction, text, status,
+                                                        created_at)
+                                  values (:h, :thread, :member, 'in', '[photo]', 'processed', :at) returning id)
+                   insert into inventory_events (household_id, item_id, location_id, event_type, source, member_id,
+                                                 source_message_id, occurred_at)
+                   select :h, i.id, i.default_location_id, 'restocked', 'receipt', :member, photo.id, :at
+                   from items i, photo where i.household_id = :h""",
+                h=home.id, thread=thread, member=home.ola, at=london(f"{day} 11:00"))
         for name in spec.get("guesses", []):    # on the list as "probably", as the consumption model leaves them
             await execute(conn, "insert into shopping_list_items (household_id, item_id, reason) "
                                 "values (:h, :item, 'predicted')", h=home.id, item=ids[name])
@@ -255,11 +281,20 @@ async def observed(home: Any) -> dict[str, Any]:
             conn, "select lower(canonical_name) as item from items where household_id = :h and is_staple", h=home.id)
         sends = await fetch_all(conn, "select text, target, member_id from outbox where household_id = :h", h=home.id)
         items = await fetch_all(conn, "select canonical_name from items where household_id = :h", h=home.id)
+        receipts = await fetch_all(
+            conn,
+            """select r.shop, r.purchased_on, r.total, r.status,
+                      coalesce((select jsonb_agg(jsonb_build_object('label', lower(l.label), 'price', l.price)
+                                                 order by l.position)
+                                from receipt_lines l where l.receipt_id = r.id), '[]') as lines
+               from receipts r where r.household_id = :h order by r.created_at""", h=home.id)
     return {"events": events, "stock": stock, "active": sorted(row["item"] for row in active), "actions": actions,
             "asked_for": sorted(row["item"] for row in active if row["reason"] != "predicted"),
             "calendar": booked, "reminders": reminders, "family": family, "household": household, "facts": facts,
             "shops": [row["name"] for row in shops], "staples": [row["item"] for row in staples], "sends": sends,
-            "items": [row["canonical_name"] for row in items], "jobs": jobs}
+            "items": [row["canonical_name"] for row in items], "jobs": jobs,
+            "receipts": [row for row in receipts if row["status"] == "kept"],
+            "receipts_removed": [row for row in receipts if row["status"] == "removed"]}
 
 
 def key(name: str) -> str:
@@ -305,6 +340,12 @@ def check(expect: dict[str, Any], seen: dict[str, Any], seed: dict[str, Any], la
     if expect.get("writes") == 0:
         assert seen["events"] == [] and seen["actions"] == []
         assert Counter(seen["active"]) == Counter(key(name) for name in seeded_list)
+    if "actions" in expect:                     # how many changes were logged, whatever was seeded
+        assert len(seen["actions"]) == expect["actions"], seen["actions"]
+    if "receipts" in expect:
+        _match_all("receipt", expect["receipts"], seen["receipts"], _receipt_matches)
+    if "receipts_removed" in expect:
+        assert len(seen["receipts_removed"]) == expect["receipts_removed"], seen["receipts_removed"]
     for wanted in expect.get("reply_mentions", []):
         assert wanted.lower() in last_reply.lower(), f"reply was {last_reply!r}"
     if "reply_says_any" in expect:              # whole words, so "not" is not found in "note"
@@ -408,6 +449,21 @@ def _event_matches(want: dict[str, Any], event: dict[str, Any]) -> bool:
         and (want.get("repeats", True) or event["rrule"] is None)
         and _contains(want.get("location_contains"), event["location"])
         and ("exdates" not in want or event["exdates"] == [date.fromisoformat(day) for day in want["exdates"]])
+    )
+
+
+def _receipt_matches(want: dict[str, Any], receipt: dict[str, Any]) -> bool:
+    """`total: null` means no total was kept. `prices` are lines by part of their name; `no_price` names
+    things that must have no line, because no price for them could be read."""
+    prices = {line["label"]: Decimal(str(line["price"])) for line in receipt["lines"]}
+    return (
+        _contains(want.get("shop_contains"), receipt["shop"])
+        and ("total" not in want or receipt["total"] == _decimal(want["total"]))
+        and ("day" not in want or receipt["purchased_on"] == date.fromisoformat(want["day"]))
+        and all(any(name in label and price == _decimal(wanted) for label, price in prices.items())
+                for name, wanted in want.get("prices", {}).items())
+        and not any(name in label for name in want.get("no_price", []) for label in prices)
+        and len(prices) <= want.get("lines_max", len(prices))
     )
 
 

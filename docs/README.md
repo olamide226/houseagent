@@ -40,7 +40,8 @@ second try on another channel when a send fails for good, and the Chat apps page
 presence endpoint for iOS Shortcuts with its store-arrival list, the consumption model, and the
 low-stock prompt; then iMessage through a BlueBubbles server with a health check that moves
 people to their next channel while it is down, the System page, the optional Letta runtime
-(not promoted) and a Helm chart. WhatsApp and iMessage have only been tested against recorded
+(not promoted) and a Helm chart; and since then spending from receipts: what a receipt cost is
+kept when it is read, added up by month, shop and kind of thing, and shown on the Spending page. WhatsApp and iMessage have only been tested against recorded
 payloads, presence only with plain HTTP calls and not from a phone, and the chart has been
 rendered but not installed. Each page below says what has been checked and what has not, and
 [go-live-checklist.md](go-live-checklist.md) lists what is still open before a public release.
@@ -48,12 +49,12 @@ rendered but not installed. Each page below says what has been checked and what 
 | Doc | Contents |
 | --- | --- |
 | [architecture.md](architecture.md) | Processes, message flow, media, quiet hours, scheduled jobs, repo layout |
-| [data-model.md](data-model.md) | Tables, stock transitions, calendar rows, household jobs, invariants |
+| [data-model.md](data-model.md) | Tables, stock transitions, receipts and spending, calendar rows, household jobs, invariants |
 | [channels.md](channels.md) | The adapter contract; Telegram, WhatsApp and iMessage setup, template approval, payload notes, what happens when BlueBubbles is down, limits |
 | [llm.md](llm.md) | Provider layer, the subscription providers and what the vendors' terms say about them, adding an adapter, tested models |
-| [agent-and-tools.md](agent-and-tools.md) | Runtime loop, the product guide the assistant answers "how do I..." from, the optional Letta runtime, photos, onboarding, tools, calendar rules, household jobs, resolution rules, undo |
+| [agent-and-tools.md](agent-and-tools.md) | Runtime loop, the product guide the assistant answers "how do I..." from, the optional Letta runtime, photos, onboarding, tools, spending, calendar rules, household jobs, resolution rules, undo |
 | [presence.md](presence.md) | iPhone Shortcut setup, the presence rules, the consumption model, "probably" list entries, the low-stock prompt |
-| [dashboard.md](dashboard.md) | Pages, the login flow, invites, channels and the family group, the System page, connecting a Google Calendar, the calendar feed |
+| [dashboard.md](dashboard.md) | Pages, the login flow, the Spending page, invites, channels and the family group, the System page, connecting a Google Calendar, the calendar feed |
 | [operations.md](operations.md) | Environment variables, running, one server with compose (deploy, update, backup, moving a household), Helm, the subscription providers' CLIs and sign-in, media storage, worker jobs, the one-time Google Cloud setup for Google Calendar, the BlueBubbles outage and WhatsApp template runbooks, logs |
 | [evals.md](evals.md) | Running the agent evals, adding a case, latest results |
 | [go-live-checklist.md](go-live-checklist.md) | What is still open before a public release: one line an item, with its status and where the detail is |

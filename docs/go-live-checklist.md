@@ -43,6 +43,9 @@ not in this repository, so the line itself is all there is here.
   stand-in webhooks. [agent-and-tools.md](agent-and-tools.md#letters-invites-and-forwards)
 - [ ] **Not verified.** Letters on the model the household runs on. The eval cases for them were
   run on `deepseek-flash` only. [evals.md](evals.md#latest-results)
+- [ ] **Not verified.** A real receipt keeps its shop, its total and the price of each line. Only
+  drawn receipts of eight lines have been read: no weights, multi-buys, VAT lines or creases.
+  [evals.md](evals.md#latest-results)
 - [x] **Done, 9 Oct 2026.** A voice note sent from a phone to the server. The owner sent one
   through Telegram; it was transcribed and answered. [llm.md](llm.md#speech-to-text)
 - [ ] **Not done.** Photos kept in a private S3-compatible bucket with a lifecycle rule. ImgBB
@@ -167,6 +170,18 @@ not in this repository, so the line itself is all there is here.
 
 ## For a public release
 
+- [ ] **Not done.** Spending is only what a receipt shows. Cash with no receipt, a takeaway or a
+  bill cannot be added, so a month's figure is a floor.
+  [ADR 0040](adr/0040-spending-is-kept-from-receipts-beside-the-stock-log.md)
+- [ ] **Not done.** Setup does not ask for the currency: it is pounds until someone changes it on
+  Settings or says so. A receipt from abroad is counted as if it were in the household's
+  currency, a refund cannot be kept, and amounts always have two decimals.
+  [dashboard.md](dashboard.md#spending)
+- [ ] **Not verified.** "On food" and the split by kind of thing rest on the nightly sorting of
+  items, and price changes on staples have not been checked against a real run of receipts.
+  [agent-and-tools.md](agent-and-tools.md#spending-appservicesspendingpy)
+- [ ] **Not done.** The month's spending goes to the family group with the Sunday digest. There
+  is no way to keep it to one adult. [architecture.md](architecture.md)
 - [ ] **Not done.** Another household can sign up by itself. `/setup` closes after the first.
   [spec.md](spec.md#1-overview)
 - [ ] **Not done.** What running many households needs: per-household limits, cost, support. The
@@ -190,6 +205,9 @@ not in this repository, so the line itself is all there is here.
   [agent-and-tools.md](agent-and-tools.md#letters-invites-and-forwards)
 - [ ] **Not done.** A household can export and delete its data. Today an admin can download a
   copy, and nothing deletes. [dashboard.md](dashboard.md#system)
+- [ ] **Not done.** Prices read from receipts are kept for good. The photos are deleted after
+  `MEDIA_RETENTION_DAYS`; the amounts are not, and the privacy policy has to name them.
+  [data-model.md](data-model.md#receipts-and-spending)
 - [ ] **Not done.** The cost of one household for a month, for each provider. Token counts are
   stored and no figure is worked out. [operations.md](operations.md#cost-tracking)
 - [ ] **Not done.** A support contact and a status page. Nothing is written yet.

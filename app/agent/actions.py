@@ -26,12 +26,14 @@ PK: dict[str, tuple[str, ...]] = {
     "households": ("id",),
     "household_facts": ("id",),
     "places": ("id",),
+    "receipts": ("id",),
+    "receipt_lines": ("id",),
 }
 # Tables where undo puts back only these columns. Tokens and the session version are never
 # rolled back, or an undo could revive a revoked invite or a logged-out session.
 PARTIAL: dict[str, tuple[str, ...]] = {
     "members": ("name", "role", "preferred_channel", "quiet_start", "quiet_end"),
-    "households": ("digest_time", "onboarding_state"),
+    "households": ("digest_time", "onboarding_state", "currency"),
 }
 _IDENT = re.compile(r"^[a-z_]+$")
 UNDO_WINDOW_HOURS = 24

@@ -105,7 +105,8 @@ async def test_a_name_ending_in_one_the_household_has_is_not_recorded_until_the_
                "asking: the same thing, then log it again under that name; a different product, then log it "
                "again with new_item true")
         assert result.splitlines() == [ask.format("semi skimmed milk"), ask.format("coconut milk"),
-                                       "NEW: bleach", "OK: bleach restocked (store)"]
+                                       "NEW: bleach", "OK: bleach restocked (store)",
+                                       "NOTE: no price could be read on this receipt, so it is not in the spending"]
         assert [e[0] for e in await events_of(conn, home)] == ["bleach"]
         assert await active_list(conn, home) == {"milk": "explicit"}
 

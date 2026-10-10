@@ -8,6 +8,17 @@
     <span class="sub grow">{{ session.timezone | replace("_", " ") }} time</span>
   </form>
 </div>
+<h2>Currency</h2>
+<div class="card">
+  <p class="hint">What the prices on your receipts are in. It is how the Spending page shows amounts.</p>
+  <form class="inline" hx-post="/dashboard/settings/currency" hx-target="#settings">
+    <select name="currency" aria-label="Currency">
+      {% if currency not in currencies %}<option value="{{ currency }}" selected>{{ currency }}</option>{% endif %}
+      {% for code, name in currencies.items() %}<option value="{{ code }}"{% if code == currency %} selected{% endif %}>{{ name }}</option>{% endfor %}
+    </select>
+    <button class="quiet">Save</button>
+  </form>
+</div>
 <h2>Quiet hours</h2>
 <p class="hint">Reminders wait until quiet hours are over, unless they are urgent.</p>
 <div class="card rows">

@@ -22,7 +22,10 @@ DEFAULT_LOCATIONS = {
     "store": ["pantry", "cupboard", "store cupboard", "larder"],
 }
 
-# Sections of the worker's CATEGORIES that nobody cooks with. An item with no section yet counts as food.
+# The sections of a supermarket: what the nightly job sorts items into, and what spending is split by.
+CATEGORIES = ("fruit and veg", "dairy and eggs", "meat and fish", "bakery", "frozen", "cupboard", "drinks",
+              "household", "toiletries", "baby", "other")
+# The sections nobody cooks with. An item with no section yet counts as food.
 NOT_FOOD = ("household", "toiletries", "baby")
 USE_FIRST_DAYS = 7   # a date this close puts an item at the head of what there is to cook with
 COOKING_CAP = 120    # items shown for meal ideas; the rest are counted, not named
@@ -125,7 +128,7 @@ async def mark_staple(rec: Recorder, item_id: str) -> None:
 
 
 async def merge_items(rec: Recorder, keep_id: str, duplicate_id: str) -> None:
-    """Fold `duplicate` into `keep`: events, stock, list entries and aliases, in one transaction.
+    """Fold `duplicate` into `keep`: events, stock, list entries, receipt lines and aliases, in one transaction.
     Not undoable: the duplicate's rows are rewritten in place."""
     if keep_id == duplicate_id:
         raise ToolError("pick two different items to merge")
@@ -155,6 +158,8 @@ async def merge_items(rec: Recorder, keep_id: str, duplicate_id: str) -> None:
         keep=keep_id, dup=duplicate_id,
     )
     await execute(conn, "update shopping_list_items set item_id = :keep where item_id = :dup",
+                  keep=keep_id, dup=duplicate_id)
+    await execute(conn, "update receipt_lines set item_id = :keep where item_id = :dup",
                   keep=keep_id, dup=duplicate_id)
     aliases = sorted({*keep["aliases"], *duplicate["aliases"], duplicate["canonical_name"].lower()}
                      - {keep["canonical_name"].lower()})
