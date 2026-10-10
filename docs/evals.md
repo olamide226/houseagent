@@ -205,6 +205,16 @@ photos are on and where they are not, "switch me to WhatsApp" where it is set up
 not, a feature that does not exist (ordering the shopping online), and a how-to question in the
 family group. Each asserts no writes, plain words, and the word or page that has to be named.
 
+Five more are about an adult's own calendar
+([ADR 0036](adr/0036-a-connected-calendar-is-a-second-copy-kept-in-step.md)): how to get plans
+into Google Calendar where that is switched on (the Calendar page and its Connect button) and
+where it is not, whether an Apple calendar can be connected (no: the link, and no promise that
+changes come back), "is my Google calendar connected?" from someone whose calendar is, and "why
+have my plans stopped showing up there?" from someone whose connection stopped. `seed.own_calendar`
+gives an adult a connection in a named state. One calendar case goes with them: someone
+connected books the dentist and then asks for it to be put in their Google calendar "as well",
+and there must still be one event.
+
 Eleven of them are variants written for the pass on repeat mistakes
 ([ADR 0031](adr/0031-rules-the-model-kept-breaking.md)): the same mistake asked for with other
 items, other wording and another shop, so that a fix is not judged only on the case it was

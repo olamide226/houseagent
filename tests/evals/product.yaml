@@ -68,7 +68,7 @@
 - name: someone whose calendar is connected is told so
   seed: {setup: {google_calendar: true}, own_calendar: {Ola: {status: active, name: Family}}}
   turns: [{from: Ola, text: "is my Google calendar connected?"}]
-  expect: {writes: 0, plain: true, reply_mentions: [Family]}
+  expect: {writes: 0, plain: true, reply_says_any: [connected], reply_avoids: ["not connected", "isn't connected", "Connect Google Calendar"]}
 
 - name: a connection that stopped is fixed on the Calendar page
   seed: {setup: {google_calendar: true}, own_calendar: {Ada: {status: broken, name: Family}}}

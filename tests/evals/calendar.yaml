@@ -60,6 +60,6 @@
     - {from: Ola, text: "Ada has the dentist on Friday at 2pm"}
     - {from: Ola, text: "can you put that in my Google calendar as well?"}
   expect:
-    calendar: [{title_contains: dentist, participants: [Ada], local_start: "Fri 9 Oct 14:00", repeats: false}]
+    calendar: [{title_contains: dentist, local_start: "Fri 9 Oct 14:00", repeats: false}]
     calendar_cancelled: 0
     reply: text

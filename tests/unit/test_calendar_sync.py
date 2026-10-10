@@ -4,15 +4,20 @@ each other, judged by rows here and by what the calendar was asked to do.
 The calendar is `FakeCalendar`, an in-memory one that keeps etags and a list of changes the way a
 provider does. Google's own wire format is checked in tests/contract/test_google_calendar.py.
 """
+import json
 from dataclasses import replace
 from datetime import date, timedelta
+from pathlib import Path
 
+import httpx
 import pytest
+import respx
 
 from app.agent import actions
 from app.agent.actions import Recorder
 from app.agent.prompt import build_brief
 from app.agent.tools import run_tool
+from app.calendars import google
 from app.calendars.base import AuthLost, Entry, Gone, Refused, Remote, RemoteCalendar, SyncReset, Unavailable
 from app.config import get_settings
 from app.core import crypto
@@ -605,6 +610,47 @@ async def test_an_all_day_event_has_no_reminders_is_in_the_morning_brief_and_goe
     (event,) = await events()
     assert not event["all_day"] and [at for at, *_ in await reminders()] == ["Thu 8 Oct 10:00", "Fri 9 Oct 09:00"]
     assert not adas.named("Inset day").entry.all_day
+
+
+# ---------------------------------------------------------------- the whole way, in Google's own shapes
+@respx.mock
+async def test_the_worker_job_reads_googles_list_into_plans_and_posts_what_google_lacks():
+    """No fake in between: the stored sign-in is opened, Google's token and events addresses are
+    called, and the documented first-read response becomes rows (tests/contract has the shapes)."""
+    google._tokens.clear()
+    events_url = f"{google.API}/calendars/family%40group.calendar.example.test/events"
+    first_read = json.loads((Path(__file__).parents[1] / "contract/fixtures/google_calendar/events_first_read.json")
+                            .read_text())
+    async with tx() as conn:
+        home = await family(conn)
+    await connect(home, "Ada", "family@group.calendar.example.test")
+    await say(home, "schedule_event", title="Dentist", starts_at="2026-10-09T14:00")
+    token = respx.post(google.TOKEN_URL).respond(json={"access_token": "access-1", "expires_in": 3599})
+    listed = respx.get(events_url).mock(side_effect=[
+        httpx.Response(200, json=first_read), httpx.Response(200, json={"items": [], "nextSyncToken": "next-2"})])
+    made = respx.post(events_url).respond(json={"id": "made-by-us", "etag": '"9"'})
+    await rounds(2)
+
+    found = {(e["title"], wall(e["starts_at"]), e["all_day"], e["rrule"] is not None): e for e in await events()}
+    assert sorted(found) == [
+        ("(No title)", "Thu 8 Oct 14:00", False, False), ("Dentist", "Fri 9 Oct 14:00", False, False),
+        ("Football", "Tue 1 Sep 17:00", False, True), ("Football", "Wed 14 Oct 18:00", False, False),
+        ("GP for Ada", "Wed 7 Oct 10:30", False, False), ("Hairdresser", "Wed 7 Oct 16:00", False, False),
+        ("Inset day", "Fri 9 Oct 00:00", True, False)]
+    weekly = found["Football", "Tue 1 Sep 17:00", False, True]
+    assert weekly["exdates"] == [date(2026, 9, 29), date(2026, 10, 13), date(2026, 10, 20)]   # one EXDATE, two of Google's own
+    assert found["GP for Ada", "Wed 7 Oct 10:30", False, False]["people"] == ["Ada"]
+
+    (posted,) = (json.loads(call.request.content) for call in made.calls)    # only the plan Google did not have
+    assert posted["summary"] == "Dentist" and posted["reminders"] == {"useDefault": False, "overrides": []}
+    assert "syncToken" not in listed.calls[0].request.url.params
+    assert listed.calls[1].request.url.params["syncToken"] == "sync-token-after-first-read"
+    assert token.call_count == 1 and len(respx.calls) == 4               # nothing patched, nothing deleted
+    stored = await connection("Ada")
+    assert (stored["sync_token"], stored["failures"], stored["status"]) == ("next-2", 0, "active")
+    async with tx() as conn:
+        assert await fetch_val(conn, "select count(*) from calendar_links") == 7
+    google._tokens.clear()
 
 
 # ---------------------------------------------------------------- when it goes wrong

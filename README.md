@@ -41,7 +41,8 @@ on Telegram since October 2026**, and how much of it has met the real services d
 | iMessage | Built from the BlueBubbles server source; tested against payloads built from it. There is no Mac set up yet |
 | Presence | Built; tested with plain HTTP calls, never from a phone |
 | Voice notes | Built; tested with a stand-in transcriber. No speech-to-text service has been tried |
-| Agent quality | Measured on 81 eval cases with one model through two adapters. The latest run meets the release bar on both, one sample per case: see [docs/evals.md](docs/evals.md#latest-results) |
+| Google Calendar sync | Built; tested on rows against an in-memory calendar, and against responses written from Google's docs with mocked calls. It has never been run against Google: see [docs/operations.md](docs/operations.md#google-calendar) |
+| Agent quality | Measured on 87 eval cases with one model through two adapters. The latest run meets the release bar on both, one sample per case: see [docs/evals.md](docs/evals.md#latest-results) |
 | Model providers | `openai_compat` and `anthropic` with an API key. `claude_code` and `codex_cli` run on a Claude subscription or a ChatGPT plan through the vendor's own CLI: built, run once each on the eval suite, never deployed, and the vendors' terms for this use are unclear: see [docs/llm.md](docs/llm.md#subscription-providers) |
 | Letta runtime | Optional and off by default. Built, compared with the plain loop on the eval suite, and not promoted: see [docs/evals.md](docs/evals.md#the-letta-comparison) |
 | Helm chart | Linted and rendered; never installed on a cluster |
