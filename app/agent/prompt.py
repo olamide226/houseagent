@@ -8,7 +8,7 @@ from app.agent.actions import undoable
 from app.agent.guide import CHAT_APPS, Setup, product_guide
 from app.core.envelope import Envelope
 from app.core.timeutil import local
-from app.db import fetch_all, fetch_one
+from app.db import fetch_all, fetch_one, fetch_val
 from app.llm.types import CACHE_BREAK
 from app.services import calendar, calendar_sync, households, inventory, jobs, members, shopping
 
@@ -22,6 +22,7 @@ How you behave:
 - Put every inventory change from one turn into a single log_inventory call.
 - Never invent quantities. If none was stated, leave quantity empty.
 - Receipt photo: log bought items as restocked with source receipt. Fridge, freezer or cupboard photo: log the items you can see as adjusted with source photo and that location. Never mark an item finished because it is missing from a photo.
+- A letter, an invite, an appointment message or a newsletter that someone sends as a photo, a file, a forward or pasted text: put every dated thing in it into one add_dates call. Take the day, the time, the place and who it is for from the text, and never guess one it does not give. "Tomorrow" or "this Friday" in it counts from when it was written, if it says when; if it does not and the day is unclear, mark that entry unsure and ask.
 - "Running low on X" is the low action. "We're out of X" or "finished the X" is finished.
 - Resolve relative times (tomorrow, next Tuesday, in two hours) against the time in the brief. If a time is genuinely ambiguous, ask one short question.
 - If a tool says a name is ambiguous, ask one short question listing the options. Everything else in that turn was still recorded.
@@ -49,6 +50,7 @@ STEP_GUIDE = {
 }
 
 LIST_CAP = 25   # keeps the brief near 1,500 tokens for a busy household
+WAITING_HOURS = 24   # how long a question about a held-back entry stays in the brief
 
 
 def _capped(values: list[str], separator: str = ", ") -> str:
@@ -87,6 +89,26 @@ def _quiet(person: dict[str, Any]) -> str:
     if not (person["quiet_start"] and person["quiet_end"]):
         return f"{person['name']} off"
     return f"{person['name']} {person['quiet_start']:%H:%M}-{person['quiet_end']:%H:%M}"
+
+
+async def _waiting(conn: AsyncConnection, env: Envelope) -> list[str]:
+    """What the speaker's last turn in this thread held back to ask about: add_dates' AMBIGUOUS
+    lines. The photo or file they came from is not shown to the model again, and nothing was
+    written, so the answer would otherwise arrive with nothing to add."""
+    if not (env.member_id and env.thread_id):
+        return []
+    calls = await fetch_val(
+        conn,
+        """select m.meta->'turn'->'tool_calls' from messages m
+           where m.thread_id = :thread and m.member_id = :member and m.direction = 'in'
+             and m.meta->'turn' is not null and not m.id = any(cast(:current as uuid[]))
+             and m.created_at > cast(:before as timestamptz) - make_interval(hours => :hours)
+           order by m.created_at desc, m.id limit 1""",
+        thread=env.thread_id, member=env.member_id, current=env.message_ids, before=env.received_at,
+        hours=WAITING_HOURS,
+    )
+    return [line.removeprefix("AMBIGUOUS: ") for call in calls or [] if call["name"] == "add_dates"
+            for line in call["result"].splitlines() if line.startswith("AMBIGUOUS: ")]
 
 
 async def build_brief(conn: AsyncConnection, env: Envelope, now: datetime) -> str:
@@ -136,6 +158,9 @@ async def build_brief(conn: AsyncConnection, env: Envelope, now: datetime) -> st
     if env.member_id and (last := await undoable(conn, env.household_id, env.member_id, 1)):
         done = "; ".join(last[0]["result"].splitlines()[:3])
         lines.append(f"Last change by {env.member_name} (what undo_last reverts): {done[:200]}")
+    if waiting := await _waiting(conn, env):
+        lines.append(f"Asked {env.member_name} about these and waiting for the answer; not added yet: "
+                     + "; ".join(waiting) + ". If this message is the answer, add them with add_dates.")
     return "\n".join(lines)
 
 

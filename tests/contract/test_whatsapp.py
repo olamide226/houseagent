@@ -109,7 +109,8 @@ async def test_button_replies_and_document_captions_become_text(adapter):
         type="document", document={"id": "900000000000901", "mime_type": "application/pdf",
                                    "filename": "letter.pdf", "caption": "GP letter"})))
     assert letter.text == "GP letter"
-    assert letter.media == [MediaRef(kind="document", mime="application/pdf", external_id="900000000000901")]
+    assert letter.media == [MediaRef(kind="document", mime="application/pdf", external_id="900000000000901",
+                                     name="letter.pdf")]
 
 
 async def test_stickers_removed_reactions_and_other_fields_are_ignored(adapter):

@@ -186,7 +186,8 @@ def _message(payload: dict[str, Any], message: dict[str, Any], names: dict[str, 
         text = message["interactive"].get("button_reply", {}).get("title")
     elif kind in ("audio", "image", "document"):
         part = message[kind]
-        media.append(MediaRef(kind=kind, mime=_mime(part.get("mime_type")), external_id=part["id"]))
+        media.append(MediaRef(kind=kind, mime=_mime(part.get("mime_type")), external_id=part["id"],
+                              name=part.get("filename")))
         text = part.get("caption")   # in the text, as Telegram's captions are: one shape for the agent
     elif kind == "location":
         media.append(MediaRef(kind="location", lat=message["location"]["latitude"],
@@ -196,6 +197,7 @@ def _message(payload: dict[str, Any], message: dict[str, Any], names: dict[str, 
     if not (text or media or emoji):
         return None   # stickers, contact cards, a removed reaction and whatever else is not read in v1
     group = message.get("group_id")
+    context = message.get("context", {})
     return InboundEvent(
         channel=Channel.whatsapp,
         external_message_id=message["id"],
@@ -205,7 +207,8 @@ def _message(payload: dict[str, Any], message: dict[str, Any], names: dict[str, 
         sender_name=names.get(handle) or names.get(message.get("from", "")),
         text=text,
         media=media,
-        reply_to_external_id=message.get("context", {}).get("id"),
+        reply_to_external_id=context.get("id"),
+        forwarded=bool(context.get("forwarded") or context.get("frequently_forwarded")),
         reaction_emoji=emoji,
         reaction_target_external_id=target if emoji else None,
         sent_at=datetime.fromtimestamp(int(message["timestamp"]), UTC),

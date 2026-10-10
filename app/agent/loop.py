@@ -1,5 +1,6 @@
 """LoopRuntime: the plain tool-calling loop (spec section 8.2)."""
 import base64
+from datetime import datetime
 from typing import Any
 
 import structlog
@@ -9,9 +10,10 @@ from app.agent.guide import Setup
 from app.agent.prompt import build_brief, system_prompt
 from app.agent.tools import run_tool, tool_definitions
 from app.core.envelope import Envelope
+from app.core.timeutil import local
 from app.db import fetch_all
 from app.llm.types import ChatMessage, ImagePart, LLMClient, LLMError, TextPart, Usage
-from app.media.store import MediaStore
+from app.media.store import MediaStore, is_pdf
 from app.services import households
 
 log = structlog.get_logger()
@@ -22,6 +24,36 @@ LOST = "I got a bit lost there, can you say that again?"
 NO_PHOTOS = "[photo received; this model can't read photos]"
 UNREADABLE = "[photo received; it could not be loaded]"
 MAX_IMAGES = 4
+ONLY_PDF = "this kind of file can't be read, only a PDF"
+NOT_LOADED = "it could not be loaded"
+NO_WORDS = "no words could be read from it: it may be a scan or a locked file"
+
+
+def _label(text: Any, limit: int = 80) -> str:
+    """A name somebody else chose (a file's, a forward's sender), safe inside a bracketed line:
+    one line, no brackets of its own, not long."""
+    return " ".join(str(text).translate({ord("["): "(", ord("]"): ")"}).split())[:limit]
+
+
+def _file_lines(media: dict[str, Any]) -> list[str]:
+    """A file as the agent reads it: a PDF's words, or why there are none."""
+    name = _label(media.get("name") or "") or "no name"
+    if not is_pdf(media):
+        return [f"[file: {name}; {ONLY_PDF}]"]
+    if not media.get("text"):
+        return [f"[file: {name}; {NO_WORDS if 'text' in media else NOT_LOADED}]"]
+    return [f"[file: {name}; its words follow]", media["text"], "[end of file]"]
+
+
+def _forwarded(meta: dict[str, Any], timezone: str | None) -> str:
+    """The line above a forwarded message: who first sent it and when, as far as the channel says."""
+    line = "[forwarded message"
+    if sender := _label(meta.get("forwarded_from") or ""):
+        line += f" from {sender}"
+    if meta.get("forwarded_sent_at"):
+        sent = local(datetime.fromisoformat(meta["forwarded_sent_at"]), timezone or "UTC")
+        line += f", first sent {sent:%a %-d %b %Y %H:%M}"
+    return line + "]"
 
 
 def message_lines(row: dict[str, Any], reaction_target: str | None = None) -> list[str]:
@@ -30,6 +62,8 @@ def message_lines(row: dict[str, Any], reaction_target: str | None = None) -> li
     meta = row["meta"]
     if meta.get("reaction_emoji"):
         lines.append(f'[reacted {meta["reaction_emoji"]} to: "{(reaction_target or "")[:120]}"]')
+    if meta.get("forwarded"):
+        lines.append(_forwarded(meta, row.get("timezone")))
     if row["text"]:
         lines.append(row["text"])
     for media in row["media"]:
@@ -40,6 +74,8 @@ def message_lines(row: dict[str, Any], reaction_target: str | None = None) -> li
         elif media["kind"] == "location":
             # iMessage shares a location as a card file, so there may be no coordinates to show.
             lines.append(f"[location] {media.get('lat')}, {media.get('lng')}" if "lat" in media else "[location]")
+        elif media["kind"] == "document":
+            lines += _file_lines(media)
         else:
             lines.append(f"[{media['kind']}]")
     return lines
@@ -140,8 +176,9 @@ class LoopRuntime:
             return []
         rows = await fetch_all(
             ctx.conn,
-            """select m.direction, m.text, m.media, m.meta, mem.name
+            """select m.direction, m.text, m.media, m.meta, mem.name, h.timezone
                from messages m left join members mem on mem.id = m.member_id
+               join households h on h.id = m.household_id
                where m.thread_id = :thread and not m.id = any(cast(:current as uuid[]))
                  and m.created_at > cast(:before as timestamptz) - make_interval(hours => :hours)
                order by m.created_at desc, m.id limit :limit""",

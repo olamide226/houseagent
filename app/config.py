@@ -144,6 +144,7 @@ def configure_logging(level: str) -> None:
     # httpx logs full request URLs at INFO, and the Telegram URL contains the bot token.
     for noisy in ("httpx", "httpx2", "httpcore", "httpcore2"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    logging.getLogger("pypdf").setLevel(logging.ERROR)   # it warns about every oddity in a file it still reads
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,

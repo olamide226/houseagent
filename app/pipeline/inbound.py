@@ -70,6 +70,9 @@ async def ingest(conn: AsyncConnection, adapter: ChannelAdapter, event: InboundE
         "reply_to_external_id": event.reply_to_external_id,
         "reaction_emoji": event.reaction_emoji,
         "reaction_target_external_id": event.reaction_target_external_id,
+        "forwarded": event.forwarded or None,
+        "forwarded_from": event.forwarded_from,
+        "forwarded_sent_at": event.forwarded_sent_at and event.forwarded_sent_at.isoformat(),
     }
     message_id = await fetch_val(
         conn,
@@ -195,8 +198,9 @@ async def _waiting_messages(conn: AsyncConnection, column: str, value: str) -> l
     return await fetch_all(
         conn,
         f"""select m.id, m.household_id, m.thread_id, m.member_id, m.text, m.media, m.meta, m.created_at,
-                   t.channel, t.scope, mem.name as member_name
+                   t.channel, t.scope, mem.name as member_name, h.timezone
             from messages m join threads t on t.id = m.thread_id join members mem on mem.id = m.member_id
+            join households h on h.id = m.household_id
             where m.{column} = :value and m.status = 'received' and m.direction = 'in'
             order by m.created_at, m.id
             for update of m skip locked""",
@@ -241,7 +245,7 @@ async def run_turn(conn: AsyncConnection, envelope: Envelope, runtime: AgentRunt
     """Agent turn plus the response policy (spec 7.2 steps 5 to 7). Shared with simulate_turn."""
     last = envelope.message_ids[-1]
     ctx = Ctx(conn=conn, household_id=envelope.household_id, member_id=envelope.member_id,
-              thread_id=envelope.thread_id, message_id=last, now=envelope.received_at)
+              thread_id=envelope.thread_id, message_id=last, now=envelope.received_at, said=envelope.text)
     started = time.monotonic()
     result = await runtime.handle(envelope, ctx)
     latency_ms = round((time.monotonic() - started) * 1000)
@@ -282,21 +286,23 @@ async def run_turn(conn: AsyncConnection, envelope: Envelope, runtime: AgentRunt
 
 async def simulate_turn(conn: AsyncConnection, runtime: AgentRuntime, household_id: str, member_id: str,
                         text: str | None, *, scope: Literal["dm", "group"] = "dm", now: datetime | None = None,
-                        photos: list[MediaRef] | None = None) -> AgentResult:
+                        photos: list[MediaRef] | None = None, meta: dict[str, Any] | None = None) -> AgentResult:
     """Run one turn as `member` without a channel: the Playground and the eval suite use this.
 
     Everything happens on `conn`; the caller commits to apply it or rolls back for a dry run.
     `now` pins when the message arrived, so evals do not depend on the day they are run.
-    `photos` are refs already in the runtime's MediaStore."""
+    `photos` are refs already in the runtime's MediaStore, or files whose words were already read.
+    `meta` is what a channel would have said about the message, such as that it was forwarded."""
     external = f"{PLAYGROUND}:{household_id if scope == 'group' else member_id}"
     thread_id = await _upsert_thread(conn, household_id, PLAYGROUND, external, scope)
     await execute(
         conn,
-        """insert into messages (household_id, thread_id, member_id, direction, text, media, external_id,
+        """insert into messages (household_id, thread_id, member_id, direction, text, media, meta, external_id,
                                  created_at)
-           values (:h, :thread, :member, 'in', :text, cast(:media as jsonb), :external,
+           values (:h, :thread, :member, 'in', :text, cast(:media as jsonb), cast(:meta as jsonb), :external,
                    coalesce(cast(:now as timestamptz), clock_timestamp()))""",
         h=household_id, thread=thread_id, member=member_id, text=text, external=str(uuid.uuid4()), now=now,
+        meta=jsonb(meta or {}),
         media=jsonb([photo.model_dump(exclude_none=True) for photo in photos or []]),
     )
     assert thread_id is not None

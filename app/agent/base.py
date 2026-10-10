@@ -22,6 +22,7 @@ class Ctx(BaseModel):
     source: Literal["agent", "dashboard", "calendar"] = "agent"   # calendar: a change read from a connected one
     now: datetime = Field(default_factory=utcnow)   # when the turn's message arrived; "tomorrow" counts from here
     undone: list[tuple[str, dict[str, Any]]] = []   # (tool, args) of what undo reverted in this turn
+    said: str = ""                   # the turn's own words as the model read them, for rules that check against them
 
 
 class ToolError(Exception):
