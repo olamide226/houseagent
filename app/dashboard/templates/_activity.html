@@ -18,7 +18,7 @@
   <div class="entry-head">
     <span class="avatar">{{ (entry.member or "?")[:1] }}</span>
     <span class="grow"><span class="title">{{ entry.member or "Someone not yet connected" }}</span>
-      <span class="sub">{{ when(entry.at) }} · {% if entry.kind == "turn" %}{{ entry.channel | channel }}{{ ", family group" if entry.scope == "group" }}{% else %}{{ "dashboard" if entry.source == "dashboard" else "in chat" }}{% endif %}</span></span>
+      <span class="sub">{{ when(entry.at) }} · {% if entry.kind == "turn" %}{{ entry.channel | channel }}{{ ", family group" if entry.scope == "group" }}{% else %}{{ {"dashboard": "dashboard", "calendar": "in their own calendar"}.get(entry.source, "in chat") }}{% endif %}</span></span>
     {% if entry.kind != "turn" %}{{ undo(entry) }}{% endif %}
   </div>
   {% if entry.kind == "turn" %}

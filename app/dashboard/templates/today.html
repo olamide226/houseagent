@@ -20,7 +20,7 @@
 <div class="card rows">
   <ul class="list">
   {% for entry in entries %}
-    <li class="row"><span class="time">{{ entry.at.strftime("%H:%M") }}</span>
+    <li class="row"><span class="time">{{ "All day" if entry.event and entry.event.all_day else entry.at.strftime("%H:%M") }}</span>
     {% if entry.event %}
       <span class="grow"><span class="title">{{ entry.event.title }}</span>
         <span class="sub">{{ (entry.event.participants + ([entry.event.location] if entry.event.location else [])) | join(" · ") }}</span></span>

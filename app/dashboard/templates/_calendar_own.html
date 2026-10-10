@@ -1,0 +1,70 @@
+{# An adult's own Google Calendar, kept in step with the household's plans (ADR 0036). #}
+{% set mine = own.mine %}
+{% if own.error %}<p class="error" role="alert">{{ own.error }}</p>{% endif %}
+{% if mine and mine.status == "choosing" %}
+<div class="card">
+  <form class="stack" hx-post="/dashboard/calendar/own/choose" hx-target="#calendar">
+    <p><strong>Which calendar do you want to share?</strong> Everyone in {{ session.household }} will see what is on
+      it, and plans made here are added to it. One the family already shares is best.</p>
+    <div>
+      {% for choice in mine.choices %}
+      <label class="check"><input type="radio" name="calendar_id" value="{{ choice.id }}" required{% if mine.choices | length == 1 %} checked{% endif %}>
+        <span>{{ choice.name }}{% if choice.id == mine.account %} <span class="sub">Your main calendar</span>{% endif %}</span></label>
+      {% endfor %}
+    </div>
+    <button>Share this calendar</button>
+  </form>
+  <button class="quiet" hx-post="/dashboard/calendar/own/disconnect" hx-target="#calendar">Not now</button>
+</div>
+{% elif mine and mine.status == "active" %}
+<div class="card"{% if not mine.last_synced_at %} hx-get="/dashboard/calendar/own" hx-trigger="every 4s" hx-target="#own-calendar"{% endif %}>
+  <div class="row">
+    <span class="grow"><span class="title">{{ mine.calendar_name }}</span>
+      <span class="sub">{{ mine.account or "Google Calendar" }}</span></span>
+    <span class="pill good">Connected</span>
+  </div>
+  {% if not mine.last_synced_at %}
+  <p class="hint">Bringing your plans over. This takes about a minute.</p>
+  {% elif mine.failures %}
+  <p class="hint">Google is not answering at the moment. It will be tried again by itself; last checked
+    {{ local(mine.last_synced_at, session.timezone).strftime("%a %-d %b, %H:%M") }}.</p>
+  {% else %}
+  <p class="hint">Plans go both ways: what you tell the assistant appears in this calendar, and what you add, change
+    or delete there appears here within a few minutes. Reminders still come from the assistant.</p>
+  {% endif %}
+  <button class="quiet" hx-post="/dashboard/calendar/own/disconnect" hx-target="#calendar">Disconnect</button>
+</div>
+{% elif mine %}
+<div class="card">
+  <p class="notice warn">Your Google Calendar has stopped being kept in step, so plans are not copied either way.
+    Connect it again to carry on. Nothing has been lost.</p>
+  <a class="btn" href="/dashboard/calendar/connect/google">Connect again</a>
+  <button class="quiet" hx-post="/dashboard/calendar/own/disconnect" hx-target="#calendar">Disconnect</button>
+</div>
+{% elif own.on %}
+<div class="card">
+  <p class="hint">Connect your Google Calendar and plans go both ways: what you tell the assistant appears there, and
+    what you add, change or delete there appears here. You pick one calendar to share, and can stop at any time.</p>
+  <a class="btn" href="/dashboard/calendar/connect/google">Connect Google Calendar</a>
+</div>
+{% else %}
+<div class="card">
+  <p class="hint">Google Calendar is not switched on for this household yet.{% if session.is_admin %} As the person
+    who set this up, you can switch it on: the steps are in the operations guide, under Google Calendar.{% else %}
+    Whoever set this up can switch it on.{% endif %} Until then, the link below shows the plans in any calendar app.</p>
+</div>
+{% endif %}
+{% if own.others %}
+<div class="card rows">
+  <ul class="list">
+  {% for other in own.others %}
+    <li class="row">
+      <span class="avatar">{{ other.member[:1] }}</span>
+      <span class="grow"><span class="title">{{ other.member }}</span>
+        <span class="sub">{{ other.calendar_name }}{% if other.status == "broken" %} · stopped working{% endif %}</span></span>
+      <span class="pill{{ ' good' if other.status == 'active' else ' low' }}">{{ "Connected" if other.status == "active" else "Stopped" }}</span>
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}

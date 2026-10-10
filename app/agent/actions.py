@@ -107,12 +107,14 @@ async def record(ctx: Ctx, tool: str, args: BaseModel | dict[str, Any]) -> Async
 
 
 async def undoable(conn: AsyncConnection, household_id: str, member_id: str | None, n: int) -> list[dict[str, Any]]:
-    """This member's newest `n` actions that undo_last would revert, newest first."""
+    """This member's newest `n` actions that undo_last would revert, newest first. A change that
+    came in from their connected calendar is not one of them: "undo" in chat means what they said
+    or did here, and that change can be undone on the Activity page."""
     return await fetch_all(
         conn,
         """select id, result from agent_actions
            where household_id = :household and member_id is not distinct from :member
-             and undone_at is null and inverse <> '[]'
+             and undone_at is null and inverse <> '[]' and source <> 'calendar'
              and created_at > clock_timestamp() - make_interval(hours => :hours)
            order by created_at desc limit :n""",
         household=household_id, member=member_id, hours=UNDO_WINDOW_HOURS, n=n,

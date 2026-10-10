@@ -3,6 +3,7 @@ import asyncio
 import os
 
 import pytest
+from cryptography.fernet import Fernet
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -34,6 +35,9 @@ os.environ.update(
     BB_PASSWORD="test-bb-password",
     BB_WEBHOOK_SECRET="test-bb-secret",
     DEBOUNCE_SECONDS="0",
+    GOOGLE_CLIENT_ID="test-client.apps.googleusercontent.test",
+    GOOGLE_CLIENT_SECRET="test-client-secret",
+    CALENDAR_SECRET_KEY=Fernet.generate_key().decode(),   # a new key every run: nothing is stored between runs
 )
 for name in ("STT_PROVIDER", "STT_BASE_URL", "STT_MODEL", "WA_API_VERSION", "WA_REMINDER_TEMPLATE", "BB_PRIVATE_API"):
     os.environ.pop(name, None)
@@ -54,7 +58,7 @@ async def _reset_schema() -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def _schema() -> None:
-    """Rebuild the test schema from migration 0001 once per session."""
+    """Rebuild the test schema from the migrations once per session."""
     from alembic import command
     from alembic.config import Config
 

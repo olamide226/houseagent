@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.core.timeutil import utcnow
 from app.db import execute, fetch_all, fetch_val, tx
 from app.llm.claude_code import ClaudeCodeClient
+from app.main import MIGRATION_HEAD
 from app.pipeline import inbound
 from app.services import households, members
 from app.worker import main as worker
@@ -85,7 +86,7 @@ async def test_the_page_names_the_model_and_version_and_never_shows_a_secret(cli
     text = await page(client)
     assert "<span>loop</span>" in text
     assert 'openai_compat <span class="muted">at llm.test</span>' in text and "<span>test-model</span>" in text
-    assert "0.1.0" in text and "database at migration 0002" in text
+    assert "0.1.0" in text and f"database at migration {MIGRATION_HEAD}" in text
     settings = get_settings()
     for secret in (settings.llm_api_key, settings.session_secret, settings.setup_token, settings.tg_bot_token,
                    settings.tg_webhook_secret, settings.wa_access_token, settings.wa_app_secret,

@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.agent.base import AgentRuntime, ToolError
 from app.channels.base import ChannelAdapter, HealthChecked
-from app.config import Settings
+from app.config import Settings, get_settings
 from app.core.envelope import Channel, MediaRef, OutboundMessage
 from app.core.timeutil import day_bounds, local, next_occurrence, occurrences, utcnow
 from app.db import advisory_lock, engine, execute, fetch_all, jsonb, tx
@@ -26,13 +26,14 @@ from app.llm.types import ChatMessage, LLMClient, TextPart
 from app.media.store import MediaStore
 from app.pipeline import inbound, router
 from app.pipeline import media as media_pipeline
-from app.services import calendar, consumption, households, inventory, shopping
+from app.services import calendar, calendar_sync, consumption, households, inventory, shopping
 from app.services import jobs as household_jobs
 
 log = structlog.get_logger()
 POLL_SECONDS = 2.0
 REMINDERS_SECONDS = 15.0
 RECURRENCE_SECONDS = 3600.0
+CALENDAR_SYNC_SECONDS = 15.0
 DIGEST_POLL_SECONDS = 60.0
 DIGEST_GRACE = timedelta(hours=4)       # a digest missed by more than this is skipped, not sent late
 WEEKLY_DIGEST_AT = time(18, 0)          # on Sundays, household time
@@ -185,6 +186,14 @@ async def expand_recurrence(now: datetime | None = None) -> int:
             with contextlib.suppress(ToolError):   # the event was undone a moment ago
                 created += await calendar.materialise(conn, event["household_id"], event["id"], now)
     return created
+
+
+# ---------------------------------------------------------------- connected calendars
+async def sync_calendars(now: datetime | None = None) -> int:
+    """Every 15 seconds: send each connected calendar what changed here, and every two minutes
+    read what changed there (ADR 0036). A connection that stops working tells its owner once.
+    Returns how many messages were queued."""
+    return await calendar_sync.run(get_settings(), now or utcnow())
 
 
 # ---------------------------------------------------------------- digests

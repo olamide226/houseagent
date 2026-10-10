@@ -31,7 +31,7 @@
   <ul class="list">
   {% for entry in entries %}{% set event = entry.event %}
     <li class="row top">
-      <span class="time">{{ entry.at.strftime("%H:%M") }}</span>
+      <span class="time">{{ "All day" if event.all_day else entry.at.strftime("%H:%M") }}</span>
       <details class="more grow">
         <summary>
           <span class="grow"><span class="title">{{ event.title }}</span>
@@ -63,7 +63,7 @@
   <ul class="list">
   {% for event in series %}{% set at = local(event.starts_at, session.timezone) %}
     <li class="row top">
-      <span class="time">{{ at.strftime("%H:%M") }}</span>
+      <span class="time">{{ "All day" if event.all_day else at.strftime("%H:%M") }}</span>
       <details class="more grow">
         <summary>
           <span class="grow"><span class="title">{{ event.title }}</span>
@@ -93,14 +93,17 @@
 </div>
 <p class="hint">To add a reminder, ask the assistant: “remind me to call the plumber on Friday at 9”.</p>
 {% endif %}
-<h2>On your phone's calendar</h2>
+<h2>Google Calendar</h2>
+<div id="own-calendar">{% include "_calendar_own.html" %}</div>
+<h2>Any other calendar app</h2>
 <div class="card">
   {% if feed %}
-  <p>Add this link to Apple or Google Calendar as a calendar you subscribe to. It is shown only this once, so copy it now.</p>
+  <p>Add this link to Apple Calendar, or any other app, as a calendar you subscribe to. It is shown only this once, so copy it now.</p>
   <div class="copy"><input type="text" readonly value="{{ feed }}" aria-label="Calendar link" onfocus="this.select()">
     <button type="button" class="quiet" data-copy="{{ feed }}" hidden>Copy</button></div>
   {% else %}
-  <p class="hint">See these events in the calendar app you already use. Making a new link stops an earlier one working.</p>
+  <p class="hint">See these plans in Apple Calendar or any other calendar app. It only shows them: changes are
+    made here or in chat. Making a new link stops an earlier one working.</p>
   <button class="quiet" hx-post="/dashboard/calendar/feed" hx-target="#calendar">Get a calendar link</button>
   {% endif %}
 </div>
