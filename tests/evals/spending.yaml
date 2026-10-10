@@ -1,0 +1,142 @@
+# Spending from receipts (ADR 0040). A receipt photo keeps its shop, its total and the price of each
+# line; what was spent is then answered from those rows, by code. `seed.receipts` are receipts kept
+# with their prices, `seed.sections` the supermarket section of items (as the nightly job leaves
+# them), and `seed.unpriced_receipts` the days of receipts read before prices were kept.
+- name: a receipt keeps its shop, its total and the price of each line
+  seed:
+    items: [{name: milk, staple: true, stock: {fridge: 0}}, {name: egg, staple: true, stock: {fridge: 2}}]
+    list: [milk]
+  turns: [{from: Ola, photos: [receipt_supermarket.png]}]
+  expect:
+    events_all: {type: [restocked, added], source: receipt}
+    events_max: 3
+    shopping_list_active: []
+    receipts:
+      - {shop_contains: freshway, total: 5.80, prices: {milk: 1.65, egg: 2.95, bread: 1.20}, lines_max: 3}
+
+- name: a long receipt keeps the printed total and no price for a saving
+  seed:
+    items: [{name: rice, staple: true, stock: {store: 0}}]
+    list: [rice]
+  turns: [{from: Ola, photos: [receipt_big_shop.png]}]
+  expect:
+    events_max: 8
+    receipts:
+      - shop_contains: freshway
+        total: 22.69            # as printed, after the saving: not the lines added up
+        prices: {rice: 9.50, chicken: 4.75, butter: 1.99, tomato: 0.95, onion: 1.10, bleach: 0.85, toilet: 4.25}
+        no_price: [saving, total, card]
+        lines_max: 8            # the carrier bag may or may not be a line
+
+- name: a torn receipt keeps the prices that can be read and makes none up
+  turns: [{from: Ada, text: "bit of a mess, sorry", photos: [receipt_torn.png]}]
+  expect:
+    events_include:
+      - {item_contains: olive oil, type: [restocked, added]}
+      - {item_contains: washing, type: [restocked, added]}     # the stock is logged all the same
+    events_all: {type: [restocked, added], source: receipt}
+    events_max: 4
+    receipts:
+      - shop_contains: hilltop
+        day: "2026-09-28"
+        total: null             # torn off: not the three prices added up
+        prices: {olive oil: 4.50, tomato: 2.20, oat: 1.80}
+        no_price: [washing]     # under a stain
+        lines_max: 3
+
+- name: undo after a receipt takes its prices back with the stock
+  seed:
+    items: [{name: milk, staple: true, stock: {fridge: 0}}]
+    list: [milk]
+  turns:
+    - {from: Ola, photos: [receipt_supermarket.png]}
+    - {from: Ola, text: "undo that, wrong photo"}
+  expect:
+    receipts: []
+    stock: {milk: {status: out}}
+    shopping_list_active: [milk]
+
+- name: a price that was only said is not added to the spending
+  seed: {items: [{name: bread, stock: {store: 0}}]}
+  turns: [{from: Ada, text: "got bread from the bakery, it was £1.20"}]
+  expect:
+    events: [{item: bread, type: [restocked, added]}]
+    receipts: []
+
+- name: what was spent this month is the receipts added up
+  seed: &october
+    receipts:
+      - {shop: Freshway Supermarket, day: "2026-09-20", total: 5.60, lines: [[milk, 1.55, 2, pints], [egg, 2.95, 12], [bread, 1.10]]}
+      - shop: Freshway Supermarket
+        day: "2026-10-01"
+        total: 22.69
+        lines: [[rice, 9.50, 5, kg], [chicken thighs, 4.75], [butter, 1.99], [tomato, 0.95], [onion, 1.10], [bleach, 0.85], [toilet roll, 4.25]]
+      - {shop: Freshway Supermarket, day: "2026-10-03", total: 5.80, lines: [[milk, 1.65, 2, pints], [egg, 2.95, 12], [bread, 1.20]]}
+      - {shop: Hilltop Grocers, day: "2026-10-04", total: 8.95, lines: [[butter, 2.40], [coconut milk, 1.10]]}
+    sections:
+      rice: cupboard
+      chicken_thighs: meat and fish
+      butter: dairy and eggs
+      tomato: fruit and veg
+      onion: fruit and veg
+      bleach: household
+      toilet_roll: household
+      milk: dairy and eggs
+      egg: dairy and eggs
+      bread: bakery
+  turns: [{from: Ola, text: "how much have we spent this month?"}]
+  expect: {writes: 0, plain: true, reply_mentions: ["37.44"]}
+
+- name: what was spent at one shop
+  seed: *october
+  turns: [{from: Ada, text: "what did we spend at Hilltop this month?"}]
+  expect: {writes: 0, plain: true, reply_mentions: ["8.95"], reply_avoids: ["37.44"]}
+
+- name: what was spent on food
+  seed: *october
+  turns: [{from: Ola, text: "how much of this month's spending was food?"}]
+  expect: {writes: 0, plain: true, reply_mentions: ["26.49"]}
+
+- name: what was spent last month
+  seed: *october
+  turns: [{from: Ada, text: "what did we spend in September?"}]
+  expect: {writes: 0, plain: true, reply_mentions: ["5.60"], reply_avoids: ["37.44"]}
+
+- name: whether a price has changed is answered from the receipts
+  seed: *october
+  turns: [{from: Ola, text: "has milk gone up?"}]
+  expect: {writes: 0, plain: true, reply_mentions: ["1.65", "1.55"]}
+
+- name: receipts read before prices were kept are not passed off as nothing spent
+  seed:
+    items: [{name: milk, stock: {fridge: 1}}, {name: bread, stock: {store: 1}}]
+    unpriced_receipts: ["2026-10-02", "2026-10-04"]
+  turns: [{from: Ola, text: "how much have we spent this month?"}]
+  expect:
+    actions: 0
+    plain: true
+    reply: text
+    reply_says_any: ["not known", "don't know", "don't have", "do not have", "no prices", "without prices", "can't",
+                     cannot, unknown, "weren't", "wasn't", "not kept", "not recorded", "not available", "didn't", "aren't"]
+    reply_avoids: ["£0", "0.00", "nothing was spent", "haven't spent", "spent nothing"]
+
+- name: a total that was read wrongly is corrected
+  seed: *october
+  turns: [{from: Ada, text: "the Hilltop receipt was actually £9.85, not 8.95"}]
+  expect:
+    receipts:
+      - {shop_contains: hilltop, total: 9.85, day: "2026-10-04"}
+      - {shop_contains: freshway, total: 5.80}
+      - {shop_contains: freshway, total: 22.69}
+      - {shop_contains: freshway, total: 5.60}
+
+- name: a receipt that was not theirs is taken out of the spending and the stock is left alone
+  seed: *october
+  turns: [{from: Ola, text: "take the Hilltop receipt out of our spending, I picked it up for my mum"}]
+  expect:
+    events: []
+    receipts_removed: 1
+    receipts:
+      - {shop_contains: freshway, total: 5.80}
+      - {shop_contains: freshway, total: 22.69}
+      - {shop_contains: freshway, total: 5.60}
