@@ -193,12 +193,12 @@ async def seed(case: dict[str, Any], now: datetime) -> Any:
         for said in spec.get("said", []):       # something the assistant sent this person a few minutes ago
             thread = await _upsert_thread(conn, home.id, PLAYGROUND, f"{PLAYGROUND}:{home.members[said['to']]}", "dm")
             await record_outbound(conn, home.id, str(thread), said["text"], {}, None, at=now - timedelta(minutes=5))
-        for name, own in spec.get("own_calendar", {}).items():   # an adult's own Google Calendar, and how it stands
+        for name, own in spec.get("own_calendar", {}).items():   # an adult's own calendar, and how it stands
             await execute(
                 conn, "insert into calendar_connections (household_id, member_id, provider, account, secret, "
-                      "status, calendar_id, calendar_name) values (:h, :m, 'google', :account, 'not-a-sign-in', "
+                      "status, calendar_id, calendar_name) values (:h, :m, :provider, :account, 'not-a-sign-in', "
                       ":status, :name, :name)", h=home.id, m=home.members[name], status=own["status"],
-                account=f"{name.lower()}@example.test", name=own["name"])
+                provider=own.get("provider", "google"), account=f"{name.lower()}@example.test", name=own["name"])
         if "onboarding" in spec:   # the step setup has reached; everything before it is done
             steps = households.ONBOARDING_STEPS
             done = list(steps[:steps.index(spec["onboarding"])])

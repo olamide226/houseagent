@@ -74,7 +74,7 @@ before today has no prices at all, which must not be shown as a month in which n
 - Two more tools (eighteen with meal ideas, household jobs and letters), one more page (twelve in the menu), and three more optional fields on
   `log_inventory`. Every model step reads about 1,540 more tokens, cached (6,537 against 4,998 on
   a one-step turn). The eval suite was run before and after on both endpoints: nothing that passed
-  before failed after ([evals.md](../evals.md#latest-results)).
+  before failed after ([evals.md](../evals.md#previous-full-run-spending-from-receipts)).
 - The total is only as complete as the receipts sent. Cash at a market with no receipt, a
   takeaway, a bill: none of it is here. The page and the answers say "from your receipts".
 - A receipt from abroad is counted as if it were in the household's currency. It can be removed.
