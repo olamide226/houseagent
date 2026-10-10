@@ -39,7 +39,8 @@ low-stock prompt; then iMessage through a BlueBubbles server with a health check
 people to their next channel while it is down, the System page, the optional Letta runtime
 (not promoted) and a Helm chart. WhatsApp and iMessage have only been tested against recorded
 payloads, presence only with plain HTTP calls and not from a phone, and the chart has been
-rendered but not installed. Each page below says what has been checked and what has not.
+rendered but not installed. Each page below says what has been checked and what has not, and
+[go-live-checklist.md](go-live-checklist.md) lists what is still open before a public release.
 
 | Doc | Contents |
 | --- | --- |
@@ -52,5 +53,6 @@ rendered but not installed. Each page below says what has been checked and what 
 | [dashboard.md](dashboard.md) | Pages, the login flow, invites, channels and the family group, the System page, the calendar feed |
 | [operations.md](operations.md) | Environment variables, running, one server with compose (deploy, update, backup, moving a household), Helm, the subscription providers' CLIs and sign-in, media storage, worker jobs, the BlueBubbles outage and WhatsApp template runbooks, logs |
 | [evals.md](evals.md) | Running the agent evals, adding a case, latest results |
+| [go-live-checklist.md](go-live-checklist.md) | What is still open before a public release: one line an item, with its status and where the detail is |
 | [adr/](adr/) | One decision per file |
 | [spec.md](spec.md) | The v1 implementation spec: the baseline for behaviour, names and layout |
