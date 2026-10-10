@@ -52,3 +52,14 @@
   turns: [{from: Ada, scope: group, text: "I've booked the boiler service for Thursday at 2pm"}]
   expect:
     calendar: [{title_contains: boiler, local_start: "Thu 8 Oct 14:00", repeats: false}]
+
+# With a Google Calendar connected (ADR 0038) a plan is still booked once, here; the worker copies it.
+- name: asked to add a plan to Google Calendar as well it is not booked twice
+  seed: {setup: {google_calendar: true}, own_calendar: {Ola: {status: active, name: Family}}}
+  turns:
+    - {from: Ola, text: "Ada has the dentist on Friday at 2pm"}
+    - {from: Ola, text: "can you put that in my Google calendar as well?"}
+  expect:
+    calendar: [{title_contains: dentist, local_start: "Fri 9 Oct 14:00", repeats: false}]
+    calendar_cancelled: 0
+    reply: text

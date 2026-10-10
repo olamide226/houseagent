@@ -39,6 +39,8 @@ Everything is read by `Settings` in `app/config.py`, from the environment or a l
 | `INTERNAL_BASE_URL` | no | `PUBLIC_BASE_URL` | Where Letta reaches the api's `/internal` (Practice chat turns) |
 | `WORKER_INTERNAL_URL` | no | `http://localhost:8001` | Where Letta reaches the worker's `/internal` (chat turns); the worker listens on this port under `letta` |
 | `AGENT_NAME` | no | `Home` | Name used in the prompt and pages |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | for Google Calendar | | The OAuth client the owner makes once in Google Cloud ([below](#google-calendar)) |
+| `CALENDAR_SECRET_KEY` | for Google Calendar | | A Fernet key that encrypts each adult's stored sign-in. Several keys with commas between: the first encrypts, all decrypt. The app refuses to start with a value that is not a key |
 | `PRESENCE_SHORTCUT_URL` | no | | The iCloud link of the Shortcut the admin shared once. With it, the page a presence link opens gives everyone a "Get the shortcut" button ([presence.md](presence.md#sharing-the-shortcut-once)) |
 | `DEFAULT_TIMEZONE` | no | `Europe/London` | Prefilled on `/setup` |
 | `DEBOUNCE_SECONDS` | no | `4` | How long a batch must be quiet before its turn |
@@ -415,7 +417,7 @@ uv run python -m app.worker.main             # worker, in a second terminal
 
 ## Worker jobs
 
-`python -m app.worker.main` runs `inbound`, `outbox`, `fire_reminders` and `job_nudges` (every 15 s),
+`python -m app.worker.main` runs `inbound`, `outbox`, `fire_reminders`, `job_nudges` and `sync_calendars` (every 15 s),
 `expand_recurrence` (hourly), `daily_brief`, `weekly_digest`, `consumption_model` and
 `low_stock_prompt` (checked every minute), when a media backend is configured
 `media_cleanup` (hourly), and when iMessage is set up `imessage_health` (every 5 minutes). What each
@@ -424,7 +426,8 @@ does and why running it twice is harmless is in
 `reminder_queued`, `job_nudge_queued`, `digest_queued`, `outbox_sent`, `outbox_held_for_quiet_hours`,
 `outbox_send_failed`, `outbox_delivery_failed`, `outbox_fallback_queued`, `group_created`,
 `group_not_created`, `media_failed`, `photo_unreadable`, `media_cleaned`, `media_cleanup_failed`,
-`invite_redeemed`, `imessage_health_changed`, `items_categorised`, `categorise_failed`, `categorise_unreadable`, `job_crashed`.
+`invite_redeemed`, `imessage_health_changed`, `items_categorised`, `categorise_failed`, `categorise_unreadable`, `job_crashed`,
+`calendar_synced`, `calendar_sync_failed`, `calendar_connection_broken`, `calendar_send_refused`.
 
 ```sql
 -- reminders that should have gone and have not
@@ -438,6 +441,85 @@ select o.created_at, o.channel_used, o.last_error, f.status as fallback, f.chann
 from outbox o left join outbox f on f.dedupe_key = 'fallback:' || o.id
 where o.status = 'failed' order by o.created_at desc limit 20;
 ```
+
+## Google Calendar
+
+An adult connects their own Google Calendar on the dashboard's Calendar page and picks one
+calendar to share; the worker then keeps it and the household's plans in step
+([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md),
+[dashboard.md](dashboard.md#a-connected-google-calendar)). It is off until the three variables
+below are set. **It has never been run against Google**: no credentials existed when it was
+built.
+
+### The one-time setup in Google Cloud
+
+Whoever runs the installation does this once, at <https://console.cloud.google.com>. Google
+renames these screens from time to time; the names are as they were in October 2026.
+
+1. Create a project, or pick one.
+2. **APIs & Services, Library**: find "Google Calendar API" and enable it.
+3. **Google Auth Platform** (the OAuth consent screen). Under **Branding**, give the app a name
+   the family will recognise, since it is what Google shows them, and a support address. Under
+   **Audience**, choose External and, while the app is in Testing, add each adult's Google
+   address as a test user. Under **Data access**, add the two scopes
+   `https://www.googleapis.com/auth/calendar.calendarlist.readonly` and
+   `https://www.googleapis.com/auth/calendar.events`.
+4. **Clients, Create client**, type "Web application". Under "Authorised redirect URIs" add
+   exactly `{PUBLIC_BASE_URL}/dashboard/calendar/google/callback`. Google only accepts `https://`
+   here, or `http://localhost`. Copy the client ID and the client secret.
+5. Make the key that encrypts the stored sign-ins:
+
+   ```sh
+   docker compose run --rm api python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+   ```
+
+6. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `CALENDAR_SECRET_KEY` in `.env` (or the
+   Secret) and restart the api and the worker: `docker compose up -d`. Both need all three.
+7. Each adult then sends `dashboard`, opens Calendar and taps Connect Google Calendar.
+
+Google calls nothing on this server: it sends the person's browser back to the redirect address,
+which is under `/dashboard`, so the ingress needs no new path.
+
+### Testing or In production
+
+Google's documentation says two things about an app whose consent screen is still in "Testing":
+only the listed test users can connect, and a refresh token it is given expires after 7 days.
+Each adult's connection then stops every week; they get a message and tap Connect again. For
+one household that is the price of not publishing. Publishing the app ("In production") ends the
+7-day expiry. Google reviews an app that asks for calendar data before it shows no warning
+screen and before more than a limited number of people may use it; that review wants a privacy
+policy and proof that the domain is yours. This is a go-live item, not something a household
+needs.
+
+### The key
+
+- `CALENDAR_SECRET_KEY` is the only thing that opens the stored sign-ins. Keep it with the other
+  secrets and in the same backup: a database restored without it has connections nobody can use.
+- To replace it, put the new key in front of the old one, `new,old`, and restart. New sign-ins
+  are encrypted with the new key and old ones still open. A stored sign-in is only encrypted
+  again when its owner connects again, so the old key stays in the list until they have.
+- If the key is lost or changed outright, every connection stops at its next round and each
+  adult is told to connect again. Nothing else is lost.
+
+### Looking at it
+
+```sql
+-- every connection: is it working, when did it last finish a round, is it waiting after a failure
+select m.name, c.status, c.calendar_name, c.last_synced_at, c.failures, c.last_error, c.leased_until
+from calendar_connections c join members m on m.id = c.member_id;
+-- read one calendar from the start again (nothing is duplicated: what is linked stays linked)
+update calendar_connections set sync_token = null, next_pull_at = now() where id = '...';
+```
+
+`status` is `choosing` (signed in, no calendar picked), `active`, or `broken` (the sign-in no
+longer works, the calendar was deleted, or the key no longer opens it; `last_error` says which).
+After a fault at Google a connection waits 30 seconds, then twice as long each time up to an
+hour; `leased_until` is when it is next tried. `calendar_send_refused` in the log is one event
+Google would not take; the others still go. A refused change to an event that is already there
+is given up; a refused new event is tried again after the same wait.
+
+The callback's address holds a one-time code. The api masks it in its own access log; a proxy in
+front keeps its own log, where it should be masked or dropped as well ([Logs](#logs)).
 
 ## WhatsApp
 
@@ -573,8 +655,8 @@ text. `httpx` request logging is silenced because the Telegram URL contains the 
 WhatsApp token travels in a header and is never in a URL or an error message.
 
 uvicorn's access log prints each request's path. Presence, login and calendar tokens are part of
-their paths, and the setup token is a query value, so those parts are masked before the line is
-written (`POST /presence/… HTTP/1.1`). An ingress or proxy in front of the api keeps its own
+their paths, and the setup token and the code Google sends back after a sign-in are query values,
+so those parts are masked before the line is written (`POST /presence/… HTTP/1.1`). An ingress or proxy in front of the api keeps its own
 access log: mask or drop the path there too.
 
 ## Cost tracking
@@ -600,7 +682,7 @@ uv run pytest tests/unit tests/contract
 
 Tests use local Postgres and refuse to run against any database not named `houseagent_test`
 ([ADR 0008](adr/0008-local-postgres-for-tests.md)). Set `TEST_DATABASE_URL` to change host or
-user. The schema is dropped and rebuilt from migration `0001` at the start of each run.
+user. The schema is dropped and rebuilt from the migrations at the start of each run.
 
 ## Secrets
 
@@ -613,7 +695,9 @@ The calendar feed token is rotated from the Calendar page, a presence link from 
 invite is replaced or revoked on the Family page. "Log out everywhere" ends every dashboard
 session of a member. Provider tokens, webhook secrets, `SESSION_SECRET` and
 `INTERNAL_TOOL_TOKEN` are changed in the Secret and take effect when both processes restart;
-changing `SESSION_SECRET` logs everyone out. `CLAUDE_CODE_OAUTH_TOKEN` lasts a year and is
+changing `SESSION_SECRET` logs everyone out. `CALENDAR_SECRET_KEY` is replaced by putting the new
+key in front of the old one ([Google Calendar](#the-key)); an adult's own sign-in to Google is
+replaced when they disconnect and connect again, and `GOOGLE_CLIENT_SECRET` in Google Cloud. `CLAUDE_CODE_OAUTH_TOKEN` lasts a year and is
 replaced the same way; Codex's sign-in is renewed with `codex login` on its volume
 ([Subscription providers](#subscription-providers)).
 
@@ -622,4 +706,5 @@ replaced the same way; Codex's sign-in is renewed with `codex login` on its volu
 A restore has been done once, when the household moved to the dev server
 ([above](#moving-a-household-from-another-machine)); it is not practised on a schedule and no
 backup is taken automatically. There is no import for the System page's export. The subscription
-providers have not run in a signed-in container or on a cluster.
+providers have not run in a signed-in container or on a cluster. Google Calendar has not been
+connected to a real account ([above](#google-calendar)).

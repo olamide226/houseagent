@@ -1,0 +1,139 @@
+{
+  "kind": "calendar#events",
+  "etag": "\"p33g9f1p2b8ko80o\"",
+  "summary": "Family",
+  "updated": "2026-10-05T10:58:11.512Z",
+  "timeZone": "Europe/London",
+  "accessRole": "owner",
+  "defaultReminders": [{"method": "popup", "minutes": 30}],
+  "nextSyncToken": "sync-token-after-first-read",
+  "items": [
+    {
+      "kind": "calendar#event",
+      "etag": "\"3519400361230000\"",
+      "id": "5j1n2k8v0qsl4m7tq3c9d2e6ha_20261013T160000Z",
+      "status": "confirmed",
+      "summary": "Football",
+      "location": "Astro pitch",
+      "start": {"dateTime": "2026-10-14T18:00:00+01:00", "timeZone": "Europe/London"},
+      "end": {"dateTime": "2026-10-14T19:00:00+01:00", "timeZone": "Europe/London"},
+      "recurringEventId": "5j1n2k8v0qsl4m7tq3c9d2e6ha",
+      "originalStartTime": {"dateTime": "2026-10-13T17:00:00+01:00", "timeZone": "Europe/London"},
+      "iCalUID": "5j1n2k8v0qsl4m7tq3c9d2e6ha@google.com",
+      "sequence": 1,
+      "reminders": {"useDefault": true},
+      "eventType": "default"
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3519400361240000\"",
+      "id": "5j1n2k8v0qsl4m7tq3c9d2e6ha_20261020T160000Z",
+      "status": "cancelled",
+      "recurringEventId": "5j1n2k8v0qsl4m7tq3c9d2e6ha",
+      "originalStartTime": {"dateTime": "2026-10-20T17:00:00+01:00", "timeZone": "Europe/London"}
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3519400361000000\"",
+      "id": "7c2m9s4h1p0r8t6u3v5w2x1yzb",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=example",
+      "created": "2026-10-01T08:12:44.000Z",
+      "updated": "2026-10-05T10:58:11.512Z",
+      "summary": "  Hairdresser ",
+      "description": "Ask for Sam",
+      "location": "Cut & Dry, 4 High Street",
+      "creator": {"email": "ada@example.test", "self": true},
+      "organizer": {"email": "family@group.calendar.example.test", "displayName": "Family", "self": true},
+      "start": {"dateTime": "2026-10-07T16:00:00+01:00", "timeZone": "Europe/London"},
+      "end": {"dateTime": "2026-10-07T16:45:00+01:00", "timeZone": "Europe/London"},
+      "iCalUID": "7c2m9s4h1p0r8t6u3v5w2x1yzb@google.com",
+      "sequence": 0,
+      "reminders": {"useDefault": true},
+      "eventType": "default"
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3519400361010000\"",
+      "id": "0a9inset8day7tq3c9d2e6hazz",
+      "status": "confirmed",
+      "summary": "Inset day",
+      "start": {"date": "2026-10-09"},
+      "end": {"date": "2026-10-10"},
+      "transparency": "transparent",
+      "iCalUID": "0a9inset8day7tq3c9d2e6hazz@google.com",
+      "sequence": 0,
+      "reminders": {"useDefault": false},
+      "eventType": "default"
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3519400361020000\"",
+      "id": "5j1n2k8v0qsl4m7tq3c9d2e6ha",
+      "status": "confirmed",
+      "summary": "Football",
+      "location": "Astro pitch",
+      "start": {"dateTime": "2026-09-01T17:00:00+01:00", "timeZone": "Europe/London"},
+      "end": {"dateTime": "2026-09-01T18:00:00+01:00", "timeZone": "Europe/London"},
+      "recurrence": [
+        "EXDATE;TZID=Europe/London:20260929T170000",
+        "RRULE:FREQ=WEEKLY;WKST=SU;UNTIL=20261215T235959Z;BYDAY=TU"
+      ],
+      "iCalUID": "5j1n2k8v0qsl4m7tq3c9d2e6ha@google.com",
+      "sequence": 0,
+      "reminders": {"useDefault": true},
+      "eventType": "default"
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3519400361030000\"",
+      "id": "3g8ours2made1this0event9abcd",
+      "status": "confirmed",
+      "summary": "GP for Ada",
+      "location": "Hurley Clinic",
+      "start": {"dateTime": "2026-10-07T09:30:00Z", "timeZone": "Europe/London"},
+      "end": {"dateTime": "2026-10-07T10:30:00Z", "timeZone": "Europe/London"},
+      "extendedProperties": {"private": {"houseagent": "1b671a64-40d5-491e-99b0-da01ff1f3341"}},
+      "reminders": {"useDefault": false},
+      "eventType": "default"
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3519400361040000\"",
+      "id": "9deleted8event7tq3c9d2e6hzz",
+      "status": "cancelled"
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3519400361050000\"",
+      "id": "2birthday0nana7tq3c9d2e6hzz",
+      "status": "confirmed",
+      "summary": "Nana's birthday",
+      "start": {"date": "2026-10-11"},
+      "end": {"date": "2026-10-12"},
+      "recurrence": ["RRULE:FREQ=YEARLY"],
+      "eventType": "birthday"
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3519400361060000\"",
+      "id": "4odd0dates7tq3c9d2e6hzzyyx",
+      "status": "confirmed",
+      "summary": "Odd dates",
+      "start": {"dateTime": "2026-10-08T10:00:00+01:00", "timeZone": "Europe/London"},
+      "end": {"dateTime": "2026-10-08T11:00:00+01:00", "timeZone": "Europe/London"},
+      "recurrence": ["RDATE;TZID=Europe/London:20261012T100000,20261019T100000"],
+      "eventType": "default"
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3519400361070000\"",
+      "id": "6untitled0newyork7tq3c9d2ehz",
+      "status": "confirmed",
+      "start": {"dateTime": "2026-10-08T09:00:00-04:00", "timeZone": "America/New_York"},
+      "end": {"dateTime": "2026-10-08T09:00:00-04:00", "timeZone": "America/New_York"},
+      "endTimeUnspecified": true,
+      "eventType": "fromGmail"
+    }
+  ]
+}

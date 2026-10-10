@@ -7,7 +7,7 @@ reminders, and nothing about the word `dashboard`, the word `shops`, the web pag
 invited, how to move to another chat app, or what it sends by itself. Asked about any of these it
 answered like any assistant would: from what such products usually have. On ten questions a
 family member would ask, with nothing else changed, it passed 5 on each endpoint
-([evals.md](../evals.md#latest-results)). "Switch me to WhatsApp" got "Switched — I'll message
+([evals.md](../evals.md#previous-full-run-the-product-guide)). "Switch me to WhatsApp" got "Switched — I'll message
 you on WhatsApp from now on". "Can you read photos?" got "yes" in a household where it cannot.
 One person was told the list is at "the same link as the ICS feed your calendar uses".
 

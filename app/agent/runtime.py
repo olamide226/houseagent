@@ -16,6 +16,7 @@ def setup_of(settings: Settings, media: MediaStore | None) -> Setup:
         photos=settings.llm_supports_images and media is not None,
         voice_notes=make_stt(settings) is not None,
         shop_shortcut=bool(settings.presence_shortcut_url),
+        google_calendar=settings.google_calendar_enabled,
     )
 
 

@@ -38,7 +38,7 @@ def label(event: dict[str, Any]) -> str:
 
 def describe(event: dict[str, Any], start: datetime | None = None) -> str:
     begins = local(start or event["starts_at"], event["timezone"])
-    text = f"{label(event)} on {begins:%a %-d %b} at {begins:%H:%M}"
+    text = f"{label(event)} on {begins:%a %-d %b}" + (", all day" if event["all_day"] else f" at {begins:%H:%M}")
     return f"{text}, {event['location']}" if event["location"] else text
 
 
@@ -85,8 +85,8 @@ async def _target(conn: AsyncConnection, event: dict[str, Any]) -> tuple[str, st
 
 async def _planned(conn: AsyncConnection, event: dict[str, Any], now: datetime) -> dict[datetime, dict[str, Any]]:
     """The reminder rows the event should have from `now` on, keyed by fire time."""
-    if event["status"] != "active":
-        return {}
+    if event["status"] != "active" or event["all_day"]:
+        return {}   # a whole day has no hour to be reminded before: the morning brief says it
     leads: list[int] = event["remind_before_minutes"]
     if event["rrule"]:
         horizon = now + max(HORIZON, timedelta(minutes=max(leads, default=0), hours=2))
@@ -183,9 +183,14 @@ def _rule(rule: str, dtstart: datetime, timezone: str) -> str:
 async def schedule_event(
     rec: Recorder, *, title: str, starts_at: datetime, kind: str = "appointment", ends_at: datetime | None = None,
     rrule: str | None = None, participant_ids: Sequence[str] = (), location: str | None = None,
-    remind_before_minutes: Sequence[int] = DEFAULT_LEADS, notes: str | None = None,
+    remind_before_minutes: Sequence[int] = DEFAULT_LEADS, notes: str | None = None, all_day: bool = False,
+    exdates: Sequence[date] = (), allow_started: bool = False,
 ) -> str:
-    """Create an event and its reminders. Returns the event id."""
+    """Create an event and its reminders. Returns the event id. An `all_day` event runs from
+    midnight to midnight in household time and has no reminders.
+
+    `exdates` and `allow_started` are for an event that arrives from a connected calendar: a
+    series can come with dates already skipped, and a one-off may have begun by the time it is read."""
     ctx = rec.ctx
     timezone = await households.timezone(ctx.conn, ctx.household_id)
     title = title.strip()
@@ -204,7 +209,7 @@ async def schedule_event(
         if first is None:
             raise ToolError("that repeat rule never happens")
         starts_at = first
-    elif starts_at <= ctx.now:
+    elif starts_at <= ctx.now and not allow_started:
         raise ToolError(f"{local(starts_at, timezone):%a %-d %b %Y %H:%M} has already passed; "
                         f"it is now {local(ctx.now, timezone):%a %-d %b %Y %H:%M}")
 
@@ -221,25 +226,28 @@ async def schedule_event(
     event_id = str(await fetch_val(
         ctx.conn,
         """insert into events (household_id, title, kind, starts_at, ends_at, rrule, location, participant_ids,
-                               remind_before_minutes, notes, source_message_id, created_by, created_at)
+                               remind_before_minutes, notes, source_message_id, created_by, created_at, all_day,
+                               exdates)
            values (:h, :title, :kind, :starts, :ends, :rrule, :location, cast(:participants as uuid[]),
-                   :leads, :notes, :message, :member, clock_timestamp()) returning id""",
+                   :leads, :notes, :message, :member, clock_timestamp(), :all_day, cast(:exdates as date[]))
+           returning id""",
         h=ctx.household_id, title=title, kind=kind, starts=starts_at,
         ends=None if duration is None else starts_at + duration, rrule=rrule, location=location or None,
         participants=list(participant_ids), leads=leads, notes=notes or None, message=ctx.message_id,
-        member=ctx.member_id,
+        member=ctx.member_id, all_day=all_day, exdates=sorted(set(exdates)) if rrule else [],
     ))
     rec.created("events", event_id)
     event = await _event(ctx.conn, ctx.household_id, event_id)
     fire_times = await _sync_reminders(rec, event)
     if rrule:
         rec.lines.append(f"OK: {describe(event)}, repeating ({rrule})")
-        if leads:
+        if leads and not all_day:
             rec.lines.append(f"NOTE: reminders {' and '.join(_lead(lead) for lead in leads)} before each one")
     else:
         rec.lines.append(f"OK: {describe(event)}")
-        rec.lines.append(f"NOTE: reminders at {_times(fire_times, timezone)}" if fire_times
-                         else "NOTE: no reminders, it is too close")
+        if not all_day:
+            rec.lines.append(f"NOTE: reminders at {_times(fire_times, timezone)}" if fire_times
+                             else "NOTE: no reminders, it is too close")
     return event_id
 
 
@@ -247,8 +255,13 @@ async def modify_event(
     rec: Recorder, event_id: str, *, cancel: bool = False, scope: str = "this", occurrence: date | None = None,
     starts_at: datetime | None = None, ends_at: datetime | None = None, title: str | None = None,
     location: str | None = None, participant_ids: Sequence[str] | None = None, notes: str | None = None,
+    rrule: str | None = None, exdates: Sequence[date] | None = None, all_day: bool | None = None,
 ) -> None:
-    """Move, edit or cancel. On a recurring event, scope `this` changes one occurrence only."""
+    """Move, edit or cancel. On a recurring event, scope `this` changes one occurrence only.
+
+    `rrule`, `exdates` and `all_day` are for a change that arrives from a connected calendar,
+    which can alter the series itself: an empty `rrule` makes it a one-off, and `exdates` is the
+    whole list of skipped dates."""
     ctx = rec.ctx
     event = await _event(ctx.conn, ctx.household_id, event_id)
     if event["status"] != "active":
@@ -257,8 +270,11 @@ async def modify_event(
         name: value for name, value in {
             "starts_at": starts_at, "ends_at": ends_at, "title": (title or "").strip() or None,
             "participant_ids": None if participant_ids is None else list(participant_ids),
+            "exdates": None if exdates is None else sorted(set(exdates)), "all_day": all_day,
         }.items() if value is not None
     }
+    if rrule is not None:
+        changes["rrule"] = rrule or None
     for name, text in (("location", location), ("notes", notes)):
         if text is not None:
             changes[name] = text.strip() or None      # an empty string clears it
@@ -276,15 +292,21 @@ async def modify_event(
         return
 
     start = changes.get("starts_at", event["starts_at"])
-    if event["rrule"] and "starts_at" in changes:
-        start = next_occurrence(event["rrule"], start, event["timezone"], start - timedelta(seconds=1)) or start
-        changes["starts_at"] = start
+    rule = changes.get("rrule", event["rrule"])
+    if rule and ("starts_at" in changes or "rrule" in changes):
+        if "rrule" in changes:
+            rule = changes["rrule"] = _rule(rule, start, event["timezone"])
+        # As when it is first scheduled: the series starts on its first real occurrence.
+        first = next_occurrence(rule, start, event["timezone"], start - timedelta(seconds=1)) or start
+        if "starts_at" in changes or first != event["starts_at"]:
+            start = changes["starts_at"] = first
     if "ends_at" not in changes and event["ends_at"] and "starts_at" in changes:
         changes["ends_at"] = start + (event["ends_at"] - event["starts_at"])
     if changes.get("ends_at") and changes["ends_at"] <= start:
         raise ToolError("the end must be after the start")
+    arrays = {"participant_ids": "uuid[]", "exdates": "date[]"}
     assignments = ", ".join(
-        f"{column} = cast(:{column} as uuid[])" if column == "participant_ids" else f"{column} = :{column}"
+        f"{column} = cast(:{column} as {arrays[column]})" if column in arrays else f"{column} = :{column}"
         for column in changes
     )
     await execute(ctx.conn, f"update events set {assignments} where id = :id", id=event_id, **changes)
@@ -294,8 +316,9 @@ async def modify_event(
         rec.lines.append(f"OK: now {describe(event)}, repeating ({event['rrule']})")
     else:
         rec.lines.append(f"OK: now {describe(event)}")
-        rec.lines.append(f"NOTE: reminders at {_times(fire_times, event['timezone'])}" if fire_times
-                         else "NOTE: no reminders, it is too close")
+        if not event["all_day"]:
+            rec.lines.append(f"NOTE: reminders at {_times(fire_times, event['timezone'])}" if fire_times
+                             else "NOTE: no reminders, it is too close")
 
 
 async def _change_one(rec: Recorder, event: dict[str, Any], day: date | None, cancel: bool,
@@ -395,6 +418,11 @@ async def cancel_reminder(rec: Recorder, reminder_id: str) -> None:
 
 
 # ---------------------------------------------------------------- reads
+async def get_event(conn: AsyncConnection, household_id: str, event_id: str) -> dict[str, Any] | None:
+    """One event with its household's time zone and its participants' names, cancelled or not."""
+    return await fetch_one(conn, _EVENT + " where e.id = :id and e.household_id = :h", id=event_id, h=household_id)
+
+
 @dataclass(frozen=True)
 class Occurrence:
     event_id: str
@@ -403,9 +431,13 @@ class Occurrence:
     location: str | None
     participants: list[str]
     rrule: str | None
+    all_day: bool = False
 
     def line(self, timezone: str, *, day: bool = True) -> str:
-        text = f"{local(self.start, timezone):{'%a %-d %b %H:%M' if day else '%H:%M'}} {self.title}"
+        if self.all_day:
+            text = f"{local(self.start, timezone):%a %-d %b} all day {self.title}" if day else f"All day: {self.title}"
+        else:
+            text = f"{local(self.start, timezone):{'%a %-d %b %H:%M' if day else '%H:%M'}} {self.title}"
         if self.participants:
             text += f" ({', '.join(self.participants)})"
         return f"{text}, {self.location}" if self.location else text
@@ -425,15 +457,20 @@ async def active_events(conn: AsyncConnection, household_id: str, *, recurring: 
 
 async def occurrences_between(conn: AsyncConnection, household_id: str, start: datetime, end: datetime,
                               member_id: str | None = None) -> list[Occurrence]:
-    """Every event occurrence with start <= t < end, recurring ones expanded, soonest first."""
+    """Every event occurrence with start <= t < end, recurring ones expanded, soonest first. An
+    all-day event counts for the whole of the day it begins on, so it is still "today" at noon."""
     found: list[Occurrence] = []
     for event in await active_events(conn, household_id, member_id=member_id):
+        since = start
+        if event["all_day"]:
+            since = day_bounds(local(start, event["timezone"]).date(), event["timezone"])[0]
         if event["rrule"]:
-            starts = occurrences(event["rrule"], event["starts_at"], event["timezone"], start, end, event["exdates"])
+            starts = occurrences(event["rrule"], event["starts_at"], event["timezone"], since, end, event["exdates"])
         else:
-            starts = [event["starts_at"]] if start <= event["starts_at"] < end else []
+            starts = [event["starts_at"]] if since <= event["starts_at"] < end else []
         found += [
-            Occurrence(event["id"], event["title"], at, event["location"], event["participants"], event["rrule"])
+            Occurrence(event["id"], event["title"], at, event["location"], event["participants"], event["rrule"],
+                       bool(event["all_day"]))
             for at in starts
         ]
     return sorted(found, key=lambda occurrence: occurrence.start)
@@ -481,14 +518,15 @@ async def upcoming_lines(conn: AsyncConnection, household_id: str, timezone: str
 
 async def brief_only(conn: AsyncConnection, household_id: str, start: datetime, end: datetime) -> list[Occurrence]:
     """Occurrences in the window whose day-before reminder fell in quiet hours and was skipped,
-    so the morning brief is where the household hears about them (spec 9.2)."""
+    so the morning brief is where the household hears about them (spec 9.2). An all-day event has
+    no reminders at all, so it is always one of them."""
     found = []
     events = {event["id"]: event for event in await active_events(conn, household_id)}
     for occurrence in await occurrences_between(conn, household_id, start, end):
         event = events[occurrence.event_id]
         _, member_id = await _target(conn, event)
         day_before = occurrence.start - timedelta(minutes=DAY_MINUTES)
-        if DAY_MINUTES in event["remind_before_minutes"] and await members.quiet_until(
+        if event["all_day"] or DAY_MINUTES in event["remind_before_minutes"] and await members.quiet_until(
                 conn, household_id, member_id, day_before) is not None:
             found.append(occurrence)
     return found

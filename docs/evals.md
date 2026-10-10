@@ -174,9 +174,9 @@ inventory events here, so calendar expectations are under `calendar`.
 
 ## Suite
 
-97 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (7), reminders (5),
+103 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (8), reminders (5),
 photos (6: four receipts, two fridge or freezer photos), onboarding, family and settings (13),
-presence (4: answers to the low-stock prompt and the "out and about" offer), product (11:
+presence (4: answers to the low-stock prompt and the "out and about" offer), product (16:
 what the assistant says about itself, [ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)),
 meals (10: what to cook, [ADR 0036](adr/0036-meal-ideas-from-a-short-stock-read.md)),
 and household jobs (14, [ADR 0037](adr/0037-a-household-job-is-a-reminder-that-is-to-be-done.md)).
@@ -205,6 +205,16 @@ photos are on and where they are not, "switch me to WhatsApp" where it is set up
 not, a feature that does not exist (ordering the shopping online), and a how-to question in the
 family group. Each asserts no writes, plain words, and the word or page that has to be named.
 
+Five more are about an adult's own calendar
+([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)): how to get plans
+into Google Calendar where that is switched on (the Calendar page and its Connect button) and
+where it is not, whether an Apple calendar can be connected (no: the link, and no promise that
+changes come back), "is my Google calendar connected?" from someone whose calendar is, and "why
+have my plans stopped showing up there?" from someone whose connection stopped. `seed.own_calendar`
+gives an adult a connection in a named state. One calendar case goes with them: someone
+connected books the dentist and then asks for it to be put in their Google calendar "as well",
+and there must still be one event.
+
 Eleven of them are variants written for the pass on repeat mistakes
 ([ADR 0031](adr/0031-rules-the-model-kept-breaking.md)): the same mistake asked for with other
 items, other wording and another shop, so that a fix is not judged only on the case it was
@@ -219,6 +229,67 @@ photo case reads its image through a read-only `MediaStore` over that folder, so
 the same path into the model as a stored Telegram photo.
 
 ## Latest results
+
+One run of the whole suite with the loop runtime, 10 Oct 2026, before and after two-way calendar
+sync ([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)), model
+`deepseek-flash` through both adapters. Before is `main` with meal ideas and household jobs in
+it: 97 cases, 602 seconds. After is the same 97 and the 6 new ones: 634 seconds. The change adds
+no tool. It adds about 80 tokens to the guide where Google Calendar is not switched on and about
+190 where it is (by length), and one clause to the brief's line about the person speaking.
+
+| Adapter | Before | After | NOOP | Undo | Input tokens after (cached) | Output tokens after |
+| --- | --- | --- | --- | --- | --- | --- |
+| `openai_compat` | 97/97 | **103/103** | 3/3 | 7/7 | 1,464,455 (1,126,144) | 24,694 |
+| `anthropic` | 95/97 | **102/103** | 3/3 | 7/7 | 1,462,367 (1,421,568) | 23,773 |
+
+| Category | `openai_compat` before | after | `anthropic` before | after |
+| --- | --- | --- | --- | --- |
+| inventory | 12/12 | 12/12 | 12/12 | 12/12 |
+| shopping list | 5/5 | 5/5 | 5/5 | 5/5 |
+| NOOP | 3/3 | 3/3 | 3/3 | 3/3 |
+| undo | 7/7 | 7/7 | 7/7 | 7/7 |
+| calendar | 7/7 | 8/8 | 7/7 | 8/8 |
+| reminders | 5/5 | 5/5 | 5/5 | 5/5 |
+| photos | 6/6 | 6/6 | 6/6 | 6/6 |
+| onboarding | 13/13 | 13/13 | 13/13 | 12/13 |
+| presence | 4/4 | 4/4 | 4/4 | 4/4 |
+| product | 11/11 | 16/16 | 10/11 | 16/16 |
+| meals | 10/10 | 10/10 | 10/10 | 10/10 |
+| household jobs | 14/14 | 14/14 | 13/14 | 14/14 |
+
+The release bar (95% overall and 100% on NOOP and undo, on at least two providers) is met on both
+endpoints in both runs. It is one sample per case, and the two endpoints are one model on two
+wire formats.
+
+The three failures, all on the `anthropic` endpoint:
+
+| Case | Run | What happened |
+| --- | --- | --- |
+| the MOT is due on a day | before | The job was made for everyone where the case expects it to be the speaker's |
+| whose job is whose is on the Jobs page | before | The reply named the Jobs page and what it does, without the word the case checks for |
+| quiet hours for the other adult by name | after | Ada's quiet hours began at 20:00 where "after 7pm" is 19:00 |
+
+The third passed before and failed after, so it was run ten more times on each endpoint on
+`main` and on this change: 18 of 20 before and 18 of 20 after, every failure the same 20:00.
+The same was done on an earlier base (below): 19 of 20 each way. It is a slip the model makes
+about one time in fifteen with or without this change, and the meal-ideas run lost it too.
+
+**An earlier pair of runs, before meal ideas and household jobs were merged**, is how two of the
+new cases came to read as they do. On the 71 cases of that morning `main` scored 71/71 on both
+endpoints, and this change with its six cases 77/77 on `openai_compat` and 74/77 on `anthropic`.
+One of the three was the quiet-hours case above (then 21:00). The other two were new cases that
+asked for more than they were about. The calendar case wanted the dentist's only participant to
+be Ada, and the model had added the speaker too; what the case asks is whether there is still
+one event, and there was. "Is my Google calendar connected?" was answered "Yes — your Google
+Calendar is connected", and the case wanted the calendar's name in the reply. Both were cut
+back to what the case is about, and the six new cases were then run five times each on both
+endpoints: 60 of 60. A run in between, on `main` with meal ideas only, gave 80/81 and 81/81
+before and 87/87 on both endpoints after.
+
+**What these cases cannot show** is the sync itself. No model takes part in it: it is code,
+tested on rows.
+
+## Previous full run (household jobs)
 
 One run of the whole suite with the loop runtime, 10 Oct 2026, with household jobs
 ([ADR 0037](adr/0037-a-household-job-is-a-reminder-that-is-to-be-done.md)) on top of meal ideas,

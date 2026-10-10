@@ -26,7 +26,7 @@ from app.pipeline import inbound
 from app.presence import routes as presence
 
 log = structlog.get_logger()
-MIGRATION_HEAD = "0002"
+MIGRATION_HEAD = "0003"
 
 
 @asynccontextmanager

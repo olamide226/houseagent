@@ -10,7 +10,7 @@ from app.core.envelope import Envelope
 from app.core.timeutil import local
 from app.db import fetch_all, fetch_one
 from app.llm.types import CACHE_BREAK
-from app.services import calendar, households, inventory, jobs, members, shopping
+from app.services import calendar, calendar_sync, households, inventory, jobs, members, shopping
 
 STATIC_PROMPT = """\
 You are {AGENT_NAME}, the household assistant for a family. You live in their group chat and their direct messages. Your job is to keep track of food stock, the shopping list, appointments and reminders so nobody has to remember things or fill in forms.
@@ -66,12 +66,21 @@ def _person(person: dict[str, Any]) -> str:
             f"{'on ' + ' and '.join(apps) if apps else 'not connected yet'})")
 
 
-def _own_setup(person: dict[str, Any]) -> str:
+OWN_CALENDAR = {"choosing": "signed in to {calendar} but has not picked which calendar to share",
+                "active": "own {calendar} connected ({name})",
+                "broken": "own {calendar} has stopped working: they tap Connect again on the Calendar page"}
+
+
+def _own_setup(person: dict[str, Any], connected: dict[str, Any] | None = None) -> str:
     """What else the guide's answers depend on for the person speaking."""
     link = "has a personal link for the shops" if person["has_presence_link"] else "no personal link for the shops yet"
+    own = "no calendar of their own connected"
+    if connected:
+        own = OWN_CALENDAR[connected["status"]].format(calendar=calendar_sync.PROVIDERS[connected["provider"]],
+                                                       name=connected["calendar_name"])
     if len(person["channels"]) < 2 or not person["preferred_channel"]:
-        return f"{person['name']}'s setup: {link}"
-    return f"{person['name']}'s setup: messaged on {CHAT_APPS[person['preferred_channel']]}; {link}"
+        return f"{person['name']}'s setup: {link}; {own}"
+    return f"{person['name']}'s setup: messaged on {CHAT_APPS[person['preferred_channel']]}; {link}; {own}"
 
 
 def _quiet(person: dict[str, Any]) -> str:
@@ -95,7 +104,8 @@ async def build_brief(conn: AsyncConnection, env: Envelope, now: datetime) -> st
     adults = [person for person in family if person["role"] == "adult"]
     lines.append("Family: " + _capped([_person(person) for person in family], "; "))
     if speaker := next((person for person in adults if person["id"] == env.member_id), None):
-        lines.append(_own_setup(speaker))
+        connected = await calendar_sync.connections(conn, env.household_id)
+        lines.append(_own_setup(speaker, next((c for c in connected if c["member_id"] == speaker["id"]), None)))
     lines.append(f"Morning brief: {household['digest_time']:%H:%M}. Quiet hours: "
                  + _capped([_quiet(person) for person in adults]))
     locations = await fetch_all(conn, "select name from locations where household_id = :h order by name",

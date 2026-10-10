@@ -3,6 +3,7 @@
 One VEVENT per active event, with its RRULE and exception dates passed through. The token
 is per household and only its hash is stored.
 """
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Response
@@ -15,6 +16,7 @@ router = APIRouter()
 CACHE_SECONDS = 15 * 60
 UTC_STAMP = "%Y%m%dT%H%M%SZ"
 LOCAL_STAMP = "%Y%m%dT%H%M%S"
+DAY_STAMP = "%Y%m%d"
 
 
 def _escape(text: str) -> str:
@@ -43,18 +45,20 @@ def render(household: dict[str, Any], events: list[dict[str, Any]]) -> str:
     ]
     for event in events:
         begins = local(event["starts_at"], timezone)
+        # A whole day is written as a date, and so is everything that must match it (RFC 5545 3.8.2.4).
+        stamp, zoned = (DAY_STAMP, ";VALUE=DATE") if event["all_day"] else (LOCAL_STAMP, f";TZID={timezone}")
         lines += [
             "BEGIN:VEVENT", f"UID:{event['id']}@household-agent", f"DTSTAMP:{event['created_at']:{UTC_STAMP}}",
-            f"DTSTART;TZID={timezone}:{begins:{LOCAL_STAMP}}",
+            f"DTSTART{zoned}:{begins:{stamp}}",
         ]
         if event["ends_at"]:
-            lines.append(f"DTEND;TZID={timezone}:{local(event['ends_at'], timezone):{LOCAL_STAMP}}")
+            lines.append(f"DTEND{zoned}:{local(event['ends_at'], timezone):{stamp}}")
         if event["rrule"]:
             lines.append(f"RRULE:{event['rrule']}")
         if event["exdates"]:
             # An exception date names the occurrence by its start: that date at the series' local time.
-            skipped = ",".join(f"{day:%Y%m%d}T{begins:%H%M%S}" for day in sorted(event["exdates"]))
-            lines.append(f"EXDATE;TZID={timezone}:{skipped}")
+            skipped = ",".join(f"{datetime.combine(day, begins.time()):{stamp}}" for day in sorted(event["exdates"]))
+            lines.append(f"EXDATE{zoned}:{skipped}")
         lines.append(f"SUMMARY:{_escape(calendar.label(event))}")
         if event["location"]:
             lines.append(f"LOCATION:{_escape(event['location'])}")

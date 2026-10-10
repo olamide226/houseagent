@@ -4,6 +4,7 @@ import re
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -66,6 +67,12 @@ class Settings(BaseSettings):
     bb_webhook_secret: str | None = None
     bb_private_api: bool = False
 
+    # Two-way calendar sync (ADR 0038). An adult can connect a Google Calendar once the OAuth client
+    # and the key that encrypts each stored sign-in are all set.
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    calendar_secret_key: str | None = None    # one Fernet key, or several with commas: the first encrypts
+
     # The optional Letta runtime (spec 8.4). Its tools call back into `/internal/tools/*`.
     letta_base_url: str | None = None
     letta_api_key: str | None = None
@@ -73,6 +80,20 @@ class Settings(BaseSettings):
     internal_tool_token: str | None = None
     internal_base_url: str | None = None      # where Letta reaches the api's /internal; default PUBLIC_BASE_URL
     worker_internal_url: str = "http://localhost:8001"   # where Letta reaches the worker's; it listens on this port
+
+    @field_validator("calendar_secret_key")
+    @classmethod
+    def _a_real_key(cls, value: str | None) -> str | None:
+        """Refuse to start with a key that cannot encrypt, not at the first sign-in to be stored."""
+        if value:
+            from app.core.crypto import check_keys
+
+            check_keys(value)
+        return value or None
+
+    @property
+    def google_calendar_enabled(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret and self.calendar_secret_key)
 
     @property
     def telegram_enabled(self) -> bool:
@@ -93,13 +114,14 @@ def get_settings() -> Settings:
     return Settings()
 
 
-# A presence, login or calendar token is the last part of its path, and the setup token and the
-# iMessage webhook secret are query parameters. None of them belongs in a log.
-_SECRET_IN_URL = re.compile(r"(^/(?:presence|login|ics)/|[?&](?:token|secret)=)[^/?&\s]+")
+# A presence, login or calendar token is the last part of its path, and the setup token, the
+# iMessage webhook secret and the code Google sends back after a sign-in are query parameters.
+# None of them belongs in a log. A value in the query runs to the next `&`: Google's code has a `/` in it.
+_SECRET_IN_URL = re.compile(r"(^/(?:presence|login|ics)/)[^/?&\s]+|([?&](?:token|secret|code|state)=)[^&\s]+")
 
 
 def mask_secrets(url: str) -> str:
-    return _SECRET_IN_URL.sub(r"\1…", url)
+    return _SECRET_IN_URL.sub(lambda found: f"{found[1] or found[2]}…", url)
 
 
 class _MaskAccessLog(logging.Filter):

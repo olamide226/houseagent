@@ -18,6 +18,7 @@ class Setup:
     photos: bool = True          # the model reads images and there is somewhere to keep them
     voice_notes: bool = False    # a transcriber is configured
     shop_shortcut: bool = False  # the admin has shared the Shortcut (PRESENCE_SHORTCUT_URL)
+    google_calendar: bool = False   # an adult can connect their own Google Calendar (GOOGLE_CLIENT_ID and the rest)
 
 
 INTRO = (
@@ -69,7 +70,7 @@ PAGES = {
     "shopping": ("Shopping", "the list: add, tick off, set the shop"),
     "inventory": ("Pantry", "what food is in the house and where"),
     "calendar": ("Calendar", "add, change or cancel plans, cancel reminders, and get a link that shows the plans in "
-                             "their phone's own calendar app"),
+                             "any calendar app"),
     "jobs": ("Jobs", "household jobs, renewals and birthdays: what is coming up and whose it is, tick one off, "
                      "skip one or stop it"),
     "family": ("Family", "add someone, make or cancel an invite, choose which chat app an adult is messaged on"),
@@ -89,7 +90,22 @@ SENDS = {
     "daily_brief": "a morning brief, only on days with something due",
     "weekly_digest": "the week ahead on Sundays at 18:00",
     "low_stock_prompt": "at 17:30, a question about things that are probably running low",
+    "sync_calendars": "a note to an adult whose own connected calendar has stopped working, with how to connect it "
+                      "again",
 }
+# An adult's own calendar, kept in step with the plans here (app/services/calendar_sync.py, ADR 0038).
+OWN_CALENDAR = (
+    "Their own Google Calendar: an adult connects it on the Calendar page, by tapping Connect Google Calendar, "
+    "saying yes to Google, and picking one calendar to share with the household. From then on a plan made with you "
+    "appears in that calendar within a minute, and what they add, change or delete in it appears here within a few "
+    "minutes, things that last all day too. You still send the reminders. Each adult connects their own, and stops "
+    "it with Disconnect on the same page. If it stops working by itself they tap Connect again there. You cannot "
+    "connect or disconnect it from chat. Apple Calendar cannot be connected like this yet: the link on the Calendar "
+    "page shows the plans there, but a change made there does not come back here.")
+NO_OWN_CALENDAR = (
+    "Their own Google Calendar or Apple Calendar cannot be connected in this household yet, so a change made there "
+    "does not come back here: for Google, whoever set this up has to switch it on first. The link on the Calendar "
+    "page shows the plans in either.")
 
 
 # How a household job is answered. The times are the ones in app/services/jobs.py.
@@ -144,6 +160,7 @@ def product_guide(setup: Setup) -> str:
         "A family group: they add you to a group chat they already have and write something there. What is for "
         "everyone then goes to it.",
         shops,
+        OWN_CALENDAR if setup.google_calendar else NO_OWN_CALENDAR,
         "What you send by yourself: " + "; ".join(SENDS.values()) + ". Quiet hours hold these back until they are "
         "over, except a reminder set for a time inside them or asked for as urgent.",
     ]

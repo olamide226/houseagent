@@ -103,6 +103,23 @@ async def test_a_calendar_reading_the_feed_gets_the_right_occurrences_across_the
     assert [t.utcoffset().total_seconds() for t in found] == [3600, 3600, 0, 0]
 
 
+async def test_an_all_day_event_is_written_as_dates_and_so_are_its_skipped_dates(client):
+    from datetime import date
+
+    from app.agent.actions import Recorder
+    from app.services import calendar
+
+    async with tx() as conn:
+        home = await seed_home(conn)
+        await calendar.schedule_event(
+            Recorder(ctx_for(conn, home, now=NOW)), title="Inset day", starts_at=london("2026-10-09 00:00"),
+            ends_at=london("2026-10-10 00:00"), all_day=True, rrule="FREQ=YEARLY", exdates=[date(2027, 10, 9)])
+        token = await households.new_calendar_token(conn, home.id)
+    (inset,) = vevents((await client.get(f"/ics/{token}.ics")).text)
+    assert (inset["DTSTART;VALUE=DATE"], inset["DTEND;VALUE=DATE"]) == ("20261009", "20261010")
+    assert inset["EXDATE;VALUE=DATE"] == "20271009" and not any("TZID" in name for name in inset)
+
+
 def test_long_lines_fold_at_75_octets_without_splitting_a_character():
     line = "SUMMARY:" + "Sàlàdé " * 30
     folded = _fold(line)

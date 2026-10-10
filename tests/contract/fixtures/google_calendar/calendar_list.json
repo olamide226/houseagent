@@ -1,0 +1,14 @@
+{
+  "kind": "calendar#calendarList",
+  "etag": "\"p32ofplf5q6gf00o\"",
+  "items": [
+    {"kind": "calendar#calendarListEntry", "id": "family@group.calendar.example.test", "summary": "Family",
+     "timeZone": "Europe/London", "accessRole": "owner", "selected": true},
+    {"kind": "calendar#calendarListEntry", "id": "ada@example.test", "summary": "ada@example.test",
+     "timeZone": "Europe/London", "accessRole": "owner", "primary": true, "selected": true},
+    {"kind": "calendar#calendarListEntry", "id": "school@group.calendar.example.test", "summary": "St Mary's term dates",
+     "summaryOverride": "School", "accessRole": "writer"},
+    {"kind": "calendar#calendarListEntry", "id": "old@group.calendar.example.test", "summary": "Old one",
+     "accessRole": "owner", "deleted": true}
+  ]
+}

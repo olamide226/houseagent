@@ -16,3 +16,5 @@ flowchart LR
     W -- "replies, reminders, digests, shop lists" --> TG
     W -- "replies, templates" --> WA
     W -- "replies, tapbacks, a ping every 5 min" --> BB
+    W <-- "events both ways, every 15 s and 2 min" --> GC[Google Calendar]
+    Browser -- "sign-in, then back to the api" --> GC

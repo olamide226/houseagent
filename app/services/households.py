@@ -413,7 +413,11 @@ EXPORTED = {
     "shopping_list_items": "household_id = :h", "events": "household_id = :h", "reminders": "household_id = :h",
     "places": "household_id = :h", "presence_events": f"member_id in {_MEMBERS}", "nudge_log": "household_id = :h",
     "agent_actions": "household_id = :h", "outbox": "household_id = :h", "job_runs": "household_id = :h",
+    "calendar_connections": "household_id = :h",
+    "calendar_links": "connection_id in (select id from calendar_connections where household_id = :h)",
 }
+# Never in a file: the encrypted sign-in to someone's calendar, and the place in its changes.
+NOT_EXPORTED = ("secret", "sync_token")
 HEARTBEAT = "worker_heartbeat"   # a job_runs row per household that the worker keeps moving forward
 
 
@@ -424,7 +428,8 @@ async def export(conn: AsyncConnection, household_id: str) -> dict[str, list[dic
     for table, mine in EXPORTED.items():
         rows = await fetch_all(conn, f"select to_jsonb(t) as row from {table} t where {mine} order by 1",
                                h=household_id)
-        tables[table] = [{k: v for k, v in r["row"].items() if not k.endswith("_hash")} for r in rows]
+        tables[table] = [{k: v for k, v in r["row"].items() if not k.endswith("_hash") and k not in NOT_EXPORTED}
+                         for r in rows]
     return tables
 
 

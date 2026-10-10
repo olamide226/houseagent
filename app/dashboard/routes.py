@@ -3,6 +3,7 @@
 Pages read through app/services and write through the same service functions the agent
 tools use, logged in agent_actions with source 'dashboard'.
 """
+import contextlib
 import json
 import tomllib
 from collections.abc import Awaitable, Callable
@@ -15,21 +16,25 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.agent import actions
 from app.agent.actions import Recorder, record
 from app.agent.base import Ctx, ToolError
 from app.agent.resolve import Ambiguous, resolve_item, resolve_members
+from app.calendars import google
+from app.calendars.base import CalendarError, Refused
 from app.channels.base import ADAPTERS, ChannelError, GroupHost
 from app.config import get_settings
+from app.core import crypto
 from app.core.envelope import Channel, GroupUpdate
 from app.core.timeutil import day_bounds, local, parse_clock, to_utc, utcnow
 from app.dashboard.auth import Session, current_session, invite_context, qr_svg, require_csrf, templates
 from app.db import advisory_lock, engine, fetch_all, fetch_one, fetch_val, tx
 from app.pipeline import inbound
 from app.pipeline import router as outbound
-from app.services import calendar, households, inventory, jobs, members, shopping
+from app.services import calendar, calendar_sync, households, inventory, jobs, members, shopping
 
 router = APIRouter(prefix="/dashboard", default_response_class=HTMLResponse)
 
@@ -37,6 +42,16 @@ ACTIVITY_LIMIT = 200
 CALENDAR_DAYS = 30
 REPEATS = {"": None, "daily": "FREQ=DAILY", "weekly": "FREQ=WEEKLY", "monthly": "FREQ=MONTHLY"}
 HEARTBEAT_LATE = timedelta(minutes=3)   # the worker reports every minute
+CONNECT_SECONDS = 600                   # how long someone has to say yes at Google and come back
+# What the Calendar page says after a trip to Google that connected nothing.
+NOT_CONNECTED = {
+    "stale": "That took too long, or was started somewhere else. Use the button below to try again.",
+    "denied": "Nothing was connected, because Google was not given permission.",
+    "partial": "Nothing was connected. Google asks two things, and both boxes have to stay ticked. "
+               "Use the button below to try again.",
+    "empty": "That Google account has no calendar that plans can be added to.",
+    "failed": "Google could not be reached just now. Try again in a minute.",
+}
 
 
 def _ctx(conn: AsyncConnection, session: Session) -> Ctx:
@@ -245,8 +260,16 @@ async def item_merge(request: Request, item_id: str, duplicate_id: str = Form(..
 
 
 # ---------------------------------------------------------------- Calendar
+async def _own_calendar(conn: AsyncConnection, session: Session, error: str | None = None) -> dict[str, Any]:
+    """What the page shows about connected calendars: the viewer's own, and who else has one."""
+    connected = await calendar_sync.connections(conn, session.household_id)
+    return {"on": get_settings().google_calendar_enabled, "error": error,
+            "mine": next((c for c in connected if c["member_id"] == session.member_id), None),
+            "others": [c for c in connected if c["member_id"] != session.member_id and c["status"] != "choosing"]}
+
+
 async def _calendar(request: Request, session: Session, template: str = "_calendar.html",
-                    error: str | None = None, feed: str | None = None) -> Response:
+                    error: str | None = None, feed: str | None = None, own_error: str | None = None) -> Response:
     now = utcnow()
     until = now + timedelta(days=CALENDAR_DAYS)
     async with tx() as conn:
@@ -255,6 +278,7 @@ async def _calendar(request: Request, session: Session, template: str = "_calend
             "days": _by_day(coming, [], session.timezone),
             "series": await calendar.active_events(conn, session.household_id, recurring=True),
             "reminders": await calendar.standalone_reminders(conn, session.household_id, now, until, expand=False),
+            "own": await _own_calendar(conn, session, own_error),
         }
     return _page(request, template, session, error=error, feed=feed, repeats=REPEATS, **context)
 
@@ -267,8 +291,9 @@ def _when(value: str, timezone: str) -> datetime:
 
 
 @router.get("/calendar")
-async def calendar_page(request: Request, session: Session = Depends(current_session)) -> Response:
-    return await _calendar(request, session, "calendar.html")
+async def calendar_page(request: Request, connect: str = "",
+                        session: Session = Depends(current_session)) -> Response:
+    return await _calendar(request, session, "calendar.html", own_error=NOT_CONNECTED.get(connect))
 
 
 @router.post("/calendar/add")
@@ -328,6 +353,107 @@ async def calendar_feed(request: Request, session: Session = Depends(require_csr
     async with tx() as conn:
         token = await households.new_calendar_token(conn, session.household_id)
     return await _calendar(request, session, feed=f"{get_settings().public_base_url}/ics/{token}.ics")
+
+
+# ---------------------------------------------------------------- Calendar: an adult's own Google Calendar
+def _connecting() -> URLSafeTimedSerializer:
+    """Signs who set off for Google, so the answer that comes back is only taken from them."""
+    return URLSafeTimedSerializer(get_settings().session_secret, salt="calendar-connect")
+
+
+def _google_callback() -> str:
+    return f"{get_settings().public_base_url}/dashboard/calendar/google/callback"
+
+
+@router.get("/calendar/connect/google")
+async def calendar_connect(session: Session = Depends(current_session)) -> Response:
+    """Send the person to Google to say yes. Nothing is written until they come back."""
+    settings = get_settings()
+    if not settings.google_calendar_enabled:
+        raise HTTPException(status_code=404)
+    assert settings.google_client_id
+    state = _connecting().dumps({"m": session.member_id})
+    return RedirectResponse(google.consent_url(settings.google_client_id, _google_callback(), state),
+                            status_code=303, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/calendar/google/callback")
+async def calendar_connected(code: str = "", state: str = "", error: str = "",
+                             session: Session = Depends(current_session)) -> Response:
+    """Where Google sends the person back. The sign-in is stored encrypted and the calendars they
+    may write to are listed for them to pick one; nothing is copied before that. Whatever
+    happened, they land on the Calendar page at a plain address: this one holds a one-time code."""
+    settings = get_settings()
+    if not settings.google_calendar_enabled:
+        raise HTTPException(status_code=404)
+    assert settings.google_client_id and settings.google_client_secret
+
+    def back(outcome: str = "") -> Response:
+        return RedirectResponse(f"/dashboard/calendar{'?connect=' + outcome if outcome else ''}#own-calendar",
+                                status_code=303, headers={"Cache-Control": "no-store"})
+
+    try:
+        started_by = _connecting().loads(state, max_age=CONNECT_SECONDS).get("m")
+    except (BadSignature, AttributeError):
+        started_by = None
+    if started_by != session.member_id:
+        return back("stale")
+    if error or not code:
+        return back("denied")
+    try:
+        refresh_token = await google.exchange(settings.google_client_id, settings.google_client_secret,
+                                              _google_callback(), code)
+        account, found = await google.calendars(await google.access_token(
+            settings.google_client_id, settings.google_client_secret, refresh_token))
+    except Refused:
+        return back("partial")
+    except CalendarError:
+        return back("failed")
+    if not found:
+        return back("empty")
+    async with tx() as conn:
+        await calendar_sync.begin(conn, session.household_id, session.member_id, "google", account,
+                                  calendar_sync.seal(settings, refresh_token=refresh_token), found)
+    return back()
+
+
+@router.get("/calendar/own")
+async def calendar_own(request: Request, session: Session = Depends(current_session)) -> Response:
+    """The connected-calendar card by itself: it asks again while the first copy is being made,
+    and reloads the page once the plans are in."""
+    async with tx() as conn:
+        own = await _own_calendar(conn, session)
+    waiting = own["mine"] and own["mine"]["status"] == "active" and own["mine"]["last_synced_at"] is None
+    response = _page(request, "_calendar_own.html", session, own=own)
+    if not waiting:
+        response.headers["HX-Refresh"] = "true"
+    return response
+
+
+@router.post("/calendar/own/choose")
+async def calendar_choose(request: Request, calendar_id: str = Form(...),
+                          session: Session = Depends(require_csrf)) -> Response:
+    async def choose(rec: Recorder) -> None:
+        await calendar_sync.choose(rec, calendar_id)
+
+    error = await _write(session, "calendar.connect", {"calendar_id": calendar_id}, choose)
+    return await _calendar(request, session, own_error=error)
+
+
+@router.post("/calendar/own/disconnect")
+async def calendar_disconnect(request: Request, session: Session = Depends(require_csrf)) -> Response:
+    """Stop copying. Nothing is deleted on either side, and Google is told the sign-in is finished with."""
+    gone: dict[str, Any] = {}
+
+    async def disconnect(rec: Recorder) -> None:
+        gone.update(await calendar_sync.disconnect(rec) or {})
+
+    await _write(session, "calendar.disconnect", {}, disconnect)
+    if gone.get("provider") == "google":
+        # If the key has changed since, the sign-in cannot be read, and so cannot be used either.
+        with contextlib.suppress(crypto.Unreadable, KeyError):
+            await google.revoke(calendar_sync.unseal(get_settings(), gone["secret"])["refresh_token"])
+    return await _calendar(request, session)
 
 
 # ---------------------------------------------------------------- Jobs

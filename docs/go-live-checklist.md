@@ -46,6 +46,12 @@ not in this repository, so the line itself is all there is here.
   Never measured. [spec.md](spec.md#16-testing-and-acceptance-criteria)
 - [ ] **Not verified.** A calendar app subscribed to the calendar feed.
   [dashboard.md](dashboard.md#calendar-feed)
+- [ ] **Not verified.** Google Calendar sync against Google: the sign-in, the first read, a
+  change each way, a deleted and a moved date of a series, an all-day event. There are no Google
+  credentials yet, and the ADR lists what was taken from Google's docs on trust. [ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)
+- [ ] **Not done.** The owner makes the Google OAuth client and sets `GOOGLE_CLIENT_ID`,
+  `GOOGLE_CLIENT_SECRET` and `CALENDAR_SECRET_KEY` on the server.
+  [operations.md](operations.md#google-calendar)
 - [ ] **Not verified.** A login link in a real Telegram chat is no longer spent by the preview.
   [ADR 0035](adr/0035-a-login-link-is-spent-by-its-button.md)
 - [ ] **Not verified.** A household job in a real Telegram chat: the nudge arriving, "done" and
@@ -79,8 +85,11 @@ not in this repository, so the line itself is all there is here.
   [operations.md](operations.md#deploying-with-helm)
 - [ ] **Not verified.** The server comes back by itself after a reboot.
   [operations.md](operations.md#on-one-server)
-- [ ] **Not done.** Login, shop and calendar tokens are kept out of the shared proxy's access log.
-  [operations.md](operations.md#logs)
+- [ ] **Not done.** Login, shop and calendar tokens, and the code in the address Google sends a
+  person back to, are kept out of the shared proxy's access log. [operations.md](operations.md#logs)
+- [ ] **Not done.** `CALENDAR_SECRET_KEY` is kept in the same backup as the database. Restored
+  without it, no connected calendar can be used until its owner connects again.
+  [operations.md](operations.md#the-key)
 - [ ] **Not done.** Rate limits on webhooks and the dashboard. Only invites, login links and shop
   pings are limited, and the invite count resets on restart.
   [channels.md](channels.md#known-limits)
@@ -129,7 +138,15 @@ not in this repository, so the line itself is all there is here.
 - [ ] **Not done.** A family that never answers "done" is asked again the morning after every
   time. Nothing learns to stop asking, and nobody has lived with it yet.
   [agent-and-tools.md](agent-and-tools.md#household-jobs)
-- [ ] **Not done.** There are no all-day events. Build record: milestone 2.
+- [ ] **Not done.** An all-day event cannot be made in chat or on the Calendar page. One that
+  comes from a connected Google Calendar is kept, shown and named in the morning brief.
+  [data-model.md](data-model.md#calendar-rows)
+- [ ] **Not done.** Apple Calendar cannot be connected. It gets the one-way calendar link, and a
+  change made there does not come back. [ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)
+- [ ] **Not done.** An event made in Google Calendar can be reminded twice: by Google and by the
+  assistant. [ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)
+- [ ] **Not done.** A change made in Google Calendar takes up to two minutes to arrive, and a
+  date put back into a series there is not noticed. [ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)
 - [ ] **Not done.** A receipt can still add an item beside its twin ("coconut milk", "semi skimmed
   milk"). [ADR 0031](adr/0031-rules-the-model-kept-breaking.md)
 
@@ -139,6 +156,15 @@ not in this repository, so the line itself is all there is here.
   [spec.md](spec.md#1-overview)
 - [ ] **Not done.** What running many households needs: per-household limits, cost, support. The
   schema is ready and the product is not. [data-model.md](data-model.md)
+- [ ] **Not done.** The Google OAuth app is published and passes Google's review for its two
+  calendar scopes. While it is in Testing only listed people can connect, and each connection
+  stops after 7 days. [operations.md](operations.md#testing-or-in-production)
+- [ ] **Not done.** Calendar sync for many households: Google's push notifications in place of a
+  read every two minutes, and a way to find changed events without comparing every one every 15
+  seconds. [ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)
+- [ ] **Not done.** The privacy policy says what is read from a connected calendar: every event
+  on the one calendar picked, shown to the whole household and, as part of what is coming up,
+  sent to the model provider. [ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)
 - [ ] **Not done.** A privacy policy and terms, naming the model provider that reads messages and
   photos. [operations.md](operations.md#media-storage)
 - [ ] **Not done.** A household can export and delete its data. Today an admin can download a
