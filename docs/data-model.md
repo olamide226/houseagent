@@ -145,6 +145,8 @@ after such an edit can differ from live stock for that item.
   and `ends_at` the midnight it ends on. It has no reminder rows whatever its
   `remind_before_minutes`; the morning brief names it on its day and the day before. It counts
   as "today" all day, so it is still listed at noon. One arrives only from a connected calendar.
+  The column is nullable, and null reads as false, so an undo copy of an event taken before
+  migration `0003` can still be put back.
 
 ## Household jobs
 
@@ -179,7 +181,7 @@ A household job is a `reminders` row with a `kind` and no event
 ## Connected calendars
 
 `calendar_connections` has one row per adult who has signed in to their own calendar
-([ADR 0037](adr/0037-a-connected-calendar-is-a-second-copy-kept-in-step.md)).
+([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)).
 
 - `status` is `choosing` (signed in; `choices` lists the calendars to pick from), `active`, or
   `broken` (it stopped for good and its owner was told; `last_error` says why).

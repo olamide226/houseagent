@@ -1,4 +1,4 @@
-"""Two-way calendar sync (ADR 0037): an adult's connected calendar, what each household event is
+"""Two-way calendar sync (ADR 0038): an adult's connected calendar, what each household event is
 on it, events that last all day, and `calendar` as a source of logged changes."""
 from alembic import op
 
@@ -6,7 +6,9 @@ revision = "0003"
 down_revision = "0002"
 
 UPGRADE = [
-    "alter table events add column all_day boolean not null default false",
+    # Not NOT NULL: undo puts an event back from the copy taken before a change, and a copy taken
+    # before this migration has no value for it. Null reads as "not all day".
+    "alter table events add column all_day boolean default false",
     "alter table agent_actions drop constraint agent_actions_source_check",
     """alter table agent_actions add constraint agent_actions_source_check
          check (source in ('agent', 'dashboard', 'calendar'))""",

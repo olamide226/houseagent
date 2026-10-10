@@ -32,7 +32,7 @@ All six milestones in [spec.md](spec.md#17-deployment-and-build-milestones):
 Telegram, inventory and the shopping list, undo, `/setup`, magic-link login; the calendar tools,
 reminders that respect quiet hours, the daily brief and weekly digest, a read-only ICS feed;
 after the milestones, two-way sync with an adult's own Google Calendar
-([ADR 0037](adr/0037-a-connected-calendar-is-a-second-copy-kept-in-step.md), never yet run
+([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md), never yet run
 against Google);
 conversational onboarding, invites, media storage on S3 or ImgBB, receipt and fridge photos, and
 the Family and Settings pages; then WhatsApp with its 24-hour window and reminder template, a

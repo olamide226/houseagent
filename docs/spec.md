@@ -158,7 +158,7 @@ All configuration is environment variables read by one `Settings` class; a chann
 | `DASHBOARD_PUBLIC` | no | `true` | `false` serves the dashboard only on the internal or tailnet ingress |
 | `INTERNAL_TOOL_TOKEN` | for Letta |  | Auth for `/internal/tools/*` |
 | `LETTA_BASE_URL` / `LETTA_API_KEY` | for Letta |  | Letta server |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `CALENDAR_SECRET_KEY` | for Google Calendar | | Two-way sync with an adult's own Google Calendar, added after v1 (ADR 0037) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `CALENDAR_SECRET_KEY` | for Google Calendar | | Two-way sync with an adult's own Google Calendar, added after v1 (ADR 0038) |
 | `DEFAULT_TIMEZONE` | no | `Europe/London` | New households |
 | `LOG_LEVEL` | no | `INFO` |  |
 
@@ -191,7 +191,7 @@ The full DDL is the companion file `schema.sql` (v1.2), applied as migration `00
 | `agent_actions` | Every write with its inverse, for undo (agent and dashboard) | services |
 | `outbox` | Every outbound send, with retries and quiet-hours deferral | services, jobs, pipeline |
 | `job_runs` | Once-per-day guarantee for scheduled jobs | worker |
-| `calendar_connections`, `calendar_links` | An adult's connected Google Calendar and each event's copy on it; added after v1 by migration `0002` (ADR 0037) | Calendar page, worker |
+| `calendar_connections`, `calendar_links` | An adult's connected Google Calendar and each event's copy on it; added after v1 by migration `0003` (ADR 0038) | Calendar page, worker |
 
 **Stock transitions** (`app/agent/stock.py`, a pure function `apply(stock_row, event, item) -> stock_row`; table-driven unit tests)
 
@@ -628,7 +628,7 @@ The worker is a single asyncio supervisor (`worker/main.py`) that runs each job 
 | `consumption_model` | daily 03:00 | Recompute `consumption_profiles` (below); fill null `items.category` in one batched LLM call per household (fast model, JSON output) |
 | `low_stock_prompt` | daily 17:30 | Items predicted to run out within 2 days, not on the list, not prompted in 3 days: "Probably running low: milk, bread. Add to the list?" A "yes" or \\u2705 reaction is handled by the agent from thread context |
 | `imessage_health` | 5 min | BlueBubbles ping; adapter degraded flag |
-| `sync_calendars` | 15 s | Added after v1 (ADR 0037): sends each connected Google Calendar what differs here, and every 2 minutes reads what changed there |
+| `sync_calendars` | 15 s | Added after v1 (ADR 0038): sends each connected Google Calendar what differs here, and every 2 minutes reads what changed there |
 | `media_cleanup` | daily 04:00 | Delete S3 objects older than `MEDIA_RETENTION_DAYS`; null `storage_key`; transcripts remain |
 
 **Consumption model.** For each item, build cycles from `inventory_events`: a cycle starts at `restocked` or `added` and ends at the next `finished`, `low` or `discarded`. Ignore cycles shorter than 12 hours or longer than 120 days. `avg_days_to_finish` is an exponentially weighted mean of cycle lengths (alpha 0.5, newest weighted most). Require `samples >= 2`. `predicted_runout_at = last_restocked_at + avg_days_to_finish`. This needs no ML library and is good enough to drive gentle prompts.
@@ -742,7 +742,7 @@ Everything except `/internal` is on the public ingress (the dashboard routes onl
 | POST | `/dashboard/system/rebuild-stock` | session, admin | 202 | Replay `inventory_events` into `stock` |
 | POST | `/internal/tools/{name}` | `INTERNAL_TOOL_TOKEN` | `{"result": str, "is_error": bool}` | Letta tool bridge |
 
-**ICS feed.** One `VEVENT` per event with `RRULE` and `EXDATE` passed through, `UID={event_id}@household-agent`, `DTSTART` with `TZID`, 15-minute cache headers. Token is per household (`households.calendar_token_hash`). This gives both phones a native calendar view with zero OAuth; two-way Google Calendar sync was out of scope for v1 and was added after it (ADR 0037).
+**ICS feed.** One `VEVENT` per event with `RRULE` and `EXDATE` passed through, `UID={event_id}@household-agent`, `DTSTART` with `TZID`, 15-minute cache headers. Token is per household (`households.calendar_token_hash`). This gives both phones a native calendar view with zero OAuth; two-way Google Calendar sync was out of scope for v1 and was added after it (ADR 0038).
 
 ## 15. Security and privacy
 

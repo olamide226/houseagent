@@ -191,7 +191,7 @@ async def expand_recurrence(now: datetime | None = None) -> int:
 # ---------------------------------------------------------------- connected calendars
 async def sync_calendars(now: datetime | None = None) -> int:
     """Every 15 seconds: send each connected calendar what changed here, and every two minutes
-    read what changed there (ADR 0037). A connection that stops working tells its owner once.
+    read what changed there (ADR 0038). A connection that stops working tells its owner once.
     Returns how many messages were queued."""
     return await calendar_sync.run(get_settings(), now or utcnow())
 

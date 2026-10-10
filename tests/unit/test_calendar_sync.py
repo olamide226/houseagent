@@ -1,4 +1,4 @@
-"""Two-way calendar sync (ADR 0037): what a connected calendar and the household's events do to
+"""Two-way calendar sync (ADR 0038): what a connected calendar and the household's events do to
 each other, judged by rows here and by what the calendar was asked to do.
 
 The calendar is `FakeCalendar`, an in-memory one that keeps etags and a list of changes the way a
@@ -610,6 +610,36 @@ async def test_an_all_day_event_has_no_reminders_is_in_the_morning_brief_and_goe
     (event,) = await events()
     assert not event["all_day"] and [at for at, *_ in await reminders()] == ["Thu 8 Oct 10:00", "Fri 9 Oct 09:00"]
     assert not adas.named("Inset day").entry.all_day
+
+
+async def test_an_event_put_back_by_undo_from_a_copy_older_than_all_day_is_not_all_day_and_changes_nothing(calendars):
+    """An undo copy taken before migration 0003 has no `all_day`. Putting it back must work, and
+    the event must not then look changed to the calendar."""
+    async with tx() as conn:
+        home = await family(conn)
+    theirs = await connect(home, calendars=calendars)
+    await say(home, "schedule_event", title="Dentist", starts_at="2026-10-09T14:00")
+    await say(home, "modify_event", event="dentist", location="High Street")
+    await rounds()
+    async with tx() as conn:        # as that copy would have been stored: without the column
+        action = await fetch_one(conn, "select id, inverse from agent_actions where tool = 'modify_event'")
+        for op in action["inverse"]:
+            if op["table"] == "events":
+                assert all(row.pop("all_day") is False for row in op["rows"])
+        await execute(conn, "update agent_actions set inverse = cast(:inverse as jsonb) where id = :id",
+                      inverse=json.dumps(action["inverse"]), id=action["id"])
+    await say(home, "undo_last")      # Postgres checks NOT NULL on the row offered before it sees the conflict
+    (event,) = await events()
+    assert not event["all_day"] and event["location"] is None
+    await rounds(2, start=1)
+    assert theirs.did("update") == [("update", theirs.named("Dentist").id, ["location"])]   # only what undo changed
+    async with tx() as conn:
+        assert [o.all_day for o in await calendar.occurrences_between(conn, home.id, NOW, NOW + timedelta(days=7))] == [False]
+        assert await reminders_count(conn) == 2
+
+
+async def reminders_count(conn):
+    return await fetch_val(conn, "select count(*) from reminders where status = 'scheduled'")
 
 
 # ---------------------------------------------------------------- the whole way, in Google's own shapes

@@ -440,7 +440,7 @@ date or a cancellation puts the event and every reminder row back as they were. 
 - from chat never reverts a change that was read from the caller's connected calendar
   (`source = 'calendar'`), though it is logged in their name: "undo" means what they said or did
   here. The Activity page undoes it, and the next round removes it from the calendar too
-  ([ADR 0037](adr/0037-a-connected-calendar-is-a-second-copy-kept-in-step.md)).
+  ([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)).
 
 Two things are done for the model, because live models got them wrong
 ([ADR 0031](adr/0031-rules-the-model-kept-breaking.md)):

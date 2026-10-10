@@ -1,4 +1,4 @@
-"""Two-way sync between the household's events and the calendars adults connect (ADR 0037).
+"""Two-way sync between the household's events and the calendars adults connect (ADR 0038).
 
 The household's `events` table stays the source of truth. A connected calendar is a second copy
 of it: each round reads what changed there and applies it here through `services/calendar.py`,
@@ -155,11 +155,12 @@ def entry_of(event: dict[str, Any]) -> Entry:
     """A household event as it is sent to a calendar. The title names who it is for, as the
     calendar link's feed does; an event with no end is given one, because a calendar needs it."""
     start, timezone = event["starts_at"], event["timezone"]
+    all_day = bool(event["all_day"])   # null on an event put back by undo from a copy older than the column
     whole_day = day_bounds(local(start, timezone).date(), timezone)[1]
     return Entry(
         summary=calendar.label(event), start=start,
-        end=event["ends_at"] or (whole_day if event["all_day"] else start + DEFAULT_LENGTH),
-        all_day=event["all_day"], rrule=canonical_rrule(event["rrule"]), exdates=tuple(sorted(event["exdates"])),
+        end=event["ends_at"] or (whole_day if all_day else start + DEFAULT_LENGTH),
+        all_day=all_day, rrule=canonical_rrule(event["rrule"]), exdates=tuple(sorted(event["exdates"])),
         location=event["location"], notes=event["notes"])
 
 
@@ -235,7 +236,7 @@ async def _apply(rec: Recorder, event: dict[str, Any], base: Entry, theirs: Entr
             wanted["starts_at"] = theirs.start
         if theirs.end != entry_of(event).end:
             wanted["ends_at"] = theirs.end
-        if theirs.all_day != event["all_day"]:
+        if theirs.all_day != bool(event["all_day"]):
             wanted["all_day"] = theirs.all_day
     if "rrule" in changed and theirs.rrule != canonical_rrule(event["rrule"]):
         wanted["rrule"] = theirs.rrule or ""

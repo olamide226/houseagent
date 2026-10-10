@@ -446,7 +446,7 @@ where o.status = 'failed' order by o.created_at desc limit 20;
 
 An adult connects their own Google Calendar on the dashboard's Calendar page and picks one
 calendar to share; the worker then keeps it and the household's plans in step
-([ADR 0037](adr/0037-a-connected-calendar-is-a-second-copy-kept-in-step.md),
+([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md),
 [dashboard.md](dashboard.md#a-connected-google-calendar)). It is off until the three variables
 below are set. **It has never been run against Google**: no credentials existed when it was
 built.

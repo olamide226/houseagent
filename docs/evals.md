@@ -206,7 +206,7 @@ not, a feature that does not exist (ordering the shopping online), and a how-to 
 family group. Each asserts no writes, plain words, and the word or page that has to be named.
 
 Five more are about an adult's own calendar
-([ADR 0037](adr/0037-a-connected-calendar-is-a-second-copy-kept-in-step.md)): how to get plans
+([ADR 0038](adr/0038-a-connected-calendar-is-a-second-copy-kept-in-step.md)): how to get plans
 into Google Calendar where that is switched on (the Calendar page and its Connect button) and
 where it is not, whether an Apple calendar can be connected (no: the link, and no promise that
 changes come back), "is my Google calendar connected?" from someone whose calendar is, and "why

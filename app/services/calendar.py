@@ -470,7 +470,7 @@ async def occurrences_between(conn: AsyncConnection, household_id: str, start: d
             starts = [event["starts_at"]] if since <= event["starts_at"] < end else []
         found += [
             Occurrence(event["id"], event["title"], at, event["location"], event["participants"], event["rrule"],
-                       event["all_day"])
+                       bool(event["all_day"]))
             for at in starts
         ]
     return sorted(found, key=lambda occurrence: occurrence.start)

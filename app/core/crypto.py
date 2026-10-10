@@ -1,5 +1,5 @@
 """Secrets the database has to hold in a form that can be read back, such as the sign-in to
-someone's calendar, are encrypted with a key that only the environment holds (ADR 0037).
+someone's calendar, are encrypted with a key that only the environment holds (ADR 0038).
 
 A token this app only checks is stored as a hash (`app/core/identity.py`). This is for the few it
 must present again to someone else.

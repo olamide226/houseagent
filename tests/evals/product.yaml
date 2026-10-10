@@ -49,7 +49,7 @@
   turns: [{from: Ada, scope: group, text: "Home, where do I see the calendar on my computer?"}]
   expect: {writes: 0, plain: true, reply_mentions: [dashboard]}
 
-# An adult's own Google Calendar (ADR 0037). `seed.setup.google_calendar` is whether this installation
+# An adult's own Google Calendar (ADR 0038). `seed.setup.google_calendar` is whether this installation
 # has it switched on, and `seed.own_calendar` whose is connected and how it stands.
 - name: getting plans into Google Calendar is a button on the Calendar page
   seed: {setup: {google_calendar: true}}

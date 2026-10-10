@@ -1,4 +1,4 @@
-# 0037 A connected calendar is a second copy of the household's events, kept in step by the worker
+# 0038 A connected calendar is a second copy of the household's events, kept in step by the worker
 
 ## Context
 
@@ -70,6 +70,9 @@ calendar is applied here, and from here it reaches Ada's.
   repeat shorter than hourly is left out.
 - **Events can last all day** (`events.all_day`). They have no reminders; the morning brief names
   them on the day and the day before, and the feed writes them as dates.
+  The column is nullable and null reads as false: undo puts an event back from a copy taken
+  before a change, a copy older than the column has no value for it, and Postgres refuses a null
+  in a NOT NULL column before it looks for the conflict.
 - **The assistant sends the reminders.** An event this app creates is told to use none of
   Google's. An event made in Google keeps whatever Google does with it and also gets the
   assistant's.
@@ -120,7 +123,8 @@ calendar is applied here, and from here it reaches Ada's.
 - An all-day event cannot yet be made in chat or on the Calendar page; one arrives only from a
   connected calendar.
 - Only events are copied. A reminder with no event ("remind me to call the plumber on Friday")
-  stays with the assistant and is not on the calendar.
+  stays with the assistant and is not on the calendar, and nor is a household job or a birthday
+  ([ADR 0037](0037-a-household-job-is-a-reminder-that-is-to-be-done.md)), which are reminders too.
 - On connecting, everything still to come on the chosen calendar comes in, and everything still
   to come here goes onto it. The page says so before the person picks.
 - One new dependency, `cryptography`: the standard library has no cipher.
