@@ -187,11 +187,17 @@ async def test_one_receipt_logged_in_two_calls_is_one_receipt_and_nothing_is_kep
         assert [(e[0], e[3]) for e in await events_of(conn, home) if e[3] != "undo"][-2:] == [
             ("rice", "receipt"), ("bleach", "message")]
         assert len(await receipts(conn, home)) == 1 and len(await lines(conn, home)) == 2
+        # So is one that calls the receipt a photo.
+        photo = await tool(ctx, "log_inventory", source="photo", changes=[
+            {"item": "onion", "action": "restocked", "price": 1.10}])
+        assert photo.splitlines()[-1].startswith("OK: 1 more line price kept on the receipt")
+        assert [(e[0], e[3]) for e in await events_of(conn, home)][-1] == ("onion", "receipt")
+        assert len(await receipts(conn, home)) == 1 and len(await lines(conn, home)) == 3
         # In another turn a price that is only said is still not spending.
         other = await tool(await a_message(conn, home), "log_inventory", changes=[
             {"item": "rice", "action": "restocked", "price": 9.50}])
         assert other.splitlines()[-1] == "NOTE: prices are kept from receipts only, so nothing was added to the spending"
-        assert len(await lines(conn, home)) == 2
+        assert len(await lines(conn, home)) == 3
 
     async with tx() as conn:    # every priced line failed and there is no total yet: nothing is said too soon
         home = await seed_home(conn, telegram_id=None)

@@ -64,10 +64,10 @@ async def log_inventory(ctx: Ctx, args: LogInventory) -> str:
     they are kept for the household's spending, and only what is printed counts."""
     priced: list[spending.Line] = []
     source = args.source
-    if source == "message" and any(change.price is not None for change in args.changes) and (
+    if source != "receipt" and any(change.price is not None for change in args.changes) and (
             await spending.started(ctx.conn, ctx.household_id, ctx.message_id)):
         # The rest of a receipt this turn is already reading: a model that had to correct a name
-        # logs it again in a second call and often leaves the source out.
+        # logs it again in a second call and often leaves the source out, or calls it a photo.
         source = "receipt"
     async with record(ctx, "log_inventory", args) as rec:
         for change in args.changes:
