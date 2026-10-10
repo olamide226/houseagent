@@ -42,6 +42,7 @@ from app.llm.codex_cli import CodexCliClient
 from app.llm.openai_compat import OpenAICompatClient
 from app.llm.types import Usage
 from app.pipeline.inbound import PLAYGROUND, _upsert_thread, simulate_turn
+from app.pipeline.media import pdf_text
 from app.pipeline.router import record_outbound
 from app.services import calendar, households, shopping
 from app.services import jobs as household_jobs
@@ -91,6 +92,20 @@ class FixtureStore:
 
 def photo(name: str) -> MediaRef:
     return MediaRef(kind="image", mime="image/png", storage_backend="s3", storage_key=name)
+
+
+def file(name: str) -> MediaRef:
+    """A PDF from the fixtures, read the way the pipeline reads one that arrives in a chat."""
+    return MediaRef(kind="document", mime="application/pdf", name=name,
+                    text=pdf_text((HERE / "fixtures" / name).read_bytes()))
+
+
+def forwarded(spec: dict[str, Any] | None) -> dict[str, Any]:
+    """What a channel says about a forwarded message: `{from: Coach Bisi, sent: "2026-10-04 20:00"}`."""
+    if spec is None:
+        return {}
+    return {"forwarded": True, "forwarded_from": spec.get("from"),
+            "forwarded_sent_at": london(spec["sent"]).isoformat() if spec.get("sent") else None}
 
 
 def make_runtime(provider: str, setup: Setup) -> AgentRuntime:
@@ -465,11 +480,13 @@ async def test_case(provider: str, suite: str, case: dict[str, Any], sample: int
         async with tx() as conn:
             result = await simulate_turn(conn, runtime, home.id, home.members[turn["from"]], turn.get("text"),
                                          scope=turn.get("scope", "dm"), now=now + timedelta(minutes=minutes),
-                                         photos=[photo(name) for name in turn.get("photos", [])])
+                                         photos=[*(photo(name) for name in turn.get("photos", [])),
+                                                 *(file(name) for name in turn.get("files", []))],
+                                         meta=forwarded(turn.get("forwarded")))
         usage_by_provider[provider] = usage_by_provider.get(provider, Usage()) + result.usage
         reply = "ACK" if result.ack_only else "NOOP" if result.noop else (result.reply or "")
         if TRACE:
-            print(f"turn: {turn.get('text')!r} {turn.get('photos', '')}")
+            print(f"turn: {turn.get('text')!r} {turn.get('photos', '')} {turn.get('files', '')}")
             for call in result.tool_calls:
                 print(f"  tool {call.name} {call.args} -> {call.result!r}")
             print(f"  reply: {reply!r}")

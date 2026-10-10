@@ -74,3 +74,7 @@
   seed: {setup: {google_calendar: true}, own_calendar: {Ada: {status: broken, name: Family}}}
   turns: [{from: Ada, text: "the things I tell you have stopped showing up in my Google calendar, why?"}]
   expect: {writes: 0, plain: true, reply_mentions: [Calendar], reply_says_any: [connect, reconnect]}
+
+- name: asking whether a school letter can be sent on
+  turns: [{from: Ada, text: "the school keeps sending letters with dates in, can I just send them to you?"}]
+  expect: {writes: 0, plain: true, reply: text, reply_says_any: [photo, forward, picture, paste, send], calendar: [], reminders_scheduled: 0}

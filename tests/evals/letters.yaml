@@ -1,0 +1,93 @@
+# A letter, an invite or an appointment message sent on to the assistant: every date in it goes on
+# the calendar in one go. The images and the PDF in fixtures/ are made by fixtures/make_fixtures.py;
+# the school, the people and the addresses are invented. Every case starts on Monday 5 October 2026
+# at 12:00, London time.
+- name: photo of a school letter adds the trip and the two days with no time
+  seed: {members: [{name: Tobi, role: child}]}
+  turns: [{from: Ada, text: "from Tobi's school", photos: [letter_trip.png]}]
+  expect:
+    calendar: [{participants: [Tobi], local_start: "Thu 15 Oct 08:45", repeats: false}]
+    reminders:
+      - {local_fire: "Thu 8 Oct 18:00", text_contains: slip, target: household}
+      - {local_fire: "Thu 22 Oct 18:00", text_contains: inset, target: household}
+    reminders_scheduled: 4          # the trip's two, and one for each day with no time
+    events: []
+    reply: text
+
+- name: one undo takes back everything that came from a letter
+  seed: {members: [{name: Tobi, role: child}]}
+  turns:
+    - {from: Ada, text: "from Tobi's school", photos: [letter_trip.png]}
+    - {from: Ada, text: "undo that"}
+  expect:
+    calendar: []
+    reminders_scheduled: 0
+
+- name: photo of a party invite books the party for the child it names
+  seed: {members: [{name: Tobi, role: child}]}
+  turns: [{from: Ola, photos: [invite_party.png]}]
+  expect:
+    calendar: [{title_contains: party, participants: [Tobi], local_start: "Sat 17 Oct 14:00", location_contains: Jungle, repeats: false}]
+    reminders: [{local_fire: "Sun 11 Oct 18:00"}]          # the RSVP, the evening before it is due
+    reply: text
+
+- name: forwarded appointment message becomes the appointment
+  turns:
+    - from: Ada
+      forwarded: {from: Hurley Clinic, sent: "2026-10-05 09:10"}
+      text: "Hurley Clinic: Ada Adebayo has an appointment with Dr Example on Wed 14 Oct 2026 at 10:30. Please arrive 10 minutes early. To change it call 020 7946 0000."
+  expect:
+    calendar: [{participants: [Ada], local_start: "Wed 14 Oct 10:30", location_contains: Hurley, repeats: false}]
+    reminders_scheduled: 2
+    reply: text
+
+- name: tomorrow in a forward counts from when it was first sent
+  seed: {members: [{name: Tobi, role: child}]}
+  turns:
+    - from: Ola
+      forwarded: {from: Coach Bisi, sent: "2026-10-04 20:00"}
+      text: "Hi all, under 8s football training is tomorrow at 5pm at the rec ground this week, not Wednesday. Bring shin pads."
+  expect:
+    calendar: [{local_start: "Mon 5 Oct 17:00", repeats: false}]
+    reply: text
+
+- name: pasted text leaves out the date that has passed
+  seed: {members: [{name: Tobi, role: child}]}
+  turns:
+    - from: Ada
+      text: "From the nursery newsletter: Tobi's class photos are on Friday 2 October at 9am, and the Christmas play is on Thursday 10 December at 2pm in the hall."
+  expect:
+    calendar: [{participants: [Tobi], local_start: "Thu 10 Dec 14:00", repeats: false}]
+    reply: text
+
+- name: a weekday that does not match its date is asked about, not guessed
+  seed: {members: [{name: Tobi, role: child}]}
+  turns: [{from: Ola, text: "Tobi's school dates", files: [autumn_dates.pdf]}]
+  expect:
+    calendar: [{title_contains: assembly, local_start: "Tue 13 Oct 09:15", repeats: false}]    # no parents' evening yet
+    reminders:
+      - {local_fire: "Thu 15 Oct 18:00", text_contains: uniform}
+      - {local_fire: "Sun 25 Oct 18:00", text_contains: half term}
+    reply: text
+    reply_mentions: ["12"]
+
+- name: the answer to the question adds what was held back
+  seed: {members: [{name: Tobi, role: child}]}
+  turns:
+    - {from: Ola, text: "Tobi's school dates", files: [autumn_dates.pdf]}
+    - {from: Ola, text: "it's the Thursday, the 12th"}
+  expect:
+    calendar:
+      - {title_contains: assembly, local_start: "Tue 13 Oct 09:15"}
+      - {title_contains: parents, local_start: "Thu 12 Nov 16:00", repeats: false}
+    reminders:
+      - {local_fire: "Thu 15 Oct 18:00", text_contains: uniform}
+      - {local_fire: "Sun 25 Oct 18:00", text_contains: half term}
+
+- name: a forwarded joke in the group is not for the assistant
+  turns:
+    - from: Ada
+      scope: group
+      forwarded: {from: Auntie Bola}
+      text: "Why did the scarecrow win an award? Because he was outstanding in his field"
+  expect: {writes: 0, reply: NOOP, calendar: [], reminders_scheduled: 0}

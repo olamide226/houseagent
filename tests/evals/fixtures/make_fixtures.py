@@ -1,13 +1,19 @@
-"""Draws the synthetic photo fixtures for the eval suite. Nothing here is a real photo or
-real personal data. Pillow is not a project dependency; run it only to regenerate:
+"""Draws the synthetic photo fixtures for the eval suite, and writes its one PDF. Nothing here is
+a real photo, a real letter or real personal data: the school, the people and the addresses are
+made up. Pillow is not a project dependency; run it only to regenerate:
 
     uv run --with pillow python tests/evals/fixtures/make_fixtures.py
 """
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
 HERE = Path(__file__).parent
+sys.path.insert(0, str(HERE.parents[2]))
+
+from tests.helpers import text_pdf  # noqa: E402
+
 INK, PAPER = (25, 25, 25), (250, 249, 244)
 
 
@@ -50,7 +56,55 @@ def shelves(name: str, title: str, rows: list[list[tuple[str, tuple[int, int, in
     image.save(HERE / name, optimize=True)
 
 
+def page(name: str, heading: list[str], body: list[str], *, width: int = 760) -> None:
+    """A letter or an invite on one sheet: a centred heading, then lines; an empty line is a gap."""
+    height = 70 + 40 * len(heading) + sum(34 if line else 18 for line in body) + 40
+    image = Image.new("RGB", (width, height), PAPER)
+    draw = ImageDraw.Draw(image)
+    y = 44
+    for n, line in enumerate(heading):
+        draw.text((width / 2, y), line, font=font(30 if n == 0 else 18), fill=INK, anchor="mm")
+        y += 40
+    y += 16
+    for line in body:
+        if line:
+            draw.text((44, y), line, font=font(21), fill=INK)
+        y += 34 if line else 18
+    image.save(HERE / name, optimize=True)
+
+
+AUTUMN_DATES = [
+    "Sunnyfield Primary School, Example Lane, Sampletown",
+    "Autumn term dates for parents and carers",
+    "",
+    "Tuesday 13 October, 9:15am: Harvest assembly in the school hall. Parents welcome.",
+    "Friday 16 October: Non-uniform day. Please bring 1 pound for the school fund.",
+    "Monday 26 October to Friday 30 October: Half term. School is closed.",
+    "Wednesday 12 November, 4pm to 6pm: Parents' evening in the classrooms.",   # the 12th is a Thursday
+    "",
+    "Mrs A. Example, Headteacher",
+]
+
+
 if __name__ == "__main__":
+    page("letter_trip.png", ["SUNNYFIELD PRIMARY SCHOOL", "Example Lane, Sampletown"], [
+        "5 October 2026", "",
+        "Dear parents and carers of Year 3,", "",
+        "Year 3 will visit the Science Museum on Thursday 15 October.",
+        "The coach leaves school at 8:45am and we will be back by 3:30pm.",
+        "Children need a packed lunch and a waterproof coat.", "",
+        "Please return the permission slip with 12 pounds by Friday 9 October.", "",
+        "Friday 23 October is an INSET day: school is closed to pupils.", "",
+        "Mrs A. Example, Class Teacher",
+    ])
+    page("invite_party.png", ["YOU'RE INVITED!"], [
+        "Dear Tobi,", "",
+        "Please come to Zara's 7th birthday party", "",
+        "Saturday 17 October, 2pm to 4pm",
+        "Jungle Jim's Soft Play, 12 Example Road, Sampletown", "",
+        "RSVP to Zara's mum by Monday 12 October",
+    ], width=640)
+    (HERE / "autumn_dates.pdf").write_bytes(text_pdf(AUTUMN_DATES))
     receipt("receipt_supermarket.png", "FRESHWAY SUPERMARKET", [
         ("SEMI SKIMMED MILK 2 PINTS", "1.65"), ("FREE RANGE EGGS X12", "2.95"), ("WHOLEMEAL BREAD", "1.20"),
     ], [("TOTAL", "5.80"), ("CARD", "5.80")])
