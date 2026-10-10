@@ -1,0 +1,113 @@
+# What to cook: the assistant reads what there is to cook with and proposes the meals itself. A
+# question is judged by what the last turn read (`called`), that nothing was written, and by the
+# suggested meals where a remembered fact rules something out (`meals_avoid`); a pick is judged by
+# the shopping list. `expires` is the date on the pack; the clock is Monday 5 October 2026.
+- name: what can we cook tonight is answered from what is in the house and writes nothing
+  seed:
+    items:
+      - {name: chicken thigh, stock: {fridge: 1}, expires: "2026-10-06"}
+      - {name: spinach, stock: {fridge: 1}, expires: "2026-10-07"}
+      - {name: egg, stock: {fridge: 6}}
+      - {name: rice, stock: {store: 2}}
+      - {name: onion, stock: {store: 3}}
+      - {name: tinned tomato, stock: {store: 2}}
+      - {name: bread, stock: {store: 0}}
+  turns: [{from: Ola, text: "what can we cook tonight?"}]
+  expect: {writes: 0, reply: text, plain: true, called: [meal_ideas], reply_mentions: [chicken]}
+
+- name: ideas for the week are a read too
+  seed:
+    items:
+      - {name: mince, stock: {freezer: 2}}
+      - {name: pasta, stock: {store: 2}}
+      - {name: tinned tomato, stock: {store: 4}}
+      - {name: potato, stock: {store: 1}}
+      - {name: cheddar, stock: {fridge: 1}}
+      - {name: frozen pea, stock: {freezer: 1}}
+  turns: [{from: Ada, text: "can you give me some dinner ideas for this week?"}]
+  expect: {writes: 0, reply: text, plain: true, called: [meal_ideas]}
+
+- name: something to make with a named ingredient
+  seed:
+    items:
+      - {name: mince, stock: {freezer: 1}}
+      - {name: pasta, stock: {store: 2}}
+      - {name: onion, stock: {store: 2}}
+      - {name: tinned tomato, stock: {store: 2}}
+  turns: [{from: Ola, text: "what can I make with the mince?"}]
+  expect: {writes: 0, reply: text, plain: true, called: [meal_ideas]}
+
+- name: a vegetarian is not offered the chicken that needs using
+  seed:
+    facts: [{key: diet, value: vegetarian, about: Ada}]
+    items:
+      - {name: chicken thigh, stock: {fridge: 1}, expires: "2026-10-06"}
+      - {name: bacon, stock: {fridge: 1}}
+      - {name: egg, stock: {fridge: 6}}
+      - {name: cheddar, stock: {fridge: 1}}
+      - {name: pasta, stock: {store: 2}}
+      - {name: tinned tomato, stock: {store: 2}}
+      - {name: pepper, stock: {fridge: 2}}
+  turns: [{from: Ola, text: "what can I cook for Ada tonight?"}]
+  expect: {writes: 0, reply: text, plain: true, called: [meal_ideas], meals_avoid: [chicken, bacon]}
+
+- name: a child's allergy keeps the peanut butter out of the kids' tea
+  seed:
+    members: [{name: Tobi, role: child}]
+    facts: [{key: allergy, value: peanuts, about: Tobi}]
+    items:
+      - {name: peanut butter, stock: {store: 1}}
+      - {name: bread, stock: {store: 1}}
+      - {name: noodles, stock: {store: 2}}
+      - {name: chicken thigh, stock: {fridge: 1}}
+      - {name: carrot, stock: {fridge: 4}}
+      - {name: egg, stock: {fridge: 6}}
+  turns: [{from: Ada, text: "what can I make for the kids' tea?"}]
+  expect: {writes: 0, reply: text, plain: true, called: [meal_ideas], meals_avoid: [peanut, satay]}
+
+- name: nothing recorded yet is said plainly and nothing is made up as stock
+  turns: [{from: Ola, text: "what can we cook tonight?"}]
+  expect: {writes: 0, reply: text, plain: true, called: [meal_ideas]}
+
+- name: picking a meal puts what it still needs on the list
+  seed:
+    items:
+      - {name: chicken thigh, stock: {fridge: 1}, expires: "2026-10-06"}
+      - {name: spinach, stock: {fridge: 1}, expires: "2026-10-07"}
+      - {name: egg, stock: {fridge: 6}}
+      - {name: rice, stock: {store: 2}}
+    said:
+      - to: Ola
+        text: "1. Chicken and spinach curry with rice: you'd need coconut milk and curry paste\n2. Spinach omelette: you have everything\n3. Egg fried rice: you'd need spring onions\nPick one and I'll put what's missing on the shopping list."
+  turns: [{from: Ola, text: "let's do the curry"}]
+  expect:
+    shopping_list_active: [coconut milk, curry paste]
+    events: []
+    reply: text
+
+- name: picking a meal that needs nothing adds nothing
+  seed:
+    items:
+      - {name: spinach, stock: {fridge: 1}, expires: "2026-10-07"}
+      - {name: egg, stock: {fridge: 6}}
+      - {name: rice, stock: {store: 2}}
+    said:
+      - to: Ada
+        text: "1. Spinach omelette: you have everything\n2. Egg fried rice: you'd need spring onions and soy sauce\nPick one and I'll put what's missing on the shopping list."
+  turns: [{from: Ada, text: "number 1 sounds good"}]
+  expect: {writes: 0, reply: text}
+
+- name: asked by name in the family group
+  seed:
+    items:
+      - {name: salmon, stock: {fridge: 2}, expires: "2026-10-06"}
+      - {name: potato, stock: {store: 1}}
+      - {name: frozen pea, stock: {freezer: 1}}
+  turns: [{from: Ada, scope: group, text: "Home, what can we cook tonight?"}]
+  expect: {writes: 0, reply: text, plain: true, called: [meal_ideas]}
+
+- name: someone saying what they are cooking is not asking
+  seed:
+    items: [{name: rice, stock: {store: 2}}, {name: chicken thigh, stock: {fridge: 1}}]
+  turns: [{from: Ada, scope: group, text: "I'm doing jollof tonight, hope everyone's hungry"}]
+  expect: {writes: 0, reply: NOOP}
