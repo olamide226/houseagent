@@ -606,3 +606,15 @@ async def test_a_password_that_stops_working_is_a_lost_sign_in(icloud, calendar,
         await calendar.changes(None, NOW)
     with pytest.raises(AuthLost):
         await calendar.create(entry(), EVENT_ID)
+
+
+def test_what_is_written_reads_back_the_same_in_other_households_time_zones():
+    for timezone in ("America/New_York", "Asia/Kolkata", "Australia/Sydney", "UTC"):
+        weekly = entry("Football", "2026-10-06 17:00", "2026-10-06 18:00", rrule="FREQ=WEEKLY;UNTIL=20261215T235959Z",
+                       exdates=(apple._day(london("2026-10-27 17:00"), timezone),), notes="Bring boots")
+        start, end = apple.day_bounds(date(2026, 10, 9), timezone)
+        day = Entry(summary="Inset day", start=start, end=end, all_day=True, rrule="FREQ=YEARLY",
+                    exdates=(date(2027, 10, 9),))
+        for sent in (weekly, day, entry()):
+            (read,) = apple.remotes_of("/c/x.ics", None, apple.new_file("houseagent-x", sent, timezone, NOW), timezone)
+            assert read.entry == sent, timezone
