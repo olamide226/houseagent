@@ -83,9 +83,10 @@ async def random_outbox(rng: random.Random, rows: int = 300):
             owner[marker] = home.id
             await execute(
                 conn,
-                """insert into outbox (household_id, target, thread_id, member_id, text, respect_quiet_hours)
-                   values (:h, :target, :thread, :member, :text, false)""",
-                h=home.id, target=target, text=marker,
+                """insert into outbox (household_id, target, thread_id, member_id, text, respect_quiet_hours,
+                                       send_after)
+                   values (:h, :target, :thread, :member, :text, false, :now)""",
+                h=home.id, target=target, text=marker, now=utcnow(),   # as `enqueue` stamps it: the app's clock
                 thread=rng.choice(threads) if target == "thread" or rng.random() < 0.2 else None,
                 member=rng.choice(members) if target == "member" or rng.random() < 0.2 else None,
             )
@@ -209,6 +210,23 @@ async def test_dedupe_key_makes_enqueue_idempotent():
         assert await enqueue(conn, message) is not None
         assert await enqueue(conn, message) is None
     assert len(await outbox()) == 1
+
+
+async def test_a_send_is_due_by_the_clock_of_this_process_however_far_the_databases_is_ahead(monkeypatch):
+    behind = utcnow() - timedelta(minutes=5)                       # this clock, five minutes behind the database's
+    monkeypatch.setattr(router, "utcnow", lambda: behind)
+    async with tx() as conn:
+        home = await seed_home(conn)
+        await enqueue(conn, OutboundMessage(household_id=home.id, target="member", member_id=home.ola, text="hi",
+                                            respect_quiet_hours=False))
+    adapter = FakeAdapter(fail=PermanentError("blocked by the user"))
+    assert await router.dispatch_due({Channel.telegram: adapter}) == 1          # due at once, and refused for good
+    (row,) = await outbox()
+    assert (row["status"], row["send_after"]) == ("failed", behind)
+    async with tx() as conn:
+        assert await router.retry(conn, home.id, row["id"])
+    adapter.fail = None
+    assert await router.dispatch_due({Channel.telegram: adapter}) == 1 and adapter.sent == [("1001", "hi", None)]
 
 
 async def ack(conn, home, external="501"):

@@ -26,7 +26,10 @@ FALLBACK = "fallback:"    # dedupe-key prefix of a send that is itself a second 
 
 async def enqueue(conn: AsyncConnection, message: OutboundMessage, *, status: str = "pending",
                   send_after: datetime | None = None) -> str | None:
-    """Queue a send inside the caller's transaction. None when `dedupe_key` was already queued."""
+    """Queue a send inside the caller's transaction. None when `dedupe_key` was already queued.
+
+    `send_after` is always this process's time, never the database's: `dispatch_due` compares it
+    with this process's time, and the two clocks are not the same clock."""
     row_id = await fetch_val(
         conn,
         """insert into outbox (household_id, target, thread_id, member_id, text, react_emoji,
@@ -34,9 +37,9 @@ async def enqueue(conn: AsyncConnection, message: OutboundMessage, *, status: st
                                created_at, send_after)
            values (:household_id, :target, :thread_id, :member_id, :text, :react_emoji,
                    :reply_to_message_id, :urgency, :respect_quiet_hours, :dedupe_key, :status,
-                   clock_timestamp(), coalesce(cast(:send_after as timestamptz), clock_timestamp()))
+                   clock_timestamp(), :send_after)
            on conflict (household_id, dedupe_key) do nothing returning id""",
-        **message.model_dump(), status=status, send_after=send_after,
+        **message.model_dump(), status=status, send_after=send_after or utcnow(),
     )
     return None if row_id is None else str(row_id)
 
@@ -45,9 +48,9 @@ async def retry(conn: AsyncConnection, household_id: str, outbox_id: str) -> boo
     """Put a failed send back in the queue."""
     return bool(await execute(
         conn,
-        """update outbox set status = 'pending', attempts = 0, send_after = clock_timestamp(), last_error = null
+        """update outbox set status = 'pending', attempts = 0, send_after = :now, last_error = null
            where id = :id and household_id = :h and status = 'failed'""",
-        id=outbox_id, h=household_id,
+        id=outbox_id, h=household_id, now=utcnow(),
     ))
 
 
