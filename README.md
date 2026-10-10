@@ -15,8 +15,8 @@ module; a new model is a configuration change.
   events. Finishing a staple puts it on the shared list; buying it takes it off. Rules like
   these are code, not prompt.
 - **Appointments and reminders.** One-off and recurring events, reminders that wait out quiet
-  hours unless urgent, a morning brief, a Sunday digest, and a read-only calendar feed for Apple
-  or Google Calendar.
+  hours unless urgent, a morning brief, a Sunday digest, two-way sync with each adult's own Google
+  Calendar, and a read-only calendar feed for Apple Calendar or any other app.
 - **At the shop.** An iPhone Shortcut tells the service you walked into a shop and the list for
   that shop arrives. It learns how long things last and asks about what is probably running low.
 - **Channels.** Telegram, WhatsApp (Cloud API) and iMessage (through a BlueBubbles server on a

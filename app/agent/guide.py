@@ -99,9 +99,9 @@ OWN_CALENDAR = (
     "saying yes to Google, and picking one calendar to share with the household. From then on a plan made with you "
     "appears in that calendar within a minute, and what they add, change or delete in it appears here within a few "
     "minutes, things that last all day too. You still send the reminders. Each adult connects their own, and stops "
-    "it with Disconnect on the same page. You cannot connect or disconnect it from chat. Apple Calendar cannot be "
-    "connected like this yet: the link on the Calendar page shows the plans there, but a change made there does "
-    "not come back here.")
+    "it with Disconnect on the same page. If it stops working by itself they tap Connect again there. You cannot "
+    "connect or disconnect it from chat. Apple Calendar cannot be connected like this yet: the link on the Calendar "
+    "page shows the plans there, but a change made there does not come back here.")
 NO_OWN_CALENDAR = (
     "Their own Google Calendar or Apple Calendar cannot be connected in this household yet, so a change made there "
     "does not come back here: for Google, whoever set this up has to switch it on first. The link on the Calendar "

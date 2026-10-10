@@ -90,7 +90,7 @@ itself is the secret, and a request that a browser marks as coming from another 
 | Today | `/dashboard` | Shopping list count, today's and tomorrow's events and reminders, the household jobs that are waiting or due by tomorrow, what is running low or has run out, what goes out of date within 3 days, and a line saying how to ask the assistant what to cook | Quick-add to the list, tick a job off |
 | Shopping list | `/dashboard/shopping` | Active list, then "You might also need" | Add, tick off with the circle, remove, set the shop |
 | Pantry | `/dashboard/inventory` | Stock by location, filter by status; per-item history | Set a count, mark none left, edit an item (other names, always kept in, low threshold, usual place), merge a duplicate |
-| Calendar | `/dashboard/calendar` | The next 30 days with repeats expanded, the repeating series, standalone reminders | Add an event (once, daily, weekly or monthly), edit title, time and place, cancel, skip one date of a series, cancel a reminder, get the calendar link |
+| Calendar | `/dashboard/calendar` | The next 30 days with repeats expanded, the repeating series, standalone reminders, the viewer's own connected Google Calendar and who else has one | Add an event (once, daily, weekly or monthly), edit title, time and place, cancel, skip one date of a series, cancel a reminder, connect or disconnect a Google Calendar, get the calendar link |
 | More | `/dashboard/more` | The pages below, each with a line about what it is for | Log out |
 | Jobs | `/dashboard/jobs` | Household jobs, renewals and birthdays: the ones asked about and not done yet, then what is coming up, each with whose it is, when it is due and how often it comes round | Tick a job off with the circle (the next one is then set), skip one, stop one |
 | Family | `/dashboard/family` | Everyone in the household, each adult's connected chat apps, open invites | Add an adult or a child, make a new invite (button, QR code and code, shown once), cancel an invite, choose which connected chat app an adult is messaged on |
@@ -207,12 +207,58 @@ the installation.
 One known false alarm: changing an item's low threshold changes how its old events replay, so the
 check can show that item as different until the next event or a rebuild.
 
+## A connected Google Calendar
+
+Under "Google Calendar" on the Calendar page each adult can connect their own, and plans then go
+both ways ([ADR 0036](adr/0036-a-connected-calendar-is-a-second-copy-kept-in-step.md)). It is two
+taps and one choice:
+
+1. **Connect Google Calendar** is a link to `/dashboard/calendar/connect/google`, which sends the
+   browser to Google with a signed `state` naming who set off. Nothing is written yet.
+2. At Google the person says yes to two things: seeing which calendars they have, and reading
+   and changing events.
+3. Google sends them back to `/dashboard/calendar/google/callback`. The sign-in is stored
+   encrypted and they land on the Calendar page, which now asks **which calendar to share**,
+   listing the ones they can add to. It says that everyone in the household will see what is on
+   it. Nothing is copied until they pick one and tap "Share this calendar".
+4. The card says "Bringing your plans over" and asks the server again every four seconds until
+   the first round is done, then reloads the page with the plans in it.
+
+<p>
+  <img src="img/dashboard/calendar-google-choose.png" width="230" alt="Calendar: picking which Google calendar to share with the household">
+  <img src="img/dashboard/calendar-google.png" width="230" alt="Calendar: a connected Google Calendar, and the other adult's">
+</p>
+
+A trip that connects nothing lands on the same page with a sentence saying why: permission was
+not given, a box was unticked, the account has no calendar that can be added to, Google could not
+be reached, or the answer came back more than ten minutes later or to someone else.
+
+| The card shows | When |
+| --- | --- |
+| "Connect Google Calendar" | Nothing is connected |
+| The calendars to pick from, and "Not now" | Signed in, none picked |
+| The calendar's name and address, "Connected", and "Disconnect" | Working. If Google is not answering it says so, and that it will be tried again |
+| "Your Google Calendar has stopped being kept in step", with "Connect again" | The sign-in no longer works. The person was also told in chat |
+| "Google Calendar is not switched on for this household yet" | The installation has no Google client or key ([operations.md](operations.md#google-calendar)) |
+
+Below the card, each other adult who has connected one is listed with its name. An adult can
+only disconnect their own. **Disconnect** deletes the stored sign-in and tells Google it is
+finished with; every event stays where it is on both sides. One calendar can be shared with a
+household once: a second adult who picks the same one is told who already shares it.
+
+What then happens to events, and what does not, is in
+[data-model.md](data-model.md#connected-calendars). A change that came from a calendar is on the
+Activity page under the owner's name, "in their own calendar", with an Undo button; undoing it
+removes it from the calendar as well. Connecting and disconnecting are logged there too, with
+nothing to undo.
+
 ## Calendar feed
 
-"Get a calendar link" on the Calendar page creates a link of the form `/ics/{token}.ics` for Apple
-or Google Calendar. The token is 32 random bytes and only its SHA-256 is stored, so the link is
+"Get a calendar link" on the Calendar page, under "Any other calendar app", creates a link of the
+form `/ics/{token}.ics` for Apple Calendar or any other app. The token is 32 random bytes and only its SHA-256 is stored, so the link is
 shown once; making a new one stops the old one working. The feed is read-only: one `VEVENT` per
-active event, `DTSTART` with the household `TZID`, the `RRULE` and exception dates passed through,
+active event, `DTSTART` with the household `TZID` (or a plain date for an all-day event), the `RRULE`
+and exception dates passed through,
 `UID` `{event_id}@household-agent`, and a 15-minute `Cache-Control`. It carries no `VTIMEZONE`
 block ([ADR 0015](adr/0015-ics-feed-token-and-time-zones.md)).
 

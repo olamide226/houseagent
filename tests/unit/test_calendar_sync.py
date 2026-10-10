@@ -35,7 +35,7 @@ class FakeCalendar:
         self.history: list[str] = []          # the id touched by each change, oldest first
         self.calls: list[tuple] = []
         self.fail: Exception | None = None    # raised by the next read
-        self.refuse: set[str] = set()         # summaries the calendar will not take
+        self.refuse: set[str] = set()         # summaries the calendar will not take, new or changed
         self.forgotten = False                # the next read with a token is answered "start again"
         self.reads: list[str | None] = []
         self._n = 0
@@ -109,6 +109,8 @@ class FakeCalendar:
         was = self.events.get(remote_id)
         if was is None or was.deleted:
             raise Gone
+        if was.entry.summary in self.refuse:
+            raise Refused("forbiddenForNonOrganizer")
         self.calls.append(("update", remote_id, sorted(changed)))
         merged = replace(was.entry, **{name: getattr(entry, name) for name in changed})
         return self._put(replace(was, entry=merged)).etag
@@ -537,6 +539,44 @@ async def test_a_changed_occurrence_of_our_own_series_is_not_taken_for_a_second_
     assert theirs.did("delete") == [] and len(await events()) == 2
 
 
+async def test_a_rule_or_a_skipped_date_changed_on_the_series_itself_changes_here_and_is_not_sent_back(calendars):
+    async with tx() as conn:
+        home = await family(conn)
+    theirs = await connect(home, calendars=calendars)
+    series = theirs.add("Football", "2026-10-06 17:00", rrule="FREQ=WEEKLY;BYDAY=TU")
+    await rounds()
+
+    theirs.edit(series, rrule="FREQ=WEEKLY;INTERVAL=2;BYDAY=TU", exdates=(date(2026, 10, 20),))
+    await rounds(2, start=1)
+    (event,) = await events()
+    assert (event["rrule"], event["exdates"]) == ("FREQ=WEEKLY;BYDAY=TU;INTERVAL=2", [date(2026, 10, 20)])
+
+    await say(home, "modify_event", event="football", cancel=True, scope="this", occurrence="2026-11-03")
+    theirs.edit(series, exdates=())                         # the 20th is put back there while the 3rd is skipped here
+    await rounds(2, start=3)
+    (event,) = await events()
+    assert event["exdates"] == [date(2026, 11, 3)] and theirs.events[series].entry.exdates == (date(2026, 11, 3),)
+    assert theirs.did("update") == [("update", series, ["exdates"])]
+
+    theirs.edit(series, rrule=None, exdates=())             # it stops repeating: one event on its first date
+    await rounds(2, start=5)
+    (event,) = await events()
+    assert (event["rrule"], wall(event["starts_at"])) == (None, "Tue 6 Oct 17:00")
+    assert len(theirs.calls) == 1
+
+
+def test_the_same_rule_written_two_ways_is_one_rule_and_an_entry_survives_being_stored():
+    from app.calendars.base import canonical_rrule
+
+    assert canonical_rrule("RRULE:byday=TU;WKST=SU;FREQ=WEEKLY") == canonical_rrule("FREQ=WEEKLY;WKST=SU;BYDAY=TU")
+    assert canonical_rrule("FREQ=WEEKLY;BYDAY=TU") != canonical_rrule("FREQ=WEEKLY;BYDAY=TH")
+    assert canonical_rrule("") is None and canonical_rrule(None) is None
+    entry = Entry(summary="Inset day", start=london("2026-10-09 00:00"), end=london("2026-10-10 00:00"), all_day=True,
+                  rrule="FREQ=YEARLY", exdates=(date(2027, 10, 9),), location="School", notes="No uniform")
+    assert Entry.of(entry.json()) == entry
+    assert replace(entry, location=None, notes="x").changed_from(entry) == {"location", "notes"}
+
+
 # ---------------------------------------------------------------- whole days
 async def test_an_all_day_event_has_no_reminders_is_in_the_morning_brief_and_goes_back_as_a_date(calendars):
     async with tx() as conn:
@@ -606,7 +646,7 @@ async def test_a_lost_sign_in_stops_the_connection_and_tells_its_owner_once(cale
     assert (told["target"], told["member_id"]) == ("member", home.members["Ada"])
     assert told["text"] == ("I can no longer reach your Google Calendar, so plans are not being copied between it "
                             "and me. To fix it, send me the word dashboard, open Calendar and tap Connect again.")
-    assert "own Google Calendar has stopped working and has to be connected again" in brief
+    assert "own Google Calendar has stopped working: they tap Connect again on the Calendar page" in brief
 
     # Signing in again and picking the same calendar carries on with what was linked before.
     await say(home, "schedule_event", title="Dentist", starts_at="2026-10-09T14:00")
@@ -648,6 +688,30 @@ async def test_one_event_the_calendar_refuses_does_not_stop_the_others_and_is_tr
     theirs.refuse = set()
     await jobs.sync_calendars(NOW + timedelta(minutes=1))
     assert theirs.summaries() == ["Dentist", "Optician"] and (await connection())["failures"] == 0
+
+
+async def test_a_change_the_calendar_refuses_for_one_event_is_given_up_and_nothing_waits(calendars):
+    async with tx() as conn:
+        home = await family(conn)
+    theirs = await connect(home, calendars=calendars)
+    invited = theirs.add("School fair", "2026-10-10 11:00")       # somebody else's event: theirs to change, not ours
+    theirs.add("Hairdresser", "2026-10-07 16:00")
+    await rounds()
+    theirs.refuse = {"School fair"}
+    await say(home, "modify_event", event="school fair", location="Main hall")
+    await say(home, "modify_event", event="hairdresser", location="Cut & Dry")
+    await rounds(3, start=1)
+
+    assert theirs.did("update") == [("update", theirs.named("Hairdresser").id, ["location"])]
+    assert theirs.events[invited].entry.location is None            # not changed there, and not asked again
+    held = await connection()
+    assert (held["failures"], held["leased_until"]) == (0, None)
+    theirs.refuse = set()
+    theirs.edit(invited, start="2026-10-10 12:00")                  # its organiser moves it: that still arrives,
+    await rounds(2, start=4)                                        # and the calendar's version is the one kept
+    fair = next(e for e in await events() if e["title"] == "School fair")
+    assert (wall(fair["starts_at"]), fair["location"]) == ("Sat 10 Oct 12:00", None)
+    assert len(theirs.did("update")) == 1
 
 
 async def test_an_event_that_cannot_be_held_here_is_left_out_and_the_rest_come_in(calendars):

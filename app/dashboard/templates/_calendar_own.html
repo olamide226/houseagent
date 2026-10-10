@@ -2,7 +2,7 @@
 {% set mine = own.mine %}
 {% if own.error %}<p class="error" role="alert">{{ own.error }}</p>{% endif %}
 {% if mine and mine.status == "choosing" %}
-<div class="card">
+<div class="card stack">
   <form class="stack" hx-post="/dashboard/calendar/own/choose" hx-target="#calendar">
     <p><strong>Which calendar do you want to share?</strong> Everyone in {{ session.household }} will see what is on
       it, and plans made here are added to it. One the family already shares is best.</p>
@@ -38,8 +38,10 @@
 <div class="card">
   <p class="notice warn">Your Google Calendar has stopped being kept in step, so plans are not copied either way.
     Connect it again to carry on. Nothing has been lost.</p>
-  <a class="btn" href="/dashboard/calendar/connect/google">Connect again</a>
-  <button class="quiet" hx-post="/dashboard/calendar/own/disconnect" hx-target="#calendar">Disconnect</button>
+  <div class="inline wrap">
+    <a class="btn" href="/dashboard/calendar/connect/google">Connect again</a>
+    <button class="quiet" hx-post="/dashboard/calendar/own/disconnect" hx-target="#calendar">Disconnect</button>
+  </div>
 </div>
 {% elif own.on %}
 <div class="card">

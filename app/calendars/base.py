@@ -24,6 +24,12 @@ class Entry:
     location: str | None = None
     notes: str | None = None
 
+    def __post_init__(self) -> None:
+        # One spelling of a rule and one order of dates, whoever built the entry, so that two
+        # entries that mean the same compare equal.
+        object.__setattr__(self, "rrule", canonical_rrule(self.rrule))
+        object.__setattr__(self, "exdates", tuple(sorted(self.exdates)))
+
     def json(self) -> dict[str, Any]:
         return {**asdict(self), "start": self.start.isoformat(), "end": self.end.isoformat(),
                 "exdates": [day.isoformat() for day in self.exdates]}

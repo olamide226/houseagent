@@ -45,10 +45,10 @@ HEARTBEAT_LATE = timedelta(minutes=3)   # the worker reports every minute
 CONNECT_SECONDS = 600                   # how long someone has to say yes at Google and come back
 # What the Calendar page says after a trip to Google that connected nothing.
 NOT_CONNECTED = {
-    "stale": "That took too long, or was started somewhere else. Tap Connect Google Calendar to try again.",
+    "stale": "That took too long, or was started somewhere else. Use the button below to try again.",
     "denied": "Nothing was connected, because Google was not given permission.",
     "partial": "Nothing was connected. Google asks two things, and both boxes have to stay ticked. "
-               "Tap Connect Google Calendar to try again.",
+               "Use the button below to try again.",
     "empty": "That Google account has no calendar that plans can be added to.",
     "failed": "Google could not be reached just now. Try again in a minute.",
 }

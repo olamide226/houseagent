@@ -31,6 +31,9 @@ Without Docker: [operations.md](operations.md#running-without-docker).
 All six milestones in [spec.md](spec.md#17-deployment-and-build-milestones):
 Telegram, inventory and the shopping list, undo, `/setup`, magic-link login; the calendar tools,
 reminders that respect quiet hours, the daily brief and weekly digest, a read-only ICS feed;
+after the milestones, two-way sync with an adult's own Google Calendar
+([ADR 0036](adr/0036-a-connected-calendar-is-a-second-copy-kept-in-step.md), never yet run
+against Google);
 conversational onboarding, invites, media storage on S3 or ImgBB, receipt and fridge photos, and
 the Family and Settings pages; then WhatsApp with its 24-hour window and reminder template, a
 second try on another channel when a send fails for good, and the Chat apps page; then the
@@ -50,8 +53,8 @@ rendered but not installed. Each page below says what has been checked and what 
 | [llm.md](llm.md) | Provider layer, the subscription providers and what the vendors' terms say about them, adding an adapter, tested models |
 | [agent-and-tools.md](agent-and-tools.md) | Runtime loop, the product guide the assistant answers "how do I..." from, the optional Letta runtime, photos, onboarding, tools, calendar rules, household jobs, resolution rules, undo |
 | [presence.md](presence.md) | iPhone Shortcut setup, the presence rules, the consumption model, "probably" list entries, the low-stock prompt |
-| [dashboard.md](dashboard.md) | Pages, the login flow, invites, channels and the family group, the System page, the calendar feed |
-| [operations.md](operations.md) | Environment variables, running, one server with compose (deploy, update, backup, moving a household), Helm, the subscription providers' CLIs and sign-in, media storage, worker jobs, the BlueBubbles outage and WhatsApp template runbooks, logs |
+| [dashboard.md](dashboard.md) | Pages, the login flow, invites, channels and the family group, the System page, connecting a Google Calendar, the calendar feed |
+| [operations.md](operations.md) | Environment variables, running, one server with compose (deploy, update, backup, moving a household), Helm, the subscription providers' CLIs and sign-in, media storage, worker jobs, the one-time Google Cloud setup for Google Calendar, the BlueBubbles outage and WhatsApp template runbooks, logs |
 | [evals.md](evals.md) | Running the agent evals, adding a case, latest results |
 | [go-live-checklist.md](go-live-checklist.md) | What is still open before a public release: one line an item, with its status and where the detail is |
 | [adr/](adr/) | One decision per file |

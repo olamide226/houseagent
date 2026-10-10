@@ -341,6 +341,10 @@ async def take_in(conn: AsyncConnection, connection: dict[str, Any], remotes: li
             # The calendar service would not have it (a repeat it cannot expand, say). It is left
             # out, and one event the household cannot hold does not stop the rest.
             log.info("calendar_event_refused", connection_id=connection["id"], reason=str(exc))
+        except Exception:
+            # A fault of ours on this one event. Its savepoint is rolled back and the rest are
+            # still applied: stopping here would stop the calendar's every later change too.
+            log.exception("calendar_event_failed", connection_id=connection["id"])
     return applied
 
 
@@ -382,10 +386,17 @@ async def to_send(conn: AsyncConnection, connection: dict[str, Any], now: dateti
 
 
 async def _send(provider: Provider, conn: AsyncConnection, connection_id: str, job: Send) -> None:
-    """Do one thing on the calendar and note it. Raises CalendarError when it could not be done."""
+    """Do one thing on the calendar and note it. Raises CalendarError when it could not be done.
+
+    A change or a removal the calendar refuses for this one event is given up, not repeated: the
+    person may not be the one who organises it. The copies then differ until it next changes
+    there, and the calendar's version is then the one kept."""
     if job.do == "delete":
         assert job.remote_id
-        await provider.delete(job.remote_id)
+        try:
+            await provider.delete(job.remote_id)
+        except Refused as exc:
+            log.warning("calendar_send_refused", connection_id=connection_id, do=job.do, reason=str(exc))
         await execute(conn, "delete from calendar_links where id = :id", id=job.link_id)
         return
     assert job.entry is not None
@@ -396,12 +407,15 @@ async def _send(provider: Provider, conn: AsyncConnection, connection_id: str, j
         await _link(conn, connection_id, job.event_id, Remote(remote_id, etag), job.entry)
         return
     assert job.remote_id
+    etag = None
     try:
         etag = await provider.update(job.remote_id, sent, set(job.changed))
     except Gone:
         # Deleted there a moment ago. The next read says so and the event is cancelled here; until
         # then it is not sent again.
-        etag = None
+        pass
+    except Refused as exc:
+        log.warning("calendar_send_refused", connection_id=connection_id, do=job.do, reason=str(exc))
     await execute(conn, "update calendar_links set synced = cast(:synced as jsonb), "
                         "remote_etag = coalesce(:etag, remote_etag) where id = :id",
                   synced=jsonb(job.entry.json()), etag=etag, id=job.link_id)
@@ -453,12 +467,18 @@ async def sync(connection: dict[str, Any], provider: Provider, now: datetime) ->
             async with tx() as conn:
                 await _send(provider, conn, connection["id"], job)
             done["sent"] += 1
-        except Refused as exc:   # this one event; the others still go
+        except Refused as exc:   # a new event the calendar will not take; the others still go
             done["refused"] += 1
             refused = exc
             log.warning("calendar_send_refused", connection_id=connection["id"], do=job.do, reason=str(exc))
+        except CalendarError:
+            raise                # the whole calendar: a lost sign-in, a fault, a rate limit
+        except Exception as exc:   # a fault of ours on this one event: the others still go
+            done["refused"] += 1
+            refused = Refused(type(exc).__name__)
+            log.exception("calendar_send_failed", connection_id=connection["id"], do=job.do)
     if refused:
-        raise refused
+        raise refused            # tried again, but after a wait
     return done
 
 

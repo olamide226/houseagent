@@ -27,12 +27,13 @@ said, not what was recorded ([ADR 0031](adr/0031-rules-the-model-kept-breaking.m
 Three of the brief's lines are there for questions about the product itself. The family line
 says which chat apps each adult is on, or that they are not connected yet, and who set the
 installation up; the next line says whether the speaker has their link for the shops, and where
-they are messaged if they are on more than one app; the third gives the morning brief time and
-each adult's quiet hours:
+they are messaged if they are on more than one app, and how their own calendar stands (none
+connected, signed in with no calendar picked, connected with its name, or stopped); the third
+gives the morning brief time and each adult's quiet hours:
 
 ```text
 Family: Ola (adult, set this up, on Telegram); Ada (adult, on Telegram and WhatsApp); Grace (adult, not connected yet); Tobi (child)
-Ada's setup: messaged on WhatsApp; has a personal link for the shops
+Ada's setup: messaged on WhatsApp; has a personal link for the shops; own Google Calendar connected (Family)
 Morning brief: 07:30. Quiet hours: Ola 21:30-07:00, Ada off, Grace 21:30-07:00
 ```
 
@@ -43,7 +44,8 @@ do?", "how do I see the list on my laptop?" or "switch me to WhatsApp" is answer
 built and not made up ([ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)). It follows
 the static prompt, before the cache break, and says: what people do by talking, the two words
 answered by code (`dashboard`, `shops`), each web page by the name in its menu, invites, chat
-apps, the family group, photos and voice notes, how a household job is answered, and what the
+apps, the family group, photos and voice notes, how a household job is answered, an adult's own
+Google Calendar, and what the
 assistant sends by itself. It opens
 with three rules: answer such a question in a DM or the group, in a line or two with the exact
 word or page; say "I can't do that yet" for anything not listed; never make up a feature, a page,
@@ -58,6 +60,7 @@ holds what is switched on, and the guide only says what is true there:
 | `photos` | `LLM_SUPPORTS_IMAGES` and a media backend | "A receipt or the fridge", or "you cannot read photos in this household yet" |
 | `voice_notes` | `STT_*` being set | The same for voice notes |
 | `shop_shortcut` | `PRESENCE_SHORTCUT_URL` | Without it, the list at the shop "is not ready for everyone yet" |
+| `google_calendar` | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `CALENDAR_SECRET_KEY` all set | How an adult connects their own Google Calendar and what then goes both ways, or that it "cannot be connected in this household yet". Either way it says Apple Calendar only gets the one-way link |
 
 **It cannot drift without a test failing.** Each part of the guide is a dict keyed by the code
 it describes, and `tests/unit/test_guide.py` compares the keys both ways:
@@ -294,6 +297,8 @@ time, so the model can correct a wrong date.
 
 **Reminders for an event.** `remind_before_minutes` defaults to a day and an hour before.
 
+- An event that lasts all day has none. The morning brief names it on its day, and the day
+  before under "Tomorrow". Such an event arrives only from a connected calendar.
 - A reminder whose time has already passed is not created.
 - Who gets it: the household if a child or more than one adult takes part, otherwise that adult.
 - Wording: `{title} {today|tomorrow|on Wed 7 Oct} at {HH:MM}{, location}`. "Today" and "tomorrow"
@@ -431,7 +436,11 @@ date or a cancellation puts the event and every reminder row back as they were. 
 - is refused with `ERROR:` if a later action by anyone touched the same rows;
 - appends an `adjusted` event with source `undo` per reverted stock row; no history is deleted;
 - from chat covers the caller's own actions within 24 hours; from the dashboard Activity page any
-  adult can undo any single action.
+  adult can undo any single action;
+- from chat never reverts a change that was read from the caller's connected calendar
+  (`source = 'calendar'`), though it is logged in their name: "undo" means what they said or did
+  here. The Activity page undoes it, and the next round removes it from the calendar too
+  ([ADR 0036](adr/0036-a-connected-calendar-is-a-second-copy-kept-in-step.md)).
 
 Two things are done for the model, because live models got them wrong
 ([ADR 0031](adr/0031-rules-the-model-kept-breaking.md)):

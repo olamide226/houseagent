@@ -68,7 +68,7 @@ def _person(person: dict[str, Any]) -> str:
 
 OWN_CALENDAR = {"choosing": "signed in to {calendar} but has not picked which calendar to share",
                 "active": "own {calendar} connected ({name})",
-                "broken": "own {calendar} has stopped working and has to be connected again"}
+                "broken": "own {calendar} has stopped working: they tap Connect again on the Calendar page"}
 
 
 def _own_setup(person: dict[str, Any], connected: dict[str, Any] | None = None) -> str:
