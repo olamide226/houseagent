@@ -95,7 +95,7 @@ Letta server names it.
   memory blocks: `persona` (the static prompt and the product guide) and `household` (the brief,
   and the setup section while setup is open). Thread history is not sent; Letta keeps its own,
   one for the whole household, DMs and group together.
-- **Tools** are the same twelve, registered with Letta as functions whose whole body posts the
+- **Tools** are the same thirteen, registered with Letta as functions whose whole body posts the
   arguments to `POST /internal/tools/{name}` with `Authorization: Bearer INTERNAL_TOOL_TOKEN`.
   The household id, the address to call and the token come from the agent's tool environment,
   which is also rewritten before every turn.
@@ -188,7 +188,7 @@ Token usage, tool calls and latency for each turn are stored on the batch's last
 
 ## Tools
 
-`REGISTRY` in `app/agent/tools/__init__.py` holds the twelve tools. Eleven are always offered;
+`REGISTRY` in `app/agent/tools/__init__.py` holds the thirteen tools. Twelve are always offered;
 `onboarding_advance` only while a household is being set up.
 
 | Tool | Writes | Behaviour |
@@ -197,6 +197,7 @@ Token usage, tool calls and latency for each turn are stored on the batch's last
 | `query_inventory` | none | Filter by item, location, status, expiry; never creates an item |
 | `update_shopping_list` | list, events | `add`, `bought` (logs `restocked`, source `shopping`), `remove` (dismissed), `bought_all` |
 | `get_shopping_list` | none | Explicit, finished and low entries first, then predicted ones marked "(probably)"; the optional store filter keeps entries naming no shop and those whose shop reads like the one asked for |
+| `meal_ideas` | none | What there is to cook with, for "what can we cook tonight?": what needs using first, then the food in each place, then everything remembered. The model proposes the meals ([below](#meal-ideas)) |
 | `schedule_event` | events, reminders | Resolves participants, creates the event and its reminders; a repeat is an RFC 5545 rule |
 | `modify_event` | events, reminders | Finds the event from how it was described; moves, edits or cancels it; scope `this` on a series changes one date |
 | `list_upcoming` | none | Events in the next `days`, repeats expanded, plus standalone reminders; optional person filter |
@@ -231,6 +232,49 @@ the invite for a new adult goes to whoever asked, and its code is written by cod
 `run_tool` validates arguments with the tool's Pydantic model and runs the tool in its own
 savepoint. Validation and domain errors come back as `ERROR:` tool messages so the model can
 recover; an unexpected exception is logged and reported to the model the same way.
+
+## Meal ideas
+
+"What can we cook tonight?", "dinner ideas for the week", "what can I make with the mince?" and
+"something for the kids' tea" are answered by the model from the food in the house. There is no
+recipe list and no outside service ([ADR 0036](adr/0036-meal-ideas-from-a-short-stock-read.md)).
+
+**What code does.** `meal_ideas` takes no arguments and writes nothing. It returns
+`cooking_text` (`app/services/inventory.py`), one line of everything remembered, and one line
+saying how to answer:
+
+```text
+Use first: spinach (fridge, by Tue 6 Oct), chicken thigh 500 g (fridge, by Wed 7 Oct)
+Past its date: yoghurt (fridge, Sat 3 Oct)
+freezer: pea
+fridge: cheddar, egg 6
+store: pasta, rice 2 kg (low)
+Remembered: Ada: diet=vegetarian; Tobi: allergy=peanuts
+NOTE: suggest 2 or 3 everyday meals (up to 5 for a week), numbered, one short line each: ...
+```
+
+- Only what is in the house: a stock row that is `out` is left out, and so is anything the nightly
+  sorting put under `household`, `toiletries` or `baby` (`NOT_FOOD`). An item not sorted yet counts
+  as food.
+- `Use first` is what has a date within 7 days (`USE_FIRST_DAYS`), soonest first. `Past its date`
+  is listed apart. "Today" is the household's date when the message arrived.
+- An item is a word or two on its place's line, with its amount when one is known, not a line of
+  its own. Past 120 items (`COOKING_CAP`) the least recently recorded are counted
+  (`+31 more not shown`); what has a date is always shown.
+- `Remembered` is every fact, not the brief's first 25: an allergy must not be the 26th.
+- With nothing to cook with it answers `OK: no food is recorded in the house yet`.
+
+**What the model does**, from that last line (`HOW_TO_ANSWER` in `app/agent/tools/meals.py`): two
+or three everyday meals (up to five for a week), numbered, one short line each, with what each
+still needs or "you have everything"; built on `Use first`; kept to every allergy, diet and
+dislike; nothing past its date; no recipe unless asked; and an offer to put what is missing on
+the list for the one they pick, and nothing else, because there is no meal plan. The rules come
+back with the food and are not in the tool's description, which every model step of every turn
+reads: the description is left with when to call it and what a pick means.
+
+**Picking one** is an ordinary turn. The suggestion is in the thread history, so "the first one"
+or "let's do the curry" becomes `update_shopping_list` with that meal's missing things: an
+undoable change like any other, and "undo" takes it back. A meal that needs nothing adds nothing.
 
 ## Calendar rules (`app/services/calendar.py`)
 

@@ -79,6 +79,8 @@ it, by default `http://host.docker.internal:8011`. The result is written as `let
 | `reply_mentions` | Each of these texts is in the last reply: a reply that reads the list back has to name what is on it, and an answer about the product has to name the word to send or the page |
 | `reply_says_any` | At least one of these is in the last reply as a whole word, so `not` is not found in "note". For answers that have to say no |
 | `reply_avoids` | None of these texts is in the last reply |
+| `called` | The last turn called each of these tools. For a question that only reads, where no row can show what the answer was built on |
+| `meals_avoid` | No suggested meal, a numbered or bulleted line of the last reply, has any of these texts, and there is at least one such line. A remark beside the meals ("the chicken is not for Ada") may name them, and so may a meal's own line when it rules the thing out ("eggy bread (no peanuts)") |
 | `plain: true` | The last reply has no word from `TECHNICAL` in `tests/helpers.py` (api, url, token, database, webhook, endpoint, json, backend, server, config), no link, and no name_with_underscores such as a tool or a setting |
 | `calendar` | Exactly these active events, in any order. Each may give `title_contains`, `participants`, `local_start` ("Wed 7 Oct 11:00"), `location_contains`, `rrule_contains`, `repeats: false`, `exdates` |
 | `calendar_cancelled` | How many events are cancelled |
@@ -123,6 +125,19 @@ A case about something the assistant said first seeds that message, and any gues
     shopping_list_asked_for: [milk]
 ```
 
+A case about meals can give stock a date and the household something remembered:
+
+```yaml
+- name: a vegetarian is not offered the chicken that needs using
+  seed:
+    facts: [{key: diet, value: vegetarian, about: Ada}]     # about: a member; without it, the whole household
+    items:
+      - {name: chicken thigh, stock: {fridge: 1}, expires: "2026-10-06"}   # the date on the pack
+      - {name: egg, stock: {fridge: 6}}
+  turns: [{from: Ola, text: "what can I cook for Ada tonight?"}]
+  expect: {writes: 0, plain: true, called: [meal_ideas], meals_avoid: [chicken]}
+```
+
 A case about the product can say what the installation has switched on. Without `setup` there is
 Telegram only, photos are read, voice notes are not, and the shared Shortcut is not set:
 
@@ -139,11 +154,20 @@ inventory events here, so calendar expectations are under `calendar`.
 
 ## Suite
 
-71 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (7), reminders (4),
+81 cases: inventory (12), shopping list (5), NOOP (3), undo (7), calendar (7), reminders (4),
 photos (6: four receipts, two fridge or freezer photos), onboarding, family and settings (13),
-presence (4: answers to the low-stock prompt and the "out and about" offer), and product (10:
-what the assistant says about itself, [ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)).
+presence (4: answers to the low-stock prompt and the "out and about" offer), product (10:
+what the assistant says about itself, [ADR 0034](adr/0034-the-assistant-is-told-what-is-built.md)),
+and meals (10: what to cook, [ADR 0036](adr/0036-meal-ideas-from-a-short-stock-read.md)).
 The spec's target is 40.
+
+The meal cases ask what to cook tonight, for the week, with a named ingredient, for a vegetarian
+with chicken that needs using, for a child with a peanut allergy and peanut butter in the
+cupboard, with nothing recorded, and by name in the family group. Each asserts that the food was
+read (`called`), that nothing was written, and plain words. Two start from a suggestion already
+made: picking the meal that needs two things puts those two on the list, and picking the one
+that needs nothing writes nothing. The last is someone saying in the group what they are cooking,
+which is not a question and expects `NOOP`.
 
 The product cases ask what a family member asks: "what can you do?", "how do I see the list on my
 laptop?", "how do I add my wife?", "how does the shop thing work?", "can you read photos?" where

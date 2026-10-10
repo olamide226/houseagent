@@ -547,7 +547,7 @@ How you behave:
 
 ## 9. Tools and resolution rules
 
-Twelve tools; signatures and argument models are in the companion file `tools.py`. Every tool takes natural names, is batch-first, and returns short text lines the model can relay or act on.
+Thirteen tools; signatures and argument models are in the companion file `tools.py`. Every tool takes natural names, is batch-first, and returns short text lines the model can relay or act on.
 
 **Result line prefixes** (the model is shown these in tool descriptions): `OK:` what changed; `NEW:` items or people created; `AMBIGUOUS:` nothing recorded for that entry, with the options; `ERROR:` validation or domain problem; `NOTE:` side effects, such as "added to shopping list".
 
@@ -557,6 +557,7 @@ Twelve tools; signatures and argument models are in the companion file `tools.py
 | `query_inventory` | none | Filters by item, location, status, expiry; shows quantity when known |
 | `update_shopping_list` | list, events | `add`, `bought` (logs `restocked`, source `shopping`), `remove` (dismissed), `bought_all` |
 | `get_shopping_list` | none | Explicit, finished and low first; then predicted items marked "(probably)"; grouped by category; optional store filter |
+| `meal_ideas` | none | What there is to cook with: what needs using first, then the food in each place; the model proposes the meals, and a pick is an `update_shopping_list` add (ADR 0036) |
 | `schedule_event` | events, reminders | Resolves participants; creates reminders; recurring reminders come from the recurrence job |
 | `modify_event` | events, reminders | Move, edit or cancel; scope `this` on a recurring event adds an exception date (and a one-off event when moved) |
 | `list_upcoming` | none | Expands RRULEs in window, includes standalone reminders |

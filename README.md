@@ -80,7 +80,7 @@ uv run pytest tests/unit tests/contract
 | [docs/README.md](docs/README.md) | The five-minute start and an index of the docs |
 | [docs/architecture.md](docs/architecture.md) | The two processes, how a message flows, the router, the scheduled jobs |
 | [docs/channels.md](docs/channels.md) | Setting up Telegram, WhatsApp and iMessage; payload notes; limits |
-| [docs/agent-and-tools.md](docs/agent-and-tools.md) | The runtime, the prompt, the twelve tools, undo, the Letta runtime |
+| [docs/agent-and-tools.md](docs/agent-and-tools.md) | The runtime, the prompt, the thirteen tools, meal ideas, undo, the Letta runtime |
 | [docs/dashboard.md](docs/dashboard.md) | Every page, login, invites |
 | [docs/presence.md](docs/presence.md) | The iPhone Shortcut, the arrival rules, predictions |
 | [docs/operations.md](docs/operations.md) | Environment variables, running on one server with compose, Helm, health, the BlueBubbles outage and WhatsApp template runbooks, logs, costs |
