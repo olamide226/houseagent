@@ -119,4 +119,8 @@ calendar is applied here, and from here it reaches Ada's.
   carries on with what was linked.
 - An all-day event cannot yet be made in chat or on the Calendar page; one arrives only from a
   connected calendar.
+- Only events are copied. A reminder with no event ("remind me to call the plumber on Friday")
+  stays with the assistant and is not on the calendar.
+- On connecting, everything still to come on the chosen calendar comes in, and everything still
+  to come here goes onto it. The page says so before the person picks.
 - One new dependency, `cryptography`: the standard library has no cipher.
