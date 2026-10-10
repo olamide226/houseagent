@@ -8,7 +8,8 @@ from typing import Any, Literal
 import structlog
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from app.agent.base import AgentResult, AgentRuntime, Ctx
+from app.agent.actions import record
+from app.agent.base import AgentResult, AgentRuntime, Ctx, ToolError
 from app.agent.loop import message_lines
 from app.channels.base import ChannelAdapter
 from app.core.envelope import Channel, Envelope, GroupUpdate, InboundEvent, MediaRef, OutboundMessage
@@ -19,7 +20,7 @@ from app.llm.stt import SpeechToText
 from app.media.store import MediaStore
 from app.pipeline import media as media_pipeline
 from app.pipeline.router import delivery_failed, enqueue, record_outbound
-from app.services import households, members
+from app.services import households, jobs, members
 
 log = structlog.get_logger()
 
@@ -217,6 +218,7 @@ async def process_household(household_id: str, runtime: AgentRuntime, adapters: 
         await execute(conn, "update messages set status = 'processing' where id = any(cast(:ids as uuid[]))",
                       ids=[m["id"] for m in messages])
         messages = [m for m in messages if not await _keyword(conn, m, public_base_url)]
+        messages = [m for m in messages if not await _ticked(conn, m)]
         for batch in group_by_thread(messages):
             ids = [m["id"] for m in batch]
             # Outside the turn's savepoint: what was stored stays recorded even if the turn fails,
@@ -327,6 +329,37 @@ async def _keyword(conn: AsyncConnection, message: dict[str, Any], public_base_u
     text = await answer(conn, message["member_id"], public_base_url)
     await enqueue(conn, OutboundMessage(household_id=message["household_id"], target="member",
                                         member_id=message["member_id"], text=text, respect_quiet_hours=False))
+    await execute(conn, "update messages set status = 'processed', processed_at = clock_timestamp() "
+                        "where id = :id", id=message["id"])
+    return True
+
+
+# A reaction that means "done" on the assistant's message about a household job. Telegram offers
+# no tick, so its thumbs-up counts; skin tones and the emoji variation mark are ignored.
+TICKS = {"\U0001F44D", "\u2705", "\u2714", "\u2611", "\U0001F44C", "\U0001F4AF"}
+_EMOJI_MARKS = {0xFE0F: None, **dict.fromkeys(range(0x1F3FB, 0x1F400))}
+
+
+async def _ticked(conn: AsyncConnection, message: dict[str, Any]) -> bool:
+    """A thumbs-up or a tick on the nudge about a household job ticks that job off, in code and
+    not through the agent: it is one tap, it means one thing, and it has to work every time. The
+    nudge gets the assistant's own thumbs-up back, which is how the family is told it was recorded.
+    A tick on the nudge of an occurrence that is already ticked off, or has passed, changes nothing."""
+    emoji = (message["meta"].get("reaction_emoji") or "").translate(_EMOJI_MARKS)
+    nudge = await jobs.answered(conn, message["id"]) if emoji in TICKS else None
+    if nudge is None:
+        return False
+    ctx = Ctx(conn=conn, household_id=message["household_id"], member_id=message["member_id"],
+              thread_id=message["thread_id"], message_id=message["id"], now=message["created_at"])
+    try:
+        async with conn.begin_nested(), record(ctx, "update_job", {"action": "done", "by": "a tick"}) as rec:
+            ticked = await jobs.done(rec, nudge["job_id"], occurrence=nudge["due"])
+    except ToolError:
+        ticked = False      # a birthday, or a job removed since: there is nothing to tick off
+    if ticked:
+        await enqueue(conn, OutboundMessage(
+            household_id=message["household_id"], target="thread", thread_id=message["thread_id"],
+            react_emoji="ack", reply_to_message_id=nudge["message_id"], respect_quiet_hours=False))
     await execute(conn, "update messages set status = 'processed', processed_at = clock_timestamp() "
                         "where id = :id", id=message["id"])
     return True

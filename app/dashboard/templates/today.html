@@ -36,6 +36,25 @@
 <div class="card"><p class="empty">Nothing planned for today or tomorrow.
   <a href="/dashboard/calendar">Add something to the calendar</a></p></div>
 {% endfor %}
+{% if jobs %}
+<h2>Jobs</h2>
+<div class="card rows">
+  <ul class="list">
+  {% for job in jobs %}
+    <li class="row">
+    {% if job.kind == "job" %}
+      <form method="post" action="/dashboard/jobs/{{ job.id }}/done">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        <button class="tick" aria-label="Done: {{ job.text }}" title="Done"><span>{{ icon("check") }}</span></button>
+      </form>
+    {% else %}<span class="avatar small">{{ icon("bell") }}</span>{% endif %}
+      <a class="grow" href="/dashboard/jobs"><span class="title">{{ job.text }}</span>
+        <span class="sub">{{ [job.owner or "Everyone", job | due(now)] | join(" · ") }}</span></a>
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
 <h2>Running low</h2>
 <div class="card rows">
   <ul class="list">

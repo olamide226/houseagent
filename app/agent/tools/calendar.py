@@ -106,7 +106,10 @@ class SetReminder(BaseModel):
 
 
 async def set_reminder(ctx: Ctx, args: SetReminder) -> str:
-    """A reminder not tied to an event ('remind me to call the landlord Friday at 9')."""
+    """A reminder not tied to an event ('remind me to call the landlord Friday at 9'). Whatever they
+    ask to be reminded of is this, once or repeating, a chore included ('remind us every Sunday at
+    6pm to put the bins out'). When someone answers a reminder you sent with 'later', set it again
+    with the same words: two hours on, or at the time they say."""
     timezone = await households.timezone(ctx.conn, ctx.household_id)
     member_id = None
     if args.target.strip().lower() not in ("household", "everyone", "us", "we", "family", "the family"):

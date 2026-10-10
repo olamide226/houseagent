@@ -27,6 +27,7 @@ from app.media.store import MediaStore
 from app.pipeline import inbound, router
 from app.pipeline import media as media_pipeline
 from app.services import calendar, consumption, households, inventory, shopping
+from app.services import jobs as household_jobs
 
 log = structlog.get_logger()
 POLL_SECONDS = 2.0
@@ -125,7 +126,7 @@ async def fire_reminders(now: datetime | None = None, *, limit: int = 100) -> in
                                 and later.fire_at > r.fire_at and later.fire_at <= :now) as superseded
                from reminders r join households h on h.id = r.household_id
                left join events e on e.id = r.event_id
-               where r.status = 'scheduled' and r.fire_at <= :now
+               where r.status = 'scheduled' and r.fire_at <= :now and r.kind is null
                order by r.fire_at for update of r skip locked limit :limit""",
             now=now, limit=limit,
         )
@@ -151,6 +152,22 @@ async def fire_reminders(now: datetime | None = None, *, limit: int = 100) -> in
                 await execute(conn, "update reminders set status = 'sent', sent_at = :now where id = :id",
                               now=now, id=reminder["id"])
             log.info("reminder_queued", household_id=reminder["household_id"], reminder_id=reminder["id"])
+    return queued
+
+
+async def nudge_household_jobs(now: datetime | None = None, *, limit: int = 100) -> int:
+    """Say what is due about the household's jobs: the bins, the MOT, a birthday. What is said,
+    to whom, and when the job next has something to say are decided in app/services/jobs.py; a
+    job's row is moved on in the transaction that queues its message, so a second run sends
+    nothing more. Returns how many messages were queued."""
+    now = now or utcnow()
+    queued = 0
+    async with tx() as conn:
+        for job in await household_jobs.due_for_a_nudge(conn, now, limit):
+            message = await household_jobs.nudge(conn, job, now)
+            if message is not None and await router.enqueue(conn, message, send_after=now):
+                queued += 1
+                log.info("job_nudge_queued", household_id=job["household_id"], reminder_id=job["id"])
     return queued
 
 

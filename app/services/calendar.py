@@ -15,7 +15,7 @@ from app.agent.actions import Recorder
 from app.agent.base import ToolError
 from app.core.timeutil import day_bounds, local, next_occurrence, normalise_rrule, occurrences
 from app.db import execute, fetch_all, fetch_one, fetch_val
-from app.services import households, members
+from app.services import households, jobs, members
 
 DAY_MINUTES = 1440
 DEFAULT_LEADS = (DAY_MINUTES, 60)
@@ -362,8 +362,9 @@ async def set_reminder(rec: Recorder, *, text: str, fire_at: datetime | None = N
     when = f"{local(first, timezone):%a %-d %b %H:%M}"
     if await fetch_val(
         ctx.conn,
-        """select 1 from reminders where household_id = :h and event_id is null and status = 'scheduled'
-             and lower(text) = lower(:text) and fire_at = :first""", h=ctx.household_id, text=text, first=first,
+        """select 1 from reminders where household_id = :h and event_id is null and kind is null
+             and status = 'scheduled' and lower(text) = lower(:text) and fire_at = :first""",
+        h=ctx.household_id, text=text, first=first,
     ):
         rec.lines.append(f"OK: that reminder is already set for {when}")
         return
@@ -385,7 +386,7 @@ async def cancel_reminder(rec: Recorder, reminder_id: str) -> None:
     row = await fetch_one(
         rec.ctx.conn,
         """select id, text from reminders where id = :id and household_id = :h and event_id is null
-             and status = 'scheduled' for update""", id=reminder_id, h=rec.ctx.household_id)
+             and kind is null and status = 'scheduled' for update""", id=reminder_id, h=rec.ctx.household_id)
     if row is None:
         raise ToolError("that reminder is no longer scheduled")
     await rec.before("reminders", id=reminder_id)
@@ -441,12 +442,14 @@ async def occurrences_between(conn: AsyncConnection, household_id: str, start: d
 async def standalone_reminders(conn: AsyncConnection, household_id: str, start: datetime, end: datetime,
                                member_id: str | None = None, *, expand: bool = True) -> list[dict[str, Any]]:
     """Scheduled reminders that belong to no event and fire in the window. A repeating one
-    appears once per occurrence, or only at its next time when `expand` is false."""
+    appears once per occurrence, or only at its next time when `expand` is false. A household
+    job is not one of them: it is listed by when it is due (app/services/jobs.py)."""
     rows = await fetch_all(
         conn,
         """select r.id, r.text, r.fire_at, r.rrule, r.target, m.name as member, h.timezone
            from reminders r join households h on h.id = r.household_id left join members m on m.id = r.member_id
-           where r.household_id = :h and r.event_id is null and r.status = 'scheduled' and r.fire_at < :end
+           where r.household_id = :h and r.event_id is null and r.kind is null and r.status = 'scheduled'
+             and r.fire_at < :end
              and (cast(:member as uuid) is null or r.target = 'household' or r.member_id = :member)""",
         h=household_id, end=end, member=member_id,
     )
@@ -463,13 +466,16 @@ async def standalone_reminders(conn: AsyncConnection, household_id: str, start: 
 
 async def upcoming_lines(conn: AsyncConnection, household_id: str, timezone: str, start: datetime, end: datetime,
                          member_id: str | None = None) -> list[str]:
-    """Events and standalone reminders in the window as one time-ordered list of lines."""
+    """Events, standalone reminders and household jobs in the window as one time-ordered list of
+    lines. A job still waiting to be ticked off from before the window is listed too."""
     entries = [(o.start, o.line(timezone) + (" [repeats]" if o.rrule else ""))
                for o in await occurrences_between(conn, household_id, start, end, member_id)]
     for row in await standalone_reminders(conn, household_id, start, end, member_id):
         who = row["member"] or "everyone"
         entries.append((row["fire_at"], f"{local(row['fire_at'], timezone):%a %-d %b %H:%M} reminder: "
                                         f"{row['text']} ({who})" + (" [repeats]" if row["rrule"] else "")))
+    for job in await jobs.upcoming(conn, household_id, end, member_id):
+        entries.append((job["due_at"], jobs.upcoming_line(job)))
     return [line for _, line in sorted(entries)]
 
 

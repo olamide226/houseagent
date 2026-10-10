@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#111311" media="(prefers-color-scheme: dark)">
   <title>{% block title %}Home{% endblock %}</title>
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/app.css?v=3">
+  <link rel="stylesheet" href="/static/app.css?v=4">
   <script src="/static/htmx.min.js" defer></script>
   <script src="/static/app.js?v=2" defer></script>
 </head>
@@ -30,6 +30,7 @@
   <a class="only-phone" href="/dashboard/more"{% if here not in ("", "shopping", "inventory", "calendar") %} aria-current="page"{% endif %}>{{ icon("more") }}<span>More</span></a>
   <div class="nav-more">
     <span class="nav-label">Household</span>
+    {{ to("jobs", "tasks", "Jobs") }}
     {{ to("family", "people", "Family") }}
     {{ to("channels", "chat", "Chat apps") }}
     {{ to("settings", "settings", "Settings") }}

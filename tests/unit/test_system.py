@@ -85,7 +85,7 @@ async def test_the_page_names_the_model_and_version_and_never_shows_a_secret(cli
     text = await page(client)
     assert "<span>loop</span>" in text
     assert 'openai_compat <span class="muted">at llm.test</span>' in text and "<span>test-model</span>" in text
-    assert "0.1.0" in text and "database at migration 0001" in text
+    assert "0.1.0" in text and "database at migration 0002" in text
     settings = get_settings()
     for secret in (settings.llm_api_key, settings.session_secret, settings.setup_token, settings.tg_bot_token,
                    settings.tg_webhook_secret, settings.wa_access_token, settings.wa_app_secret,
