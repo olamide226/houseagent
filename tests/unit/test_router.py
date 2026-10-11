@@ -1,6 +1,9 @@
 """Outbound router: destinations, the allowlist property, quiet hours, degradation, splitting and retries."""
 import random
+import subprocess
+import sys
 from datetime import time, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -80,9 +83,10 @@ async def random_outbox(rng: random.Random, rows: int = 300):
             owner[marker] = home.id
             await execute(
                 conn,
-                """insert into outbox (household_id, target, thread_id, member_id, text, respect_quiet_hours)
-                   values (:h, :target, :thread, :member, :text, false)""",
-                h=home.id, target=target, text=marker,
+                """insert into outbox (household_id, target, thread_id, member_id, text, respect_quiet_hours,
+                                       send_after)
+                   values (:h, :target, :thread, :member, :text, false, :now)""",
+                h=home.id, target=target, text=marker, now=utcnow(),   # as `enqueue` stamps it: the app's clock
                 thread=rng.choice(threads) if target == "thread" or rng.random() < 0.2 else None,
                 member=rng.choice(members) if target == "member" or rng.random() < 0.2 else None,
             )
@@ -194,6 +198,11 @@ async def test_household_target_uses_the_primary_thread_or_each_adult():
     assert adapter.sent == [("-100555", "digest", None)]
 
 
+def test_the_router_can_be_the_first_module_imported():
+    """As it is when this file is run by itself. The services it sends for import it back."""
+    subprocess.run([sys.executable, "-c", "import app.pipeline.router"], check=True, cwd=Path(__file__).parents[2])
+
+
 async def test_dedupe_key_makes_enqueue_idempotent():
     async with tx() as conn:
         home = await seed_home(conn)
@@ -201,6 +210,23 @@ async def test_dedupe_key_makes_enqueue_idempotent():
         assert await enqueue(conn, message) is not None
         assert await enqueue(conn, message) is None
     assert len(await outbox()) == 1
+
+
+async def test_a_send_is_due_by_the_clock_of_this_process_however_far_the_databases_is_ahead(monkeypatch):
+    behind = utcnow() - timedelta(minutes=5)                       # this clock, five minutes behind the database's
+    monkeypatch.setattr(router, "utcnow", lambda: behind)
+    async with tx() as conn:
+        home = await seed_home(conn)
+        await enqueue(conn, OutboundMessage(household_id=home.id, target="member", member_id=home.ola, text="hi",
+                                            respect_quiet_hours=False))
+    adapter = FakeAdapter(fail=PermanentError("blocked by the user"))
+    assert await router.dispatch_due({Channel.telegram: adapter}) == 1          # due at once, and refused for good
+    (row,) = await outbox()
+    assert (row["status"], row["send_after"]) == ("failed", behind)
+    async with tx() as conn:
+        assert await router.retry(conn, home.id, row["id"])
+    adapter.fail = None
+    assert await router.dispatch_due({Channel.telegram: adapter}) == 1 and adapter.sent == [("1001", "hi", None)]
 
 
 async def ack(conn, home, external="501"):

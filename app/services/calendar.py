@@ -27,7 +27,7 @@ MORNING_OF = time(7, 30)
 
 _EVENT = """
 select e.*, h.timezone,
-       coalesce((select array_agg(m.name order by m.created_at) from members m
+       coalesce((select array_agg(m.name order by m.created_at, m.name) from members m
                  where m.id = any(e.participant_ids)), '{}') as participants
 from events e join households h on h.id = e.household_id"""
 
@@ -435,7 +435,7 @@ async def remind_of_day(rec: Recorder, *, title: str, day: date, last_day: date 
     if last_day is not None and last_day < day:
         raise ToolError("the last day must be after the first")
     names = await fetch_all(
-        ctx.conn, "select name from members where id = any(cast(:ids as uuid[])) order by created_at",
+        ctx.conn, "select name from members where id = any(cast(:ids as uuid[])) order by created_at, name",
         ids=list(participant_ids))
     what = label({"title": title, "participants": [row["name"] for row in names]})
     what = f"{what}, {location.strip()}" if location and location.strip() else what
@@ -508,7 +508,7 @@ async def active_events(conn: AsyncConnection, household_id: str, *, recurring: 
         _EVENT + """ where e.household_id = :h and e.status = 'active'
                        and (cast(:recurring as boolean) is null or (e.rrule is not null) = :recurring)
                        and (cast(:member as uuid) is null or cast(:member as uuid) = any(e.participant_ids))
-                     order by e.starts_at""",
+                     order by e.starts_at, e.title, e.id""",
         h=household_id, recurring=recurring, member=member_id,
     )
 
@@ -556,7 +556,7 @@ async def standalone_reminders(conn: AsyncConnection, household_id: str, start: 
         else:
             times = [row["fire_at"]] if row["fire_at"] >= start else []
         found += [{**row, "fire_at": at} for at in times]
-    return sorted(found, key=lambda row: row["fire_at"])
+    return sorted(found, key=lambda row: (row["fire_at"], row["text"], row["id"]))
 
 
 async def upcoming_lines(conn: AsyncConnection, household_id: str, timezone: str, start: datetime, end: datetime,

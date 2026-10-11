@@ -198,7 +198,8 @@ async def test_media_older_than_the_retention_is_deleted_and_only_the_words_rema
 
     assert await jobs.media_cleanup(store, 90, now) == 0                    # a second run finds nothing
     assert len(store.deleted) == 2
-    assert await jobs.media_cleanup(store, 90, now + timedelta(days=90)) == 1   # the newer one, in its turn
+    # The newer one, in its turn. A day past it: the database stamped the message, and its clock is not this one.
+    assert await jobs.media_cleanup(store, 90, now + timedelta(days=91)) == 1
 
 
 async def test_cleanup_keeps_the_reference_when_the_store_is_down_and_leaves_other_backends_alone(client):

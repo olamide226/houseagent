@@ -80,11 +80,11 @@ async def test_an_appointment_gets_its_row_and_a_reminder_the_day_before_and_an_
 
 @pytest.mark.parametrize("participants,target,member,text", [
     (["Tobi"], "household", None, "Swimming for Tobi tomorrow at 10:30"),      # a child takes part
-    (["me", "Ada"], "household", None, "Swimming for Ola and Ada tomorrow at 10:30"),   # more than one adult
+    (["me", "Ada"], "household", None, "Swimming for Ada and Ola tomorrow at 10:30"),   # more than one adult; made together: by name
     (["Ada"], "member", "Ada", "Swimming tomorrow at 10:30"),
     (["me"], "member", "Ola", "Swimming tomorrow at 10:30"),
     ([], "member", "Ola", "Swimming tomorrow at 10:30"),                       # nobody named: whoever booked it
-    (["us"], "household", None, "Swimming for Ola and Ada tomorrow at 10:30"),
+    (["us"], "household", None, "Swimming for Ada and Ola tomorrow at 10:30"),
     (["the kids"], "household", None, "Swimming for Tobi tomorrow at 10:30"),
 ])
 async def test_reminders_go_to_the_household_or_the_one_adult_taking_part(participants, target, member, text):

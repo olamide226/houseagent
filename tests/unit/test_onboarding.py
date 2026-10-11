@@ -440,7 +440,7 @@ async def test_shops_become_places_and_the_brief_time_and_quiet_hours_are_real_s
     assert await rows(quiet) == [{"name": "Ada", "quiet_start": time(20), "quiet_end": time(7)},
                                  {"name": "Ola", "quiet_start": time(21, 30), "quiet_end": time(7)}]
     result, _ = await tool(home, "remember", key="quiet_hours", value="22:00-06:30", about="us")
-    assert result == "OK: quiet hours for Ola, Ada: 22:00 to 06:30"
+    assert result == "OK: quiet hours for Ada, Ola: 22:00 to 06:30"                        # made together: by name
     assert await rows(quiet) == [{"name": "Ada", "quiet_start": time(22), "quiet_end": time(6, 30)},
                                  {"name": "Ola", "quiet_start": time(22), "quiet_end": time(6, 30)}]
     await tool(home, "remember", key="quiet_hours", value="11pm to 7am", about="me", speaker="Ada")

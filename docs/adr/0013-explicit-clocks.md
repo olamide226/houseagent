@@ -27,3 +27,7 @@ Patching the clock (freezegun) freezes Python but not Postgres, and the code use
   real terms; it is then due at once and the reminders job sends it on its next tick.
 - `agent_actions.created_at` and the undo window still use the database clock. Undo is about real
   elapsed time, not the turn's clock.
+- `outbox.send_after` is never the database clock. `dispatch_due()` asks whether a send is due by
+  the application's clock, so `enqueue()` and `retry()` stamp it with that clock when no time is
+  passed. The two clocks differ: a database in a container was measured between 45 ms behind its
+  host and 1 ms ahead within half an hour, and while it is ahead a send stamped by it is not yet due.
