@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.agent.actions import Recorder
 from app.agent.base import ToolError
+from app.config import get_settings
 from app.core.identity import INVITE_TTL, hash_token, new_invite_code
 from app.core.timeutil import quiet_end
 from app.db import execute, fetch_all, fetch_one, fetch_val, jsonb
@@ -31,7 +32,7 @@ async def family(conn: AsyncConnection, household_id: str, now: datetime) -> lis
     return await fetch_all(
         conn,
         """select m.id, m.name, m.role, m.is_admin, m.preferred_channel, m.quiet_start, m.quiet_end,
-                  m.presence_token_hash is not null as has_presence_link,
+                  m.presence_token_hash is not null as has_presence_link, m.presence_link_base,
                   case when m.invite_expires_at > :now then m.invite_expires_at end as invite_open_until,
                   coalesce((select array_agg(ci.channel order by ci.channel) from channel_identities ci
                             where ci.member_id = m.id), '{}') as channels
@@ -109,12 +110,19 @@ async def revoke_invite(rec: Recorder, member_id: str) -> None:
     rec.lines.append(f"OK: invite for {member['name']} revoked")
 
 
+def link_base() -> str:
+    """The address links are made with now: PUBLIC_BASE_URL, without a trailing slash."""
+    return get_settings().public_base_url.rstrip("/")
+
+
 async def new_presence_token(conn: AsyncConnection, member_id: str) -> str:
     """A fresh presence token (32 random bytes, URL-safe), replacing any earlier one. Only its
-    hash is stored, so the link is shown or sent once."""
+    hash is stored, so the link is shown or sent once. The address it is made for is kept beside
+    it, so a change of address can be noticed (ADR 0042), and any open offer of a new one is spent."""
     token = secrets.token_urlsafe(32)
-    await execute(conn, "update members set presence_token_hash = :hash where id = :id",
-                  hash=hash_token(token), id=member_id)
+    await execute(conn, "update members set presence_token_hash = :hash, presence_link_base = :base, "
+                        "presence_renew_offered_at = null where id = :id",
+                  hash=hash_token(token), base=link_base(), id=member_id)
     return token
 
 
@@ -130,7 +138,7 @@ async def presence_link(rec: Recorder, member_id: str) -> str:
 async def for_presence_token(conn: AsyncConnection, token: str) -> dict[str, Any] | None:
     return await fetch_one(
         conn,
-        """select m.id, m.household_id, m.name, m.is_admin, h.timezone
+        """select m.id, m.household_id, m.name, m.is_admin, m.presence_link_base, h.timezone
            from members m join households h on h.id = m.household_id
            where m.presence_token_hash = :hash and m.role = 'adult'""",
         hash=hash_token(token),

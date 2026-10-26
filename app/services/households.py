@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.agent.actions import Recorder
 from app.agent.base import ToolError
-from app.config import get_settings
 from app.core.envelope import GroupUpdate, OutboundMessage
 from app.core.identity import hash_token
 from app.db import execute, fetch_all, fetch_one, fetch_val, jsonb
@@ -118,7 +117,7 @@ async def advance_onboarding(rec: Recorder, step: str, skipped: bool = False) ->
 
 # ---------------------------------------------------------------- presence links
 def presence_url(token: str) -> str:
-    return f"{get_settings().public_base_url}/presence/{token}"
+    return f"{members.link_base()}/presence/{token}"
 
 
 # What setup sends each adult. It holds no link: the steps are on the page the link opens, and
@@ -126,15 +125,38 @@ def presence_url(token: str) -> str:
 SHOPS_OFFER = ("One more thing, and it is optional: your iPhone can tell me when you arrive at a shop, so the list "
                "for that shop is waiting for you. It takes a few minutes to set up. Whenever you want to try it, "
                "send me the word shops.")
-SHOPS_ALREADY = ("You already have a personal link. If you can't find it, send me the word dashboard, open "
-                 "Settings, and tap Replace link to get a new one.")
+# The word shops from someone who already has a link: a new one stops the old one, so it is asked (ADR 0042).
+SHOPS_RENEW_OFFER = ("You already have a personal link for this. Would you like a new one? Your old link, and any "
+                     "shortcut you made with it, would stop working, and the new link shows you the steps again. "
+                     "Reply yes for a new one.")
+RENEW_WINDOW = timedelta(hours=1)     # how long a yes to that question counts
+# Sent once by the worker when the address the app answers on is no longer the one a link was made for.
+LINK_MOVED = ("My web address has changed, so the shop link I gave you before has stopped working, and so has any "
+              "shortcut you made with it. Whenever you want the list when you reach a shop again, send me the word "
+              "shops for a new link.")
+LINK_MAYBE_MOVED = ("The shop link I gave you before may no longer work, because my web address may have changed "
+                    "since you got it. If the list doesn't arrive when you reach a shop, send me the word shops for a "
+                    "new link.")
 
 
-def presence_text(url: str) -> str:
+def presence_text(url: str, *, replaced: bool = False, moved: bool = False) -> str:
     """What an adult is sent with their personal link. The page it opens says what to do."""
-    return ("Here is your personal link. Open it on your iPhone and it shows you what to do, one shop at a time:\n"
-            f"{url}\n\n"
-            "Keep it to yourself: it is how I know it is your phone.")
+    if moved:
+        first = ("My web address has changed, so your old link had stopped working, and so had any shortcut you made "
+                 "with it. Here is a new one. Open it on your iPhone and it walks you through it again, one shop at "
+                 "a time:")
+    elif replaced:
+        first = ("Here is your new link. Your old one, and any shortcut you made with it, no longer work. Open this "
+                 "one on your iPhone and it walks you through it again, one shop at a time:")
+    else:
+        first = "Here is your personal link. Open it on your iPhone and it shows you what to do, one shop at a time:"
+    return f"{first}\n{url}\n\nKeep it to yourself: it is how I know it is your phone."
+
+
+def link_moved(base: str | None) -> bool | None:
+    """Whether a link made for `base` was made for another address than the one used now: None
+    when that is not known, because the link was made before addresses were kept (ADR 0042)."""
+    return None if base is None else base != members.link_base()
 
 
 async def presence_offered(conn: AsyncConnection, household_id: str) -> bool:
@@ -164,11 +186,63 @@ async def offer_shops(conn: AsyncConnection, household_id: str, *, member_id: st
 
 
 async def shops_link(conn: AsyncConnection, member_id: str) -> str:
-    """The answer to the word "shops": a first personal link. One someone already has is left
-    alone, because a new one would stop the shortcuts on their phone working."""
-    if await fetch_val(conn, "select presence_token_hash is not null from members where id = :m", m=member_id):
-        return SHOPS_ALREADY
-    return presence_text(presence_url(await members.new_presence_token(conn, member_id)))
+    """The answer to the word "shops". Someone with no link gets one. A link made for an old
+    address cannot work, so it is replaced at once. Any other is asked about first, because a new
+    one stops the shortcuts on their phone: a yes within the hour replaces it (`renew_link`)."""
+    member = await fetch_one(conn, "select presence_token_hash is not null as has_link, presence_link_base "
+                                   "from members where id = :m", m=member_id)
+    assert member is not None
+    if not member["has_link"]:
+        return presence_text(presence_url(await members.new_presence_token(conn, member_id)))
+    if link_moved(member["presence_link_base"]):
+        return presence_text(presence_url(await members.new_presence_token(conn, member_id)), moved=True)
+    await execute(conn, "update members set presence_renew_offered_at = clock_timestamp() where id = :m", m=member_id)
+    return SHOPS_RENEW_OFFER
+
+
+async def renew_link(conn: AsyncConnection, member_id: str, said_at: datetime, yes: bool) -> str | None:
+    """A message from someone who may have been asked whether they want a new link. Returns the
+    new link's message when this is their yes to that question, else None. The question is
+    answered by the first message after it, whatever it says: only a yes within the hour counts."""
+    offered = await fetch_val(conn, "select presence_renew_offered_at from members where id = :m",
+                              m=member_id)
+    if offered is None or said_at < offered:      # nothing asked, or written before the question was
+        return None
+    await execute(conn, "update members set presence_renew_offered_at = null where id = :m", m=member_id)
+    if not yes or said_at > offered + RENEW_WINDOW:
+        return None
+    return presence_text(presence_url(await members.new_presence_token(conn, member_id)), replaced=True)
+
+
+async def notice_moved_links(conn: AsyncConnection, household_id: str | None = None) -> int:
+    """Tell each connected adult whose link was made for another address than today's, once per
+    link and address, that it has stopped working and how to get a new one. A link whose address
+    is not known is told it may have. Held in quiet hours. Returns how many were queued.
+
+    Idempotent across restarts and replicas: the outbox's dedupe key is the link and the address."""
+    base = members.link_base()
+    adults = await fetch_all(
+        conn,
+        """select m.id, m.household_id, m.presence_token_hash, m.presence_link_base from members m
+           where m.role = 'adult' and m.presence_token_hash is not null
+             and m.presence_link_base is distinct from :base
+             and (cast(:h as uuid) is null or m.household_id = :h)
+             and exists (select 1 from channel_identities ci where ci.member_id = m.id)
+           order by m.created_at, m.id""",
+        base=base, h=household_id,
+    )
+    queued = 0
+    for adult in adults:
+        change = hash_token(f"{adult['presence_token_hash']}|{base}")[:16]
+        if await router.enqueue(conn, OutboundMessage(
+            household_id=adult["household_id"], target="member", member_id=adult["id"],
+            text=LINK_MAYBE_MOVED if adult["presence_link_base"] is None else LINK_MOVED,
+            dedupe_key=f"presence_moved:{adult['id']}:{change}",
+        )):
+            queued += 1
+            log.info("presence_link_moved_notice", household_id=adult["household_id"],
+                     known=adult["presence_link_base"] is not None)
+    return queued
 
 
 async def claim_nudge(conn: AsyncConnection, household_id: str, key: str, now: datetime, *,

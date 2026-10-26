@@ -63,14 +63,16 @@
     <li class="row">
       <span class="avatar">{{ member.name[:1] }}</span>
       <span class="grow"><span class="title">{{ member.name }}</span>
-        <span class="sub">{{ "has a link" if member.has_presence_link else "no link yet" }}</span></span>
+        <span class="sub">{% if not member.has_presence_link %}no link yet{% elif member.presence_link_base is none
+          %}has a link, perhaps made for an old web address{% elif member.presence_link_base != link_base
+          %}has a link made for an old web address: it no longer works{% else %}has a link{% endif %}</span></span>
       <button class="quiet" hx-post="/dashboard/settings/presence/{{ member.id }}" hx-target="#settings">
         {{ "Replace link" if member.has_presence_link else "Make link" }}</button>
     </li>
   {% endfor %}
   </ul>
 </div>
-<p class="hint">Anyone without a link can also get theirs by sending the word <strong>shops</strong> in chat.
+<p class="hint">Anyone can also get a link, or a new one, by sending the word <strong>shops</strong> in chat.
   Replacing a link stops the old one working, so what was set up on that phone has to be done again with the new one.</p>
 <h2>Places</h2>
 <p class="hint">Only a shop sends its list on arrival. A phone names a place exactly as it is written here.</p>

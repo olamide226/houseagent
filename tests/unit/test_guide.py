@@ -24,7 +24,7 @@ from app.worker.main import SCHEDULED
 from tests.helpers import add_member, london, seed_home, technical_words
 from tests.unit.test_loop import envelope
 
-EVERYTHING = Setup(chat_apps=("telegram", "whatsapp", "imessage"), photos=True, voice_notes=True, shop_shortcut=True,
+EVERYTHING = Setup(chat_apps=("telegram", "whatsapp", "imessage"), photos=True, voice_notes=True,
                    google_calendar=True, apple_calendar=True)
 SENDS_NOTHING = {"expand_recurrence"}   # makes the reminder rows that fire_reminders later sends
 NOW = london("2026-10-05 12:00")
@@ -86,8 +86,8 @@ def test_the_guide_only_says_what_this_installation_has_switched_on():
     assert "this household can use Telegram. WhatsApp and iMessage are not set up here: adding one" in bare
     assert "New invite" not in bare                    # there is no other app to move to
     assert "this household can use Telegram, WhatsApp and iMessage. To be messaged in another" in full
-    assert "whoever set this up has one thing to do first" in bare
-    assert "one thing to do first" not in full
+    for guide in (bare, full):       # nobody waits for whoever set this up before making their own shortcut
+        assert "nobody has to do anything first" in guide and "one thing to do first" not in guide
     assert "connect the Google Calendar or Apple Calendar they already use" in full
     assert "they tap Connect Google Calendar, say yes to Google" in full
     assert "they tap Connect Apple Calendar, type the email they sign in to Apple with and an app-specific password" in full
@@ -104,7 +104,7 @@ def test_the_guide_only_says_what_this_installation_has_switched_on():
 
 
 def test_what_is_switched_on_is_read_from_the_settings_and_the_media_store():
-    settings = get_settings()        # as the tests configure it: three chat apps, both calendars, no transcriber, no shortcut
+    settings = get_settings()        # as the tests configure it: three chat apps, both calendars, no transcriber
     assert setup_of(settings, None) == Setup(chat_apps=("telegram", "whatsapp", "imessage"), photos=False,
                                              google_calendar=True, apple_calendar=True)
     assert setup_of(settings.model_copy(update={"google_client_id": None}), None) == Setup(
@@ -114,8 +114,8 @@ def test_what_is_switched_on_is_read_from_the_settings_and_the_media_store():
     assert not setup_of(settings.model_copy(update={"llm_supports_images": False}), stored).photos   # type: ignore[arg-type]
     other = settings.model_copy(update={
         "wa_app_secret": None, "bb_password": None, "calendar_secret_key": None, "stt_provider": "openai_compat",
-        "stt_base_url": "http://stt.test/v1", "stt_model": "whisper", "presence_shortcut_url": "https://icloud.test/s"})
-    assert setup_of(other, None) == Setup(chat_apps=("telegram",), photos=False, voice_notes=True, shop_shortcut=True)
+        "stt_base_url": "http://stt.test/v1", "stt_model": "whisper"})
+    assert setup_of(other, None) == Setup(chat_apps=("telegram",), photos=False, voice_notes=True)
     assert make_runtime(other, None)._setup == setup_of(other, None)   # and it reaches the runtime that answers
 
 

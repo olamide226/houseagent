@@ -213,7 +213,8 @@ async def test_a_body_that_is_not_an_enter_or_exit_at_a_named_place_is_answered_
 
 # ---------------------------------------------------------------- the link, opened in a browser
 SHORTCUT = "https://www.icloud.com/shortcuts/0123456789abcdef"
-ENGINEERS_WORDS = ("POST", "JSON", "request body", "endpoint", "token", "URL", "Method Not Allowed")
+ENGINEERS_WORDS = ("POST", "GET", "JSON", "request body", "endpoint", "token", "Method Not Allowed",
+                   "PRESENCE_SHORTCUT_URL")
 
 
 def words_of(response):
@@ -221,35 +222,45 @@ def words_of(response):
     return " ".join(re.sub(r"<[^>]+>", " ", response.text).split())
 
 
-async def test_opening_the_link_shows_what_it_is_for_in_plain_words_and_records_nothing(client, monkeypatch):
-    monkeypatch.setattr(get_settings(), "presence_shortcut_url", SHORTCUT)
+async def test_opening_the_link_shows_what_it_is_for_in_plain_words_and_records_nothing(client):
     async with tx() as conn:
         home, tokens = await household(conn)
         await the_usual_list(conn, home)
     tesco = f"http://testserver/presence/{tokens['Ada']}/enter/Tesco%20Extra"
 
-    for opened in (f"/presence/{tokens['Ada']}", tesco):                     # her link, and one copied from the page
-        page = await client.get(opened)
-        assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
-        said = words_of(page)
-        assert "lets your iPhone tell Home when you arrive at a shop" in said and "It is optional" in said
-        assert not [word for word in ENGINEERS_WORDS if word in said], said
-        # One thing to copy per shop, the shared shortcut to add it to, and the two for home.
-        assert f'data-copy="{tesco}"' in page.text and "African%20shop%20on%20Rye%20Lane" in page.text
-        assert f'href="{SHORTCUT}"' in page.text and "Get Shortcut" in said
-        assert f"{tokens['Ada']}/exit/Home" in page.text
-        # The address holds a secret: it is not cached, indexed, or passed on to the page a link opens.
-        assert (page.headers["cache-control"], page.headers["referrer-policy"]) == ("no-store", "no-referrer")
+    page = await client.get(f"/presence/{tokens['Ada']}")
+    assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+    said = words_of(page)
+    assert "lets your iPhone tell Home when you arrive at a shop" in said and "It is optional" in said
+    assert not [word for word in ENGINEERS_WORDS if word in said], said
+    # One thing to copy per shop, a shortcut each person makes for it themselves, and the two for home.
+    assert f'data-copy="{tesco}"' in page.text and "African%20shop%20on%20Rye%20Lane" in page.text
+    assert 'href="shortcuts://create-shortcut"' in page.text and "Get Contents of URL" in said
+    assert "Nearly ready" not in said and "Get Shortcut" not in said
+    assert f"{tokens['Ada']}/exit/Home" in page.text
+    assert "For you, as whoever set up Home" not in said                     # that part is the admin's
+    # The address holds a secret: it is not cached, indexed, or passed on to the page a link opens.
+    assert (page.headers["cache-control"], page.headers["referrer-policy"]) == ("no-store", "no-referrer")
     assert await pings() == [] and await nudges() == [] and len(await rows("select 1 from places")) == 3
 
 
-async def test_until_the_shortcut_is_shared_the_admin_is_shown_how_and_everyone_else_is_told_to_wait(client):
+async def test_nobody_waits_for_the_admin_and_the_admin_is_told_what_has_not_been_tried(client):
     async with tx() as conn:
         _, tokens = await household(conn)
     ada, ola = [words_of(await client.get(f"/presence/{tokens[who]}")) for who in ("Ada", "Ola")]
-    assert "Nearly ready" in ada and "Tesco Extra" not in ada
-    assert not [word for word in ENGINEERS_WORDS if word in ada], ada
-    assert "Get Contents of URL" in ola and "Copy iCloud Link" in ola and "PRESENCE_SHORTCUT_URL" in ola
+    for said in (ada, ola):
+        assert "Start a new shortcut" in said and "Tesco Extra" in said and "Nearly ready" not in said
+    assert "Not tried on an iPhone yet" in ola and "Nobody has to build or share anything first" in ola
+    assert "Not tried on an iPhone yet" not in ada
+
+
+async def test_a_shared_shortcut_is_still_offered_where_one_is_set(client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "presence_shortcut_url", SHORTCUT)
+    async with tx() as conn:
+        _, tokens = await household(conn)
+    page = await client.get(f"/presence/{tokens['Ada']}")
+    assert f'href="{SHORTCUT}"' in page.text and "Get Shortcut" in words_of(page)
+    assert "create-shortcut" not in page.text
 
 
 async def test_a_link_that_is_not_in_use_opens_a_page_that_says_so(client):

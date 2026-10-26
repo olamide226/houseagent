@@ -12,16 +12,27 @@
 <h1>This link has stopped working</h1>
 <p class="lead">It was replaced by a newer one, or part of it went missing when it was copied.</p>
 <p>Your link lets your iPhone tell {{ agent }} when you arrive at a shop, so the shopping list for that shop is waiting
-  for you. To get yours, send the word <strong>shops</strong> to {{ agent }} in your chat.</p>
+  for you. To get a new one, send the word <strong>shops</strong> to {{ agent }} in your chat.</p>
+{% elif heard %}
+<h1>That worked</h1>
+{% if heard[0] == "enter" %}
+<p class="lead">{{ agent }} heard that you arrived at {{ heard[1] }}. If anything on the list is for there, the list is
+  in your chat now.</p>
+{% else %}
+<p class="lead">{{ agent }} heard that you left {{ heard[1] }}.</p>
+{% endif %}
+<p class="sub">This is the link for one place. Your own page, with all the steps, is the link {{ agent }} sent you in
+  your chat.</p>
 {% else %}
 <h1>The list when you reach a shop</h1>
 <p class="lead">This is your personal link. It lets your iPhone tell {{ agent }} when you arrive at a shop, so the
   shopping list for that shop is waiting for you.</p>
+{% if moved %}
+<p class="notice warn">This link was made for {{ agent }}'s old web address. The links to copy below use the new one.
+  A shortcut you set up before may stop working: set it up again from here, or send the word <strong>shops</strong>
+  to {{ agent }} for a new link.</p>
+{% endif %}
 <p class="notice">It is optional. Everything else works without it, and you can set it up any time.</p>
-{% if not shortcut and not admin %}
-<p class="notice warn">Nearly ready. Whoever set up {{ agent }} for your family has one thing to do first, once for
-  everyone. Ask them to open their own link from {{ agent }}: it shows them what to do.</p>
-{% else %}
 <h2>Set it up, one shop at a time</h2>
 <p class="hint">You need your iPhone and its Shortcuts app. Do the three steps for one shop, then come back for the next.</p>
 <div class="card">
@@ -41,23 +52,12 @@
       <span class="sub">Adding a second shop? First rename the shortcut you already have to its shop's name: open it,
         tap the arrow beside its name, then <strong>Rename</strong>.</span>
       {% else %}
-      <span><strong>Make the shortcut.</strong> You do this part once, and share it so nobody else in the family
-        has to.</span>
-      <details class="opt" open>
-        <summary>How to make and share it</summary>
-        <ol class="numbered">
-          <li><span>In the Shortcuts app, make a new shortcut and add the action <strong>Get Contents of URL</strong>.</span></li>
-          <li><span>Paste the link you copied where it says URL. Tap <strong>Show More</strong> and change
-            <strong>Method</strong> to <strong>POST</strong>. Leave the rest as it is.</span></li>
-          <li><span>Run it once. If something is on the list for that shop, the list arrives in your chat.</span></li>
-          <li><span>To share it: open the shortcut's details, tap <strong>Setup</strong>, then
-            <strong>Add New Question</strong>. Choose the link you pasted and type the question
-            "Paste the link you copied for this shop".</span></li>
-          <li><span>Share it with <strong>Copy iCloud Link</strong>, and save that link as
-            <code class="plain">PRESENCE_SHORTCUT_URL</code> where {{ agent }} is set up. From then on this page
-            gives everyone a button in place of these steps.</span></li>
-        </ol>
-      </details>
+      <span><strong>Make a shortcut for the shop.</strong> Tap the button: the Shortcuts app opens on a new
+        shortcut.</span>
+      <a class="btn big" href="shortcuts://create-shortcut">{{ icon("plus") }}Start a new shortcut</a>
+      <span>Tap <strong>Add Action</strong>, search for <strong>Get Contents of URL</strong> and tap it. Tap
+        <strong>URL</strong> in it and paste what you copied. Leave the rest as it is.</span>
+      <span>Tap <strong>New Shortcut</strong> at the top, then <strong>Rename</strong>, and call it after the shop.</span>
       {% endif %}
     </div></li>
     <li><div class="grow stack">
@@ -70,14 +70,14 @@
         <summary>My iPhone does not show Automation there</summary>
         <span class="sub">On an iPhone that has not been updated for a while: in the Shortcuts app tap
           <strong>Automation</strong>, then <strong>+</strong>, and choose <strong>Arrive</strong>. Tap
-          <strong>Choose</strong>, find the shop and tap <strong>Next</strong>. Pick the shortcut you added. Then tap
+          <strong>Choose</strong>, find the shop and tap <strong>Next</strong>. Pick the shortcut you made. Then tap
           the new automation, turn off <strong>Ask Before Running</strong> and tap <strong>Don't Ask</strong>.</span>
       </details>
     </div></li>
   </ol>
 </div>
-<p class="hint">To try it, put something on the shopping list and run the shortcut once. The list for that shop should
-  arrive in your chat with {{ agent }}.</p>
+<p class="hint">To try it, put something on the shopping list and run the shortcut once: tap it in the Shortcuts app.
+  The list for that shop should arrive in your chat with {{ agent }}.</p>
 <details class="card fold">
   <summary><span class="grow">Also when you leave home</span>{{ icon("down", "chev") }}</summary>
   <div class="stack">
@@ -87,7 +87,23 @@
     {% for name, link in home %}{{ copy(name, link) }}{% endfor %}
   </div>
 </details>
-<p class="sub">Keep this page to yourself: the links on it are how {{ agent }} knows it is your phone.</p>
+<p class="sub">Keep this page to yourself: the links on it are how {{ agent }} knows it is your phone. If you lose it,
+  send the word <strong>shops</strong> to {{ agent }} for a new one.</p>
+{% if admin %}
+<details class="card fold">
+  <summary><span class="grow">For you, as whoever set up {{ agent }}</span>{{ icon("down", "chev") }}</summary>
+  <div class="stack">
+    <span class="sub">Nobody has to build or share anything first: each person makes their own shortcut with the steps
+      above. Apple gives no way to put a shortcut or an automation on someone else's iPhone, so each person does
+      these steps on their own phone, once per shop.</span>
+    <span class="sub"><strong>Not tried on an iPhone yet.</strong> The steps follow Apple's Shortcuts User Guide for
+      iOS 27 and iOS 26, and Apple renames these screens between versions. A shortcut made this way asks with GET,
+      the action's own setting; {{ agent }} counts a GET or a POST of a shop's link as arriving.</span>
+    <span class="sub">You can still share one shortcut so the family can skip the second step:
+      <code class="plain">PRESENCE_SHORTCUT_URL</code>, described in the guide that came with {{ agent }}
+      (docs/presence.md).</span>
+  </div>
+</details>
 {% endif %}
 {% endif %}
 {% endblock %}

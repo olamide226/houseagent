@@ -36,6 +36,7 @@ SCHEDULED: dict[str, tuple[Callable[[], Awaitable[int]], float]] = {
     "daily_brief": (jobs.daily_brief, jobs.DIGEST_POLL_SECONDS),
     "weekly_digest": (jobs.weekly_digest, jobs.DIGEST_POLL_SECONDS),
     "low_stock_prompt": (jobs.low_stock_prompt, jobs.DIGEST_POLL_SECONDS),
+    "presence_links": (jobs.presence_links, jobs.PRESENCE_LINKS_SECONDS),
 }
 
 
