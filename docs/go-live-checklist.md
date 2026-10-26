@@ -4,7 +4,8 @@ What is still open before this is offered to the public. One household uses it t
 server, `houseagent.devng.host`, since 9 Oct 2026; nothing below stops that. Last checked against
 the code, the docs and that trial on 10 Oct 2026, with meal ideas, household jobs, Google
 Calendar, letters and spending merged. Apple Calendar was added the same day and has its own
-heading.
+heading. The shop-link items were brought up to date on 26 Oct 2026, when the family reported
+that their shop links did not work.
 
 Each line has a status and a pointer to where the detail is.
 
@@ -40,9 +41,20 @@ item it is.
 - [ ] **Not verified.** The BlueBubbles outage runbook has never been followed.
   [operations.md](operations.md#bluebubbles-outage)
 - [ ] **Not verified.** The iPhone Shortcut on a phone: the automation fires and the list arrives.
-  [presence.md](presence.md#limits)
-- [ ] **Not done.** The owner makes the shared Shortcut once and sets `PRESENCE_SHORTCUT_URL` on
-  the server. [presence.md](presence.md#sharing-the-shortcut-once)
+  The steps everyone now follows (Start a new shortcut, Get Contents of URL with the pasted link,
+  Arrive) come from Apple's guide and have not been tried on an iPhone, nor has a GET from the
+  Shortcuts app. [presence.md](presence.md#what-apple-allows)
+- [x] **Done, by this change (ADR 0042).** ~~The owner makes the shared Shortcut once and sets
+  `PRESENCE_SHORTCUT_URL` on the server.~~ No longer needed: each person makes their own shortcut
+  from their page, and `PRESENCE_SHORTCUT_URL` is optional.
+  [ADR 0042](adr/0042-a-shop-link-is-replaced-by-asking-and-follows-the-address.md)
+- [ ] **Not verified.** On the server, after this change is deployed: migration `0005` gives the
+  two links sent on 7 and 9 Oct their temporary address, both adults get one message saying their
+  shop link stopped working, and **shops** then sends each a new link at once.
+  [presence.md](presence.md#when-the-address-changes)
+- [ ] **Not done.** Old shop and login links stay readable in sent messages and the outbox. A
+  token is stored only as a hash on `members`, but the text that carried it is kept as sent.
+  [ADR 0042](adr/0042-a-shop-link-is-replaced-by-asking-and-follows-the-address.md)
 - [ ] **Not verified.** A receipt or fridge photo sent from a phone to the server.
   [operations.md](operations.md#media-storage)
 - [x] **Done, 9 Oct 2026.** A voice note sent from a phone to the server. The owner sent one

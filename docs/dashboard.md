@@ -149,11 +149,14 @@ The currency is on Settings. Amounts already kept stay in the currency they were
 
 ## Presence links and places
 
-"The list when you reach a shop" on Settings lists each adult with "has a link" or "no link yet".
+"The list when you reach a shop" on Settings lists each adult with "has a link" or "no link yet",
+or "has a link made for an old web address: it no longer works" when the link was made before
+`PUBLIC_BASE_URL` changed, and "perhaps made for an old web address" when that is not known
+([ADR 0042](adr/0042-a-shop-link-is-replaced-by-asking-and-follows-the-address.md)).
 "Make link" or "Replace link" creates a new personal link and shows it once, to be sent to that
 person; only its hash is stored, so it cannot be shown again, and replacing it stops the old link
-working. Any adult can make a link for any adult, as with invites. Someone without a link can also
-get theirs by sending the word `shops` in chat. The steps for the phone are not on Settings: they
+working. Any adult can make a link for any adult, as with invites. Anyone can also get a link, or
+a new one, by sending the word `shops` in chat. The steps for the phone are not on Settings: they
 are on the page the link opens ([presence.md](presence.md#setting-it-up-one-shop-at-a-time)).
 
 "Places" lists what the assistant knows by name: the shops said during setup, anything added

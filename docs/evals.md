@@ -283,6 +283,60 @@ download and the forward mark are covered by unit tests with stand-in payloads.
 
 ## Latest results
 
+One run of the whole suite with the loop runtime, 26 Oct 2026, with shop links that can be
+replaced by asking and that follow the app's address
+([ADR 0042](adr/0042-a-shop-link-is-replaced-by-asking-and-follows-the-address.md)), model
+`deepseek-flash` through both adapters: 133 cases, 846 seconds. "Before" is the Apple Calendar
+run [below](#previous-full-run-apple-calendar), the 131 cases `main` had. `main` was not run again.
+
+| Adapter | Before | After | NOOP | Undo | Input tokens after (cached) | Output tokens after |
+| --- | --- | --- | --- | --- | --- | --- |
+| `openai_compat` | 131/131 | **132/133** | 3/3 | 7/7 | 2,639,557 (2,106,880) | 28,528 |
+| `anthropic` | 130/131 | **130/133** | 3/3 | 7/7 | 2,728,134 (2,663,542) | 32,121 |
+
+| Category | `openai_compat` before | after | `anthropic` before | after |
+| --- | --- | --- | --- | --- |
+| inventory | 12/12 | 11/12 | 12/12 | 11/12 |
+| shopping list | 5/5 | 5/5 | 5/5 | 5/5 |
+| NOOP | 3/3 | 3/3 | 3/3 | 3/3 |
+| undo | 7/7 | 7/7 | 7/7 | 7/7 |
+| calendar | 8/8 | 8/8 | 8/8 | 8/8 |
+| reminders | 5/5 | 5/5 | 4/5 | 5/5 |
+| photos | 6/6 | 6/6 | 6/6 | 6/6 |
+| onboarding | 13/13 | 13/13 | 13/13 | 12/13 |
+| presence | 4/4 | 4/4 | 4/4 | 4/4 |
+| product | 22/22 | 24/24 | 22/22 | 24/24 |
+| meals | 10/10 | 10/10 | 10/10 | 10/10 |
+| household jobs | 14/14 | 14/14 | 14/14 | 14/14 |
+| letters | 9/9 | 9/9 | 9/9 | 9/9 |
+| spending | 13/13 | 13/13 | 13/13 | 12/13 |
+
+The release bar (95% overall and 100% on NOOP and undo, on at least two providers) is met on both
+endpoints. It is one sample per case, and the two endpoints are one model on two wire formats.
+
+**What changed in the suite.** Two product cases are new: "my shop link doesn't work" and "I lost
+the link for the shops thing, can you send it again?" both have to be answered with the word
+shops, and the second without a made-up link. Both passed on both endpoints, in the full run and
+in a run of the three shop cases before it. No other case changed.
+
+**The four failures**, none of them about shops. Each failed case was run three more times on
+both endpoints with `EVAL_SAMPLES=3`:
+
+| Case | Endpoint | What happened | Three more runs each |
+| --- | --- | --- | --- |
+| batch finish with staple | both | Not traced in the full run. In the reruns it failed once on each endpoint, with the rows right: on `openai_compat` the model also put bread on the list itself, on `anthropic` the reply was "ACX" where the case expects `ACK`. Both are ways it has failed in earlier runs ([below](#previous-full-run-the-pass-on-repeat-mistakes)) | 4/6 |
+| routines step books a weekly activity | `anthropic` | Not traced in the full run | 6/6 |
+| a long receipt keeps the printed total and no price for a saving | `anthropic` | Not traced in the full run | 6/6 |
+
+**What it costs.** The guide is 90 words longer than on `main` (1,444 against 1,354 with nothing
+switched on), all of it in the cached part of the prompt: the longer line about the word shops and
+the line about the note sent when the address changes. The first run of the shop cases, the full run and the
+reruns took 1.88 yuan (about $0.26) from the account's yuan balance, read a few minutes after the
+last of them. That balance settles late, so the cost may be a little higher. The dollar balance did
+not move.
+
+## Previous full run (Apple Calendar)
+
 One run of the whole suite with the loop runtime, 10 Oct 2026, with Apple Calendar
 ([ADR 0041](adr/0041-apple-calendar-is-caldav-with-an-app-specific-password.md)) on top of
 spending, model `deepseek-flash` through both adapters: the 131 cases, 889 seconds. "Before" is

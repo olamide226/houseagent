@@ -24,8 +24,9 @@ module; a new model is a configuration change.
 - **Letters, invites and forwards.** A photo of a school letter, a forwarded appointment message,
   pasted words or a PDF: every date in it goes on the calendar with its reminders, a date that
   does not add up is asked about, and one undo takes the whole letter back.
-- **At the shop.** An iPhone Shortcut tells the service you walked into a shop and the list for
-  that shop arrives. It learns how long things last and asks about what is probably running low.
+- **At the shop.** An iPhone Shortcut, which each person makes from their own link, tells the
+  service you walked into a shop and the list for that shop arrives. It learns how long things
+  last and asks about what is probably running low.
 - **Channels.** Telegram, WhatsApp (Cloud API) and iMessage (through a BlueBubbles server on a
   Mac you own). A person's messages move between channels by changing one row, and move by
   themselves when a channel fails.
@@ -96,7 +97,7 @@ uv run pytest tests/unit tests/contract
 | [docs/evals.md](docs/evals.md) | The eval suite, how to run it, the latest results |
 | [docs/go-live-checklist.md](docs/go-live-checklist.md) | What is still open before a public release, each item with its status |
 | [docs/data-model.md](docs/data-model.md), [docs/llm.md](docs/llm.md) | Tables and invariants; the model layer |
-| [docs/adr/](docs/adr/) | Thirty-seven decisions, one per file |
+| [docs/adr/](docs/adr/) | Forty-two decisions, one per file |
 | [docs/spec.md](docs/spec.md) | The v1 implementation spec this was built from |
 
 ```text

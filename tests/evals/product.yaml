@@ -1,6 +1,6 @@
 # What the assistant says about itself: what it can do and how to do it (ADR 0034). `seed.setup` is
 # what the installation has switched on (Setup in app/agent/guide.py); without it there is Telegram
-# only, photos are read, voice notes are not, and the Shortcut for the shops is not shared.
+# only, photos are read and voice notes are not.
 # Nothing may be written, and the reply is checked only for the word or page that has to be in it.
 - name: what can you do is answered from what is built
   turns: [{from: Ada, text: "what can you do?"}]
@@ -17,6 +17,14 @@
 - name: the shop thing is the word shops
   turns: [{from: Ada, text: "how does the shop thing work?"}]
   expect: {writes: 0, plain: true, reply_mentions: [shops]}
+
+- name: a shop link that does not work is the word shops again
+  turns: [{from: Ada, text: "my shop link doesn't work"}]
+  expect: {writes: 0, plain: true, reply_mentions: [shops]}
+
+- name: a lost shop link is the word shops again and is not made up
+  turns: [{from: Ola, text: "I lost the link for the shops thing, can you send it again?"}]
+  expect: {writes: 0, plain: true, reply_mentions: [shops], reply_avoids: ["http"]}
 
 - name: photos cannot be read where they are not switched on
   seed: {setup: {photos: false}}

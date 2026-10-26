@@ -75,7 +75,9 @@ unprocessed message is older than `DEBOUNCE_SECONDS`, which batches "out of eggs
 1. takes `pg_advisory_xact_lock(hashtext(household_id))`, so two messages never race on stock;
 2. claims the household's `received` messages (`FOR UPDATE SKIP LOCKED`);
 3. answers a message that is only the word `dashboard` or `shops` with that person's link,
-   without the agent (capitals, and a full stop, quotes or stars around the word, do not matter);
+   without the agent (capitals, and a full stop, quotes or stars around the word, do not matter),
+   and a yes in someone's own chat just after `shops` asked whether they want a new link
+   ([ADR 0042](adr/0042-a-shop-link-is-replaced-by-asking-and-follows-the-address.md));
 4. for each thread: fetches each attachment once, stores it through `MediaStore` and transcribes
    voice notes, then builds the `Envelope` and runs the agent turn;
 5. queues the response: nothing for `NOOP`, an `ack` reaction for `ACK`, otherwise the reply text
@@ -149,8 +151,11 @@ the ping and runs one rule in code (`app/presence/rules.py`): arriving at a shop
 person the list for that shop, leaving home with a long or freshly changed list queues an offer
 of it. Like everything else the api does, it only writes rows; the worker's outbox sends them.
 Every nudge is claimed in `nudge_log` first, so a doubled or replayed ping sends nothing twice.
-Opened in a browser, the same link is a page that says what it is for and how to put it on an
-iPhone; a GET records nothing. Phone setup and the rules are in [presence.md](presence.md).
+Opened in a browser, the personal link is a page that says what it is for and how to put it on an
+iPhone; that GET records nothing. A link copied from the page for one shop is a ping whether it is
+asked for with GET or POST, because a shortcut made by hand asks with GET
+([ADR 0042](adr/0042-a-shop-link-is-replaced-by-asking-and-follows-the-address.md)). Phone setup
+and the rules are in [presence.md](presence.md).
 
 ## Scheduled jobs
 
@@ -169,6 +174,7 @@ current time as an argument, so tests drive them on a controlled clock.
 | `weekly_digest` | 1 min check | Sunday 18:00: the week ahead, the list count, low and expiring items, and what will probably run low that week. The first one to run in a month adds what was spent the month before, from receipts | A `job_runs` row per household and ISO week, and a `monthly_spending` row per household and month |
 | `consumption_model` | 1 min check | Once a day from 03:00: relearns each item's run-out interval, refreshes the list's "probably" entries, then fills missing item categories in one model call per household | A `job_runs` row per household and date; the refresh is idempotent |
 | `low_stock_prompt` | 1 min check | 17:30: asks the household about items predicted to run out within 2 days that nobody was asked about in the last 3 | A `job_runs` row per household and date, and a `nudge_log` row per item |
+| `presence_links` | 1 h, and at start | Tells each connected adult whose shop link was made for another address than today's `PUBLIC_BASE_URL` that it has stopped working and that the word `shops` gets a new one, after quiet hours ([ADR 0042](adr/0042-a-shop-link-is-replaced-by-asking-and-follows-the-address.md)) | The outbox dedupe key is `presence_moved:{member}:{hash of the link and the address}` |
 | `imessage_health` | 5 min, only with iMessage set up | Pings BlueBubbles; sets or clears the adapter's degraded flag; tells each affected household's admin once per outage | A `nudge_log` row per household for the length of the outage |
 | `media_cleanup` | 1 h, only with a media backend | Deletes stored media on messages older than `MEDIA_RETENTION_DAYS` and drops the storage fields; text and transcripts stay | `SKIP LOCKED`; a cleaned message no longer matches |
 

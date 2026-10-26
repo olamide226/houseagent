@@ -8,7 +8,7 @@ Everything is read by `Settings` in `app/config.py`, from the environment or a l
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | yes | | `postgresql+asyncpg://...`, Postgres 15+ |
-| `PUBLIC_BASE_URL` | yes | | Webhook, presence and login links; `https://` also makes the session cookie Secure |
+| `PUBLIC_BASE_URL` | yes | | Webhook, presence and login links; `https://` also makes the session cookie Secure. Changing it tells every adult with a shop link, once, that the link stopped working ([presence.md](presence.md#when-the-address-changes)) |
 | `SESSION_SECRET` | yes | | Signs dashboard cookies and CSRF tokens |
 | `SETUP_TOKEN` | first run | | Unlocks `/setup` until a household exists |
 | `LLM_PROVIDER` | yes | | `openai_compat` or `anthropic`, with a key; `claude_code` or `codex_cli`, on a subscription ([below](#subscription-providers)) |
@@ -42,7 +42,7 @@ Everything is read by `Settings` in `app/config.py`, from the environment or a l
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | for Google Calendar | | The OAuth client the owner makes once in Google Cloud ([below](#google-calendar)) |
 | `CALENDAR_SECRET_KEY` | for Google or Apple Calendar | | A Fernet key that encrypts each adult's stored sign-in. Several keys with commas between: the first encrypts, all decrypt. The app refuses to start with a value that is not a key. Set alone, it switches Apple Calendar on ([below](#apple-calendar)) |
 | `APPLE_CALDAV_URL` | no | `https://caldav.icloud.com` | Where an Apple Calendar is reached. Another CalDAV server only to try it out: one address serves every household |
-| `PRESENCE_SHORTCUT_URL` | no | | The iCloud link of the Shortcut the admin shared once. With it, the page a presence link opens gives everyone a "Get the shortcut" button ([presence.md](presence.md#sharing-the-shortcut-once)) |
+| `PRESENCE_SHORTCUT_URL` | no | | Optional. The iCloud link of a shortcut someone shared for the family. With it, the page a presence link opens offers "Get the shortcut" in place of making one; without it, everyone makes their own ([presence.md](presence.md#sharing-one-shortcut-optional)) |
 | `DEFAULT_TIMEZONE` | no | `Europe/London` | Prefilled on `/setup` |
 | `DEBOUNCE_SECONDS` | no | `4` | How long a batch must be quiet before its turn |
 | `LOG_LEVEL` | no | `INFO` | |
@@ -135,6 +135,9 @@ expect. Going back to code from before migration `0004` (spending from receipts)
 migration undone first, with the newer code still checked out:
 `docker compose run --rm migrate alembic downgrade 0003`. That drops `receipts` and
 `receipt_lines`, and with them every price kept so far; the stock they logged is untouched.
+Going back to before migration `0005` (shop links that know their address) is
+`alembic downgrade 0004`, which drops only the two `members` columns it added; the links keep
+working.
 
 ### Logs
 
@@ -416,7 +419,7 @@ uv run python -m app.worker.main             # worker, in a second terminal
 ## Health
 
 - `GET /healthz`: liveness.
-- `GET /readyz`: 200 when the database is reachable and at the newest migration (`0004`),
+- `GET /readyz`: 200 when the database is reachable and at the newest migration (`0005`),
   else 503.
 - The worker logs `worker_heartbeat` every minute and restarts a crashed job after 5 seconds. Each
   heartbeat also touches `WORKER_HEARTBEAT_FILE` (default `/tmp/worker-heartbeat`), which is what a
