@@ -44,9 +44,9 @@ item it is.
   The steps everyone now follows (Start a new shortcut, Get Contents of URL with the pasted link,
   Arrive) come from Apple's guide and have not been tried on an iPhone, nor has a GET from the
   Shortcuts app. [presence.md](presence.md#what-apple-allows)
-- [x] **Done, by this change (ADR 0042).** ~~The owner makes the shared Shortcut once and sets
-  `PRESENCE_SHORTCUT_URL` on the server.~~ No longer needed: each person makes their own shortcut
-  from their page, and `PRESENCE_SHORTCUT_URL` is optional.
+- [x] **Done, [#10](https://github.com/olamide226/houseagent/pull/10).** The owner makes the shared
+  Shortcut once and sets `PRESENCE_SHORTCUT_URL` on the server. No longer needed: each person
+  makes their own shortcut from their page, and `PRESENCE_SHORTCUT_URL` is optional.
   [ADR 0042](adr/0042-a-shop-link-is-replaced-by-asking-and-follows-the-address.md)
 - [ ] **Not verified.** On the server, after this change is deployed: migration `0005` gives the
   two links sent on 7 and 9 Oct their temporary address, both adults get one message saying their
