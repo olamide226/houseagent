@@ -46,6 +46,7 @@ CATEGORISE_PROMPT = (
 CATEGORISE_BATCH = 200
 MEDIA_CLEANUP_SECONDS = 3600.0
 IMESSAGE_HEALTH_SECONDS = 300.0
+PRESENCE_LINKS_SECONDS = 3600.0         # and once at start: a new address means a restart
 IMESSAGE_DOWN = ("iMessage has stopped working: the Mac that sends the messages is not answering. Until it is "
                  "back, messages go to each person's other chat app, if they have one. Check that the Mac is on, "
                  "awake and online, and that the BlueBubbles app on it is open.")
@@ -365,6 +366,14 @@ async def low_stock_prompt(now: datetime | None = None) -> int:
     return await _once_per_household(
         "low_stock_prompt", now or utcnow(),
         lambda here, household: f"{here:%Y-%m-%d}" if _due(here, LOW_STOCK_PROMPT_AT) else None, _low_stock)
+
+
+# ---------------------------------------------------------------- shop links and the address
+async def presence_links() -> int:
+    """At start and hourly: an adult whose shop link was made for another address than the one
+    the app has now is told once, in plain words, to send the word shops for a new one (ADR 0042)."""
+    async with tx() as conn:
+        return await households.notice_moved_links(conn)
 
 
 # ---------------------------------------------------------------- iMessage health

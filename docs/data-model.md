@@ -2,8 +2,9 @@
 
 The DDL is [`schema.sql`](../schema.sql), applied verbatim by Alembic migration `0001`, and the
 migrations after it: `0002` adds the household job columns to `reminders`, `0003` the two
-tables for connected calendars and `events.all_day`, and `0004` the `receipts` and
-`receipt_lines` tables and `households.currency`.
+tables for connected calendars and `events.all_day`, `0004` the `receipts` and
+`receipt_lines` tables and `households.currency`, and `0005` `members.presence_link_base` and
+`members.presence_renew_offered_at`.
 Table-by-table purpose is in [spec.md section 4](spec.md#4-data-model). This page covers what
 milestones 1 to 5 use and the rules the code enforces.
 
@@ -16,7 +17,8 @@ milestones 1 to 5 use and the rules the code enforces.
 | `members.quiet_start`, `quiet_end`, `preferred_channel`, the invite hash | `remember`, the Settings and Family pages |
 | `household_facts` | `remember`, the Settings page (`services/households.py`) |
 | `places` | shops named in `remember` (kind `store`), the Settings page, and a presence ping naming a place for the first time (kind `other`, or `home` for Home) |
-| `members.presence_token_hash` | the presence step of setup, an adult connecting after it, the Settings page |
+| `members.presence_token_hash`, `presence_link_base` | the word `shops` and a yes to its question, the Settings page. `presence_link_base` is the `PUBLIC_BASE_URL` the link was made for: null when not known (a link made before migration `0005` that was never sent in chat) |
+| `members.presence_renew_offered_at` | the word `shops` from someone who has a link; cleared by the next message in their own chat, or a new link |
 | `presence_events` | the presence endpoint, one row per accepted ping |
 | `nudge_log` | the presence rules and the low-stock prompt: one row per nudge key, `sent_at` moved on each time it is sent again |
 | `consumption_profiles` | `services/consumption.py`, from the nightly job, the low-stock prompt and the weekly digest |

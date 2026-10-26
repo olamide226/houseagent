@@ -285,7 +285,7 @@ async def fetch_state(home):
         return await fetch_val(conn, "select onboarding_state from households where id = :h", h=home.id)
 
 
-async def test_the_word_shops_gets_a_first_personal_link_that_works_and_never_replaces_one(client):
+async def test_the_word_shops_gets_a_first_personal_link_that_works_and_asks_before_replacing_it(client):
     async with tx() as conn:
         home = await setting_up(conn, reached="tour")
     await post(client, tg_update(1, " Shops ", user_id=1002, name="Ada"))
@@ -304,9 +304,10 @@ async def test_the_word_shops_gets_a_first_personal_link_that_works_and_never_re
     assert [r["name"] for r in await rows("select m.name from presence_events e join members m "
                                           "on m.id = e.member_id")] == ["Ada"]
 
-    await post(client, tg_update(2, "shops", user_id=1002, name="Ada"))       # asked again: the link is not replaced
+    await post(client, tg_update(2, "shops", user_id=1002, name="Ada"))       # asked again: asked first
     await inbound.process_household(home.id, LoopRuntime(FakeLLM()), {})
-    assert [r["text"] for r in await rows("select text from outbox order by created_at")][1] == households.SHOPS_ALREADY
+    assert [r["text"] for r in await rows("select text from outbox order by created_at")][1] == \
+        households.SHOPS_RENEW_OFFER
     assert await links() == hashes
 
 

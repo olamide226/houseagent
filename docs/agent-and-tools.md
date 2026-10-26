@@ -63,7 +63,6 @@ holds what is switched on, and the guide only says what is true there:
 | `chat_apps` | `TG_*`, `WA_*`, `BB_*` being set | Which apps the household can use; how to move to another is only described when there is one |
 | `photos` | `LLM_SUPPORTS_IMAGES` and a media backend | "A receipt or the fridge", or "you cannot read photos in this household yet" |
 | `voice_notes` | `STT_*` being set | The same for voice notes |
-| `shop_shortcut` | `PRESENCE_SHORTCUT_URL` | Without it, the list at the shop "is not ready for everyone yet" |
 | `google_calendar` | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `CALENDAR_SECRET_KEY` all set | How an adult connects their own Google Calendar and what then goes both ways, or that it "cannot be connected in this household yet" |
 | `apple_calendar` | `CALENDAR_SECRET_KEY` set | How an adult connects their own Apple Calendar: the email they sign in to Apple with and an app-specific password, typed on the Calendar page. It also says a password is never asked for in chat, and one that is sent is not repeated or remembered. With neither calendar switched on, both "cannot be connected in this household yet" and the one-way link is what there is |
 
@@ -254,7 +253,10 @@ shop, marks the step done, and tells the model in a `NOTE:` line who was sent it
 ([ADR 0025](adr/0025-the-presence-step-is-done-by-code.md)). The offer holds no link. An adult
 who sends the single word `shops` is answered by the pipeline, not the model, with their personal
 link, as `dashboard` is answered with a login link
-([ADR 0033](adr/0033-the-presence-link-opens-a-page-and-is-sent-on-request.md)).
+([ADR 0033](adr/0033-the-presence-link-opens-a-page-and-is-sent-on-request.md)). Someone who
+already has one is asked whether they want a new one, and their yes is answered by the pipeline
+too; a link made for an old address is replaced at once
+([ADR 0042](adr/0042-a-shop-link-is-replaced-by-asking-and-follows-the-address.md)).
 
 ## Messages the assistant starts
 

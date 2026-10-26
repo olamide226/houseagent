@@ -76,6 +76,8 @@ OWN_CALENDAR = {"choosing": "signed in to {calendar} but has not picked which ca
 def _own_setup(person: dict[str, Any], connected: dict[str, Any] | None = None) -> str:
     """What else the guide's answers depend on for the person speaking."""
     link = "has a personal link for the shops" if person["has_presence_link"] else "no personal link for the shops yet"
+    if person["has_presence_link"] and person.get("presence_link_base") not in (None, members.link_base()):
+        link += ", made for your old web address so it no longer works: the word shops gets a new one"
     own = "no calendar of their own connected"
     if connected:
         own = OWN_CALENDAR[connected["status"]].format(calendar=calendar_sync.PROVIDERS[connected["provider"]],

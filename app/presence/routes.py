@@ -3,7 +3,8 @@ posts "entered" or "left" a named place; no app, no coordinates.
 
     POST /presence/{token}                   {"event": "enter" | "exit", "place": "Tesco Extra"}
     POST /presence/{token}/{event}/{place}   the same ping with nothing to fill in but the link
-    GET  either                              a page that says what the link is for; records nothing
+    GET  /presence/{token}/{event}/{place}   the same ping again, as a shortcut made by hand asks it
+    GET  /presence/{token}                   a page that says what the link is for; records nothing
 
 The token is personal and only its hash is stored. A POST is always answered 204, whatever the
 token or the body, so the endpoint tells a stranger nothing.
@@ -61,10 +62,25 @@ async def _accept(token: str, event: str, place: str) -> Response:
 
 
 @router.get("/presence/{token}")
-@router.get("/presence/{token}/{event}/{place:path}")
 async def presence_page(request: Request, token: str) -> Response:
-    """What someone sees who opens their link, or one copied from it, in a browser: what it is
-    for and how to put it on an iPhone. Only reads; a ping is always a POST."""
+    """What someone sees who opens their link in a browser: what it is for and how to put it on
+    an iPhone. Only reads, so a chat app's link preview records nothing."""
+    return await _page(request, token)
+
+
+@router.get("/presence/{token}/{event}/{place:path}")
+async def presence_named_get(request: Request, token: str, event: str, place: str) -> Response:
+    """A link copied for one shop, asked for with GET. A shortcut made by hand with Get Contents of
+    URL asks this way unless someone changes its method, so it is the ping, as a POST is (ADR 0042),
+    and the page says it was heard. A HEAD, which some link previews send first, records nothing."""
+    event, place = event.strip().lower(), " ".join(place.split())
+    heard = request.method == "GET" and event in EVENTS and 0 < len(place) <= PLACE_MAX
+    if heard:
+        await _accept(token, event, place)
+    return await _page(request, token, heard=(event, place) if heard else None)
+
+
+async def _page(request: Request, token: str, heard: tuple[str, str] | None = None) -> Response:
     async with tx() as conn:
         member = await members.for_presence_token(conn, token)
         places = await households.places(conn, member["household_id"]) if member else []
@@ -76,7 +92,8 @@ async def presence_page(request: Request, token: str) -> Response:
     home = next((place["name"] for place in places if place["kind"] == "home"), "Home")
     return templates.TemplateResponse(request, "presence.html", {
         "agent": settings.agent_name, "known": member is not None, "shortcut": settings.presence_shortcut_url,
-        "admin": bool(member and member["is_admin"]),
+        "admin": bool(member and member["is_admin"]), "heard": heard,
+        "moved": bool(member and households.link_moved(member["presence_link_base"])),
         "shops": [(place["name"], link("enter", place["name"])) for place in places if place["kind"] == "store"],
         "home": [("Arriving home", link("enter", home)), ("Leaving home", link("exit", home))],
     }, status_code=200 if member else 404, headers=PRIVATE_PAGE)

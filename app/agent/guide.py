@@ -17,7 +17,6 @@ class Setup:
     chat_apps: tuple[str, ...] = ("telegram",)
     photos: bool = True          # the model reads images and there is somewhere to keep them
     voice_notes: bool = False    # a transcriber is configured
-    shop_shortcut: bool = False  # the admin has shared the Shortcut (PRESENCE_SHORTCUT_URL)
     google_calendar: bool = False   # an adult can connect their own Google Calendar (GOOGLE_CLIENT_ID and the rest)
     apple_calendar: bool = False    # and their own Apple Calendar (CALENDAR_SECRET_KEY alone)
 
@@ -76,8 +75,12 @@ WORDS = {
                  "for 10 minutes.",
     "shops": "The list at the shop (optional, iPhone only): their iPhone tells you when they arrive at a shop and you "
              "send them the list for that shop. The word shops, sent to you by itself, gets them a personal link; "
-             "opened on the iPhone it shows the steps, one shop at a time. Someone who has lost their link gets a "
-             "new one on the Settings page.",
+             "opened on the iPhone it shows the steps, one shop at a time. Each person does them on their own phone, "
+             "and nobody has to do anything first. If their link or a shortcut made with it does not work, or they "
+             "have lost it, the answer is the same word shops: they are asked whether they want a new link, and on "
+             "their yes the old one and anything set up with it stop working and the new link walks them through it "
+             "again. A yes that comes long after that question gets nothing: they send the word shops again. An "
+             "adult's link can also be replaced on the Settings page.",
 }
 
 # The web pages by their address after /dashboard: the name in the menu, and what a person does there.
@@ -113,6 +116,8 @@ SENDS = {
     "low_stock_prompt": "at 17:30, a question about things that are probably running low",
     "sync_calendars": "a note to an adult whose own connected calendar has stopped working, with how to connect it "
                       "again",
+    "presence_links": "a note to an adult whose shop link was made for your old web address, saying it has stopped "
+                      "working and that the word shops gets a new one",
 }
 # An adult's own calendar, kept in step with the plans here (app/services/calendar_sync.py, ADR 0038
 # and ADR 0041). Which of the two can be connected depends on what the installation has switched on.
@@ -181,9 +186,6 @@ def product_guide(setup: Setup) -> str:
     pages = "; ".join(f"{name} ({about if setup.photos or page != 'spending' else NO_SPENDING})"
                       for page, (name, about) in PAGES.items())
     talk = [line for tools, line in TALK.items() if setup.photos or tools != SPENDING]
-    shops = WORDS["shops"] + ("" if setup.shop_shortcut else
-                              " Here it is not ready for everyone yet: whoever set this up has one thing to do "
-                              "first, shown on that person's own link.")
     lines = [
         "By talking to you, in a DM or the family group: " + "; ".join(talk) + ".",
         "When you add an adult, a separate message with an invite goes to whoever asked, to pass on. The new person "
@@ -205,7 +207,7 @@ def product_guide(setup: Setup) -> str:
         _chat_apps(setup),
         "A family group: they add you to a group chat they already have and write something there. What is for "
         "everyone then goes to it.",
-        shops,
+        WORDS["shops"],
         _own_calendar(setup),
         "What you send by yourself: " + "; ".join(SENDS.values()) + ". Quiet hours hold these back until they are "
         "over, except a reminder set for a time inside them or asked for as urgent.",

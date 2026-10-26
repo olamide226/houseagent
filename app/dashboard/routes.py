@@ -781,7 +781,7 @@ async def _settings(request: Request, session: Session, template: str = "_settin
             "currency": await spending.currency(conn, session.household_id),
         }
     return _page(request, template, session, error=error, presence=presence, kinds=households.PLACE_KINDS,
-                 currencies=spending.CURRENCIES, **context)
+                 currencies=spending.CURRENCIES, link_base=members.link_base(), **context)
 
 
 def _clock(value: str) -> time | None:

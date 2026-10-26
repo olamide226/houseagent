@@ -221,7 +221,8 @@ async def process_household(household_id: str, runtime: AgentRuntime, adapters: 
         messages = await _waiting_messages(conn, "household_id", household_id)
         await execute(conn, "update messages set status = 'processing' where id = any(cast(:ids as uuid[]))",
                       ids=[m["id"] for m in messages])
-        messages = [m for m in messages if not await _keyword(conn, m, public_base_url)]
+        messages = [m for m in messages if not await _keyword(conn, m, public_base_url)
+                    and not await _new_shops_link(conn, m)]
         messages = [m for m in messages if not await _ticked(conn, m)]
         for batch in group_by_thread(messages):
             ids = [m["id"] for m in batch]
@@ -337,6 +338,31 @@ async def _keyword(conn: AsyncConnection, message: dict[str, Any], public_base_u
                                         member_id=message["member_id"], text=text, respect_quiet_hours=False))
     await execute(conn, "update messages set status = 'processed', processed_at = clock_timestamp() "
                         "where id = :id", id=message["id"])
+    return True
+
+
+YES = {"yes", "y", "yeah", "yep", "yup", "ok", "okay", "sure", "please", "yes please", "yes pls", "go ahead",
+       "do it", "new one", "yes new one"}
+
+
+async def _new_shops_link(conn: AsyncConnection, message: dict[str, Any]) -> bool:
+    """A yes to "would you like a new link?" (the word shops, from someone who has one) gets the
+    new link, from code: it holds a secret, and the model must never be the one to make it. The
+    first message in that private chat after the question answers it, so a later yes to something
+    else replaces nothing. A tick or a thumbs-up counts as a yes."""
+    if message["scope"] != "dm" or message["channel"] == PLAYGROUND:
+        return False
+    said = " ".join((message["text"] or "").strip(_AROUND_A_WORD).replace(",", " ").lower().split())
+    emoji = (message["meta"].get("reaction_emoji") or "").translate(_EMOJI_MARKS)
+    text = await households.renew_link(conn, message["member_id"], message["created_at"],
+                                       yes=said in YES or (not said and emoji in TICKS))
+    if text is None:
+        return False
+    await enqueue(conn, OutboundMessage(household_id=message["household_id"], target="member",
+                                        member_id=message["member_id"], text=text, respect_quiet_hours=False))
+    await execute(conn, "update messages set status = 'processed', processed_at = clock_timestamp() "
+                        "where id = :id", id=message["id"])
+    log.info("presence_link_renewed", household_id=message["household_id"])
     return True
 
 

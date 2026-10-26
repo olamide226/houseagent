@@ -20,31 +20,40 @@ nothing more until someone asks. An adult can also be given a link from the dash
 "The list when you reach a shop", "Make link".
 
 The link is yours alone. Whoever has it can tell the assistant that you arrived somewhere, so do
-not pass it on or post a screenshot of it. If you lose it, "Replace link" on Settings makes a new
-one and the old one stops working.
+not pass it on or post a screenshot of it.
+
+### If your link stopped working, or you lost it
+
+Send **shops** again. The assistant asks whether you would like a new link, because a new one
+stops the old one, and every shortcut you made with it, from working. Reply **yes** (or ok, or
+put a thumbs-up on the question) and the new link arrives; its page walks you through setting it
+up again. Any other answer leaves your link as it is, and so does a yes more than an hour later.
+
+If your link was made for an old web address of the assistant, it cannot work any more, so
+**shops** sends the new one straight away, without asking.
+
+On Settings, "Replace link" does the same for any adult.
 
 ### Setting it up, one shop at a time
 
-Do these three steps for one shop, then again for the next.
+Do these three steps for one shop, then again for the next. Nobody has to do anything first.
 
 1. **Copy the link for the shop.** On your page, tap **Copy** beside the shop's name.
-2. **Add the shortcut.** Tap **Get the shortcut**, then **Get Shortcut**. When it asks for the
-   link, paste what you copied. Before you add a second shop, rename the shortcut you already
-   have to its shop's name: open it, tap the arrow beside its name, then **Rename**.
+2. **Make a shortcut for the shop.** Tap **Start a new shortcut**: the Shortcuts app opens on a
+   new, empty shortcut. Tap **Add Action**, search for **Get Contents of URL** and tap it. Tap
+   **URL** in it and paste what you copied. Leave the rest as it is. Then tap **New Shortcut** at
+   the top, tap **Rename**, and call it after the shop.
 3. **Tell your iPhone when to use it.** Open the shortcut in the Shortcuts app and tap **Edit**,
    then **Automation**. Choose **Arrive**, tap **Choose** and find the shop. Then tap **Edit**
    again, open **Privacy** and turn on **Allow Running When Locked**, so it runs by itself.
 
 On an iPhone that has not been updated for a while, step 3 is different: in the Shortcuts app tap
 **Automation**, then **+**, and choose **Arrive**. Tap **Choose**, find the shop and tap **Next**.
-Pick the shortcut you added. Then tap the new automation, turn off **Ask Before Running** and tap
+Pick the shortcut you made. Then tap the new automation, turn off **Ask Before Running** and tap
 **Don't Ask**.
 
-To try it, put something on the shopping list and run the shortcut once. The list for that shop
-should arrive in your chat.
-
-If your page says "Nearly ready" where the steps should be, whoever set up the assistant for your
-family has one thing to do first. It is the next section.
+To try it, put something on the shopping list and run the shortcut once: tap it in the Shortcuts
+app. The list for that shop should arrive in your chat.
 
 **Leaving home.** With two more shortcuts the assistant can offer you the list as you head out
 with a lot on it. Under "Also when you leave home" your page has two more links. Do the same three
@@ -53,52 +62,68 @@ second.
 
 ## For whoever set the assistant up
 
-This part is technical and is done once for the whole family, on an iPhone.
+There is nothing you have to do for the family. Each adult sets up their own phone from their own
+page. Your page has one more section, "For you, as whoever set up Home", saying what has not been
+tried.
 
 ### What Apple allows
 
-Read from Apple's Shortcuts User Guide on 7 October 2026 (its iOS 27, iOS 26 and iOS 18 editions,
-fetched as pages, not summaries). **None of it has been tried on a phone.**
+Read from Apple's Shortcuts User Guide on 26 October 2026: its iOS 27 and iOS 26 editions, and
+its Mac edition for files and signing. The pages were read whole, not as summaries. **None of it
+has been tried on a phone.**
 
 | Apple's guide says | So |
 | --- | --- |
-| A shortcut can be shared as an iCloud link; whoever taps it and then **Get Shortcut** has it in their collection ("Share shortcuts") | One person builds the shortcut, everyone else adds it |
-| A field with an *import question* is cleared when the shortcut is shared, and the person adding it is asked for their own value ("Add import questions to shared shortcuts") | The shared shortcut holds nobody's link |
-| "Automation shortcuts are specific to a device" ("Intro to shortcuts with automations"). No page describes sharing or installing an automation | The Arrive step cannot be sent to anyone. Each person makes it on their own phone, once per shop. There is no one-tap setup |
+| A shortcut can be shared as an iCloud link; whoever taps it and then **Get Shortcut** has it in their collection ("[Share shortcuts](https://support.apple.com/guide/shortcuts/share-shortcuts-apdf01f8c054/ios)") | One person could build a shortcut and everyone else add it. That is optional now ([below](#sharing-one-shortcut-optional)) |
+| A shortcut can also be shared as a file, for *Anyone* ("Apple will receive a copy of your shortcut for validation") or for *People Who Know Me* ("your contact info will be included in the shortcut file"). On a Mac, `shortcuts sign` signs an exported file in the same two modes, and "Apple receives a copy for validation" ("[Run shortcuts from the command line](https://support.apple.com/guide/shortcuts-mac/run-shortcuts-from-the-command-line-apd455c82f02/mac)") | The server cannot make each person a file with their link in it: an importable file is signed, signing takes a Mac and an Apple Account, and every file signed for *Anyone* is sent to Apple. The guide does not describe the file's format, or what happens to an unsigned one |
+| The Shortcuts URL scheme opens the app, creates an empty shortcut (`shortcuts://create-shortcut`), opens or runs a shortcut by name, and searches the Gallery ("[Open and create a shortcut using a URL scheme](https://support.apple.com/guide/shortcuts/open-create-and-run-a-shortcut-apda283236d7/ios)", "[Run a shortcut using a URL scheme](https://support.apple.com/guide/shortcuts/run-a-shortcut-from-a-url-apd624386f42/ios)") | There is no link that adds a shortcut with its action filled in. The page's **Start a new shortcut** button is `shortcuts://create-shortcut` |
+| iOS 27: "Automation shortcuts are specific to a device. The automation will be backed up to iCloud but will sync to other devices with the automation disabled" ("[Intro to shortcuts with automations](https://support.apple.com/guide/shortcuts/intro-to-automation-shortcuts-apd690170742/ios)"). iOS 26: personal automation "will not sync to other devices" | The Arrive step cannot be sent to anyone. Each person makes it on their own phone, once per shop. There is no one-tap setup |
 | No page describes an automation passing anything to the shortcut it runs | A shortcut cannot be told which shop it is for when it runs, so there is one shortcut per shop, each holding that shop's link |
-| iOS 27: a trigger is added to a shortcut with **Edit**, **Automation**; it runs unasked with **Privacy**, **Allow Running When Locked**. iOS 26 and 18: **Automation**, **+**, **Create Personal Automation**, a trigger, **Next**, then "use an existing shortcut"; it runs unasked with **Ask Before Running** off and **Don't Ask** ("Add automations", "Create a new personal automation", "Enable or disable a personal automation") | The two versions of step 3 |
-| **Get Contents of URL** has **Show More**, where the method can be POST ("Request your first API") | The one action the shortcut needs |
+| iOS 27: "Tap New Shortcut, tap Rename"; "Tap Add Action" ("[Create a custom shortcut](https://support.apple.com/guide/shortcuts/create-a-custom-shortcut-apd84c576f8c/ios)"). A trigger is added to a shortcut with **Edit**, **Automation**; it runs unasked with **Privacy**, **Allow Running When Locked** ("[Add automations](https://support.apple.com/guide/shortcuts/add-automations-apdfbdbd7123/ios)"). iOS 26: **Automation**, **+**, **Create Personal Automation**, a trigger, **Next**, then a blank automation or "use an existing shortcut"; it runs unasked with **Ask Before Running** off and **Don't Ask** ("Create a new personal automation", "Enable or disable a personal automation") | Steps 2 and 3, and the older step 3 |
+| **Get Contents of URL** has **Show More**, where the method can be GET, POST, PUT, PATCH or DELETE ("[Request your first API](https://support.apple.com/guide/shortcuts/request-your-first-api-apd58d46713f/ios)") | The one action the shortcut needs. The guide does not say which method a new action starts with, so a shop's link is a ping by GET and by POST alike, and nobody changes the method |
 
 Not in Apple's guide, so not known:
 
-- Which fields an import question can be attached to. The steps below assume the URL of **Get
-  Contents of URL** is one of them. If it is not offered, put the link in a **Text** action above
-  it, use that text as the URL, and attach the question to the Text action.
-- Whether the question is asked when the shortcut is added or the first time it runs. The guide
-  says "when the recipient runs the shortcut".
-- What happens when the same shared shortcut is added a second time. The steps tell people to
-  rename the first copy before adding another, in case the second would replace it.
-- Whether a shortcut shared from iOS 27 carries its automation with it. The steps assume not.
+- What the Get Contents of URL action looks like on screen, and so whether "tap **URL** in it" is
+  exactly what a person sees.
+- Whether `shortcuts://create-shortcut` opens from a button on a web page in Safari, or asks
+  first. Apple says the scheme can be used "anywhere a URL can be used", including a web browser.
 - "Run Immediately", which is what iOS 17 and 18 show on the trigger's own screen according to
   the spec this app was built from, is on none of Apple's pages.
 
-### Sharing the shortcut, once
+### Sharing one shortcut (optional)
 
-1. Send **shops** to the assistant and open your link on your iPhone. Tap **Copy** beside any
-   shop.
-2. In the Shortcuts app make a new shortcut. Add the action **Get Contents of URL** and paste the
-   link where it says URL. Tap **Show More** and change **Method** to **POST**. Leave the rest.
-3. Name it, for example "Tell Home I'm at the shop", and run it once. With something on that
-   shop's list, the list arrives in your chat.
-4. Open the shortcut's details, tap **Setup**, then **Add New Question**. Choose the link you
+A household can still share one shortcut, so each person adds it and pastes their link instead
+of making one. It depends on import questions, which the guide leaves partly open: which fields
+take one, and whether the question is asked when the shortcut is added or "when the recipient
+runs the shortcut", as the guide says.
+
+1. Make the shortcut as in step 2 above, from any shop's link on your page, and run it once.
+2. Open the shortcut's details, tap **Setup**, then **Add New Question**. Choose the link you
    pasted and type the question: `Paste the link you copied for this shop`.
-5. Share the shortcut with **Copy iCloud Link**.
-6. Set `PRESENCE_SHORTCUT_URL` to that link ([operations.md](operations.md#configuration)) and
+3. Share it with **Copy iCloud Link**.
+4. Set `PRESENCE_SHORTCUT_URL` to that link ([operations.md](operations.md#configuration)) and
    restart the api.
 
-From then on every adult's page has a **Get the shortcut** button in place of these steps, and
-nobody else sees the words POST or URL. Until it is set, the page of the household's admin shows
-steps 2 to 5, and everyone else's says to ask them.
+From then on step 2 on everyone's page is **Get the shortcut**, then **Get Shortcut** and paste.
+
+### When the address changes
+
+A link is the app's address (`PUBLIC_BASE_URL`) followed by the person's token, and each link
+records the address it was made for. When the worker starts, and every hour, it compares them.
+Each connected adult whose link was made for another address is sent one message, held until
+their quiet hours end: their shop link and any shortcut made with it have stopped working, and
+the word **shops** gets a new one. Each link is told once per address, across restarts and
+replicas; if the address changes again, they are told again.
+
+Their page and Settings also say so: the page, when the old address still reaches the app, says
+the link was made for the old address and that the links on it use the new one.
+
+Links made before the address was recorded (migration `0005`) were given the address of the chat
+message that sent them. A link only ever shown on Settings has no such message, so its address
+is not known. It is treated as possibly old: its holder is told once that it "may no longer
+work", and **shops** asks before replacing it, since it may still be working. Reasons:
+[ADR 0042](adr/0042-a-shop-link-is-replaced-by-asking-and-follows-the-address.md).
 
 ### The links
 
@@ -106,26 +131,30 @@ A personal link is `https://home.example.com/presence/<43 characters>`. Three th
 
 | Request | What it does |
 | --- | --- |
-| `GET /presence/{token}`, and `GET` of any link below | The page: what the link is for, and the steps. Reads only; nothing is recorded, so a chat app's link preview or a tap in the browser is harmless. An unknown token gets a page saying the link has stopped working (404) |
-| `POST /presence/{token}/{event}/{place}` | A ping with nothing to fill in: `event` is `enter` or `exit`, `place` is the place's name, URL-encoded. This is what a link copied from the page is |
+| `GET /presence/{token}` | The page: what the link is for, and the steps. Reads only; nothing is recorded, so a chat app's link preview or a tap in the browser is harmless. An unknown token gets a page saying the link has stopped working (404) |
+| `POST` or `GET /presence/{token}/{event}/{place}` | A ping with nothing to fill in: `event` is `enter` or `exit`, `place` is the place's name, URL-encoded. This is what a link copied from the page is. A GET answers with a short "That worked" page; a HEAD records nothing |
 | `POST /presence/{token}` with `{"event": "enter" \| "exit", "place": "<name>"}` | The same ping, as the spec has it |
 
 The place name must be one the assistant knows: the shops said during setup, listed under Places
 on Settings. Case and extra spaces do not matter. The page writes the names into the links, so
 nobody types one.
 
-By hand, without the shared shortcut, an automation's one action is **Get Contents of URL** with a
-link copied from the page and **Method** set to **POST**. From a terminal:
+From a terminal:
 
 ```sh
+curl -i https://home.example.com/presence/<token>/enter/Tesco%20Extra
 curl -i -X POST https://home.example.com/presence/<token>/enter/Tesco%20Extra
 curl -i -X POST https://home.example.com/presence/<token> \
      -H 'Content-Type: application/json' -d '{"event": "enter", "place": "Tesco Extra"}'
 ```
 
 A POST is always answered `204 No Content`, whether or not the token or the body was any good, so
-the response cannot be used to find out whether a link exists. To see what happened, look at the
+the response cannot be used to find out whether a link exists. A GET of a shop's link, like the
+page, does tell a working link from a dead one (ADR 0033). To see what happened, look at the
 worker and api logs (`presence`, `presence_ignored`, `presence_rate_limited`).
+
+A shop's link pasted into a chat app is fetched for its preview, and that counts as arriving: the
+list is sent, at most once in two hours. The links on the page are for the Shortcuts app only.
 
 ### What a ping does
 
@@ -148,7 +177,8 @@ for 30 pings an hour.
 
 Decisions and their reasons: [ADR 0023](adr/0023-presence-endpoint-and-tokens.md),
 [ADR 0024](adr/0024-presence-rules-and-nudge-dedupe.md),
-[ADR 0033](adr/0033-the-presence-link-opens-a-page-and-is-sent-on-request.md).
+[ADR 0033](adr/0033-the-presence-link-opens-a-page-and-is-sent-on-request.md),
+[ADR 0042](adr/0042-a-shop-link-is-replaced-by-asking-and-follows-the-address.md).
 
 ## Predictions
 
