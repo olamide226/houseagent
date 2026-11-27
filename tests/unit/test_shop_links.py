@@ -14,6 +14,7 @@ from app.agent.loop import LoopRuntime
 from app.config import get_settings
 from app.core.envelope import Channel
 from app.core.identity import hash_token
+from app.core.timeutil import local, utcnow
 from app.db import execute, fetch_all, fetch_val, tx
 from app.pipeline import inbound, router
 from app.services import households, members
@@ -234,13 +235,14 @@ async def test_two_replicas_starting_together_after_a_move_send_each_notice_once
 async def test_the_notice_waits_for_quiet_hours_to_end():
     async with tx() as conn:
         home, _ = await a_household_after_a_move(conn)
-    await jobs.presence_links()
+    await jobs.presence_links()                 # queued now: the night after it is when it is first due
     adapter = FakeAdapter()
-    night = london("2026-10-27 02:00")
+    tomorrow = (local(utcnow(), "Europe/London") + timedelta(days=1)).date()
+    night = london(f"{tomorrow} 02:00")
     await router.dispatch_due({Channel.telegram: adapter}, now=night)
     assert adapter.sent == []
-    assert {r["send_after"] for r in await rows("select send_after from outbox")} == {london("2026-10-27 07:00")}
-    await router.dispatch_due({Channel.telegram: adapter}, now=london("2026-10-27 07:00"))
+    assert {r["send_after"] for r in await rows("select send_after from outbox")} == {london(f"{tomorrow} 07:00")}
+    await router.dispatch_due({Channel.telegram: adapter}, now=london(f"{tomorrow} 07:00"))
     assert sorted(text for _, text, _ in adapter.sent) == sorted(
         [households.LINK_MOVED, households.LINK_MOVED, households.LINK_MAYBE_MOVED])
 
