@@ -120,7 +120,7 @@ item it is.
   drops every price kept, `0003` every calendar connection and what came in from one, `0002`
   every household job. Only the first is written down, and none has been tried on the server.
   [operations.md](operations.md#update-and-roll-back)
-- [x] **Done, [this change](#).** Someone is told when the model stops answering. From 23 to 26
+- [x] **Done, [#11](https://github.com/olamide226/houseagent/pull/11).** Someone is told when the model stops answering. From 23 to 26
   Nov 2026 Anthropic refused the server's key, every turn failed, and the family only got "Sorry,
   that didn't go through" while reminders kept going. Now each admin is messaged at once when the
   model refuses its key, credit or model (after 30 minutes for a timeout or a rate limit), the
