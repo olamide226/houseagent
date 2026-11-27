@@ -29,7 +29,12 @@ with no category into supermarket sections, with a JSON answer and no tools.
 - **Malformed tool arguments** become a `ToolCall` with `error = "invalid JSON arguments"`; the
   loop returns that to the model as a tool error so it can retry.
 - **Retries** on 408, 429, 5xx and connection errors are the vendor SDK's (`max_retries=3`).
-  Anything that still fails is raised as the neutral `LLMError`.
+  Anything that still fails is raised as the neutral `LLMError`, with a `cause` when the adapter
+  recognises the failure and the provider's `error_type`. A cause is the admin's to fix
+  (`config`: key refused or missing, no permission, no credit, unknown model, CLI signed out or
+  missing) or one that passes (`transient`: unreachable, busy, usage limit); `app/llm/types.py`
+  lists them, and [ADR 0043](adr/0043-a-model-that-stops-answering-tells-the-admins.md) says what
+  each one makes happen. The error's text has the key, and anything shaped like a key, taken out.
 - **Prompt caching.** The runtime puts `CACHE_BREAK` between the static prompt and the household
   brief. The Anthropic adapter splits there and marks the static block `cache_control: ephemeral`;
   the OpenAI adapter replaces the marker with a blank line.

@@ -5,7 +5,8 @@ server, `houseagent.devng.host`, since 9 Oct 2026; nothing below stops that. Las
 the code, the docs and that trial on 10 Oct 2026, with meal ideas, household jobs, Google
 Calendar, letters and spending merged. Apple Calendar was added the same day and has its own
 heading. The shop-link items were brought up to date on 26 Oct 2026, when the family reported
-that their shop links did not work.
+that their shop links did not work. The monitoring items were brought up to date on 27 Nov 2026,
+after the model stopped answering for three days without anyone being told.
 
 Each line has a status and a pointer to where the detail is.
 
@@ -119,6 +120,21 @@ item it is.
   drops every price kept, `0003` every calendar connection and what came in from one, `0002`
   every household job. Only the first is written down, and none has been tried on the server.
   [operations.md](operations.md#update-and-roll-back)
+- [x] **Done, [#11](https://github.com/olamide226/houseagent/pull/11).** Someone is told when the model stops answering. From 23 to 26
+  Nov 2026 Anthropic refused the server's key, every turn failed, and the family only got "Sorry,
+  that didn't go through" while reminders kept going. Now each admin is messaged at once when the
+  model refuses its key, credit or model (after 30 minutes for a timeout or a rate limit), the
+  family is told the admin knows, and the System page shows the outage.
+  [ADR 0043](adr/0043-a-model-that-stops-answering-tells-the-admins.md)
+- [ ] **Not verified.** On the server, after this change is deployed: migration `0006` applies,
+  and a refused key tells the owner on Telegram. It has been tested with recorded error shapes and
+  stand-in sends, never with a real refused key or the real bot.
+  [operations.md](operations.md#when-the-model-stops-answering)
+- [ ] **Not done.** Nothing outside the server watches it. If the worker, the database or the
+  whole server is down, no warning can be sent, and a key that is refused while nobody writes is
+  only noticed when somebody does: nothing calls the model to check. An uptime check from another
+  machine, and moving to a second provider when one fails, are not built.
+  [operations.md](operations.md#when-the-model-stops-answering)
 - [ ] **Not done.** CI builds the image and publishes it.
   [operations.md](operations.md#deploying-with-helm)
 - [ ] **Not verified.** The server comes back by itself after a reboot.

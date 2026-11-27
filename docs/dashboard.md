@@ -214,11 +214,16 @@ the installation.
   `weekly_digest`, `consumption_model`, `low_stock_prompt`, and `monthly_spending` for a month
   whose spending went out with a digest), from `job_runs`. Messages, sends and
   reminders are handled continuously and leave no row; they show on Activity.
-- **Model.** `AGENT_RUNTIME`, `LLM_PROVIDER`, the endpoint's host (or that the provider is a CLI
-  on a subscription sign-in), `LLM_MODEL`, `LLM_FAST_MODEL` when set, and whether photos are
-  read. Never a key. When the household's newest handled message failed, its error is shown
-  first: with a subscription provider that is where an expired sign-in or a used-up allowance
-  appears. It goes once a later message is answered.
+- **Model.** First, whether the model is answering: "Answering" with when it last answered a
+  message here, or, during an outage ([ADR 0043](adr/0043-a-model-that-stops-answering-tells-the-admins.md)),
+  "Not answering anyone since" with the cause in plain words, whether it needs fixing or will
+  probably pass, what the provider called the error (its type or code, never its message), how
+  many messages went unanswered and when the admins were told. A passing failure that has not yet
+  told anyone shows as "Having trouble since". Below, `AGENT_RUNTIME`, `LLM_PROVIDER`, the
+  endpoint's host (or that the provider is a CLI on a subscription sign-in), `LLM_MODEL`,
+  `LLM_FAST_MODEL` when set, whether photos are read, and the last five outages. Never a key.
+  When the household's newest handled message failed for some other reason, its error is shown,
+  with anything shaped like a key taken out. It goes once a later message is answered.
 - **Last eval result.** For each provider, what the eval suite last wrote into
   `EVAL_RESULTS_DIR` (default `tests/evals/.results`): passed of total, the model, when, and the
   cases that failed. The suite writes there on the machine where it is run, so a deployed image

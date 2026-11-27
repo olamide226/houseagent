@@ -10,7 +10,7 @@ import signal
 from contextlib import suppress
 from typing import Any
 
-from app.llm.types import ChatMessage, ImagePart, LLMError, TextPart, ToolDef
+from app.llm.types import ChatMessage, ImagePart, LLMError, TextPart, ToolDef, redact
 
 # Both CLIs tell the model today's date themselves, in the machine's time zone. Around midnight
 # that is not the household's date, so the brief's is named as the one to use.
@@ -26,6 +26,10 @@ _ENV = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TMPDIR", "SSL_CERT
 _SIGN_IN = re.compile(
     r"/login|log(ged)? ?(in|out)|sign(ed)? ?in|401|unauthori[sz]ed|authenticat|oauth|refresh token", re.I)
 _LIMIT = re.compile(r"usage limit|hit your .{0,40}limit|rate.?limit|429|quota", re.I)
+# Recorded from Codex on a ChatGPT plan: "The 'x' model is not supported when using Codex with a
+# ChatGPT account." Claude Code names a model it does not know "issue with the selected model".
+_MODEL = re.compile(r"model\b.{0,80}\b(not supported|not found|does not exist|not available|unknown|invalid)"
+                    r"|(unknown|invalid) model|issue with the selected model", re.I)
 _slots = asyncio.Semaphore(2)   # CLI processes at once, per process: each is a whole program in memory
 
 
@@ -56,10 +60,15 @@ def render(brief: str, messages: list[ChatMessage], tools: list[ToolDef]) -> tup
 def failure(cli: str, detail: str) -> LLMError:
     """A failed call as the one-line error the Activity and System pages show."""
     detail = " ".join(detail.split())[:300]
+    detail = redact(detail)
     if _SIGN_IN.search(detail):
-        return LLMError(f"{cli} is not signed in, or its sign-in has expired: {detail}")
+        return LLMError(f"{cli} is not signed in, or its sign-in has expired: {detail}", cause="signed_out",
+                        error_type="not signed in")
     if _LIMIT.search(detail):
-        return LLMError(f"{cli} has reached the subscription's usage limit: {detail}")
+        return LLMError(f"{cli} has reached the subscription's usage limit: {detail}", cause="usage_limit",
+                        error_type="usage limit")
+    if _MODEL.search(detail):
+        return LLMError(f"{cli} failed: {detail}", cause="model_unknown", error_type="model not offered")
     return LLMError(f"{cli} failed: {detail}")
 
 
@@ -76,11 +85,12 @@ async def run_cli(cli: str, argv: list[str], *, stdin: str, cwd: str, seconds: f
                 stderr=asyncio.subprocess.PIPE, env=environment, cwd=cwd, start_new_session=True)
         except OSError as exc:
             raise LLMError(f"{cli} could not be started ({type(exc).__name__}): is its CLI installed, "
-                           f"and LLM_CLI_PATH right?") from exc
+                           f"and LLM_CLI_PATH right?", cause="cli_missing", error_type=type(exc).__name__) from exc
         try:
             out, err = await asyncio.wait_for(process.communicate(stdin.encode()), seconds)
         except TimeoutError:
-            raise LLMError(f"{cli} gave no answer within {seconds:g} seconds") from None
+            raise LLMError(f"{cli} gave no answer within {seconds:g} seconds", cause="unreachable",
+                           error_type="timed out") from None
         finally:
             if process.returncode is None:   # timed out or cancelled: take its children with it
                 with suppress(ProcessLookupError):

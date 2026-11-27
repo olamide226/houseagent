@@ -3,8 +3,8 @@
 The DDL is [`schema.sql`](../schema.sql), applied verbatim by Alembic migration `0001`, and the
 migrations after it: `0002` adds the household job columns to `reminders`, `0003` the two
 tables for connected calendars and `events.all_day`, `0004` the `receipts` and
-`receipt_lines` tables and `households.currency`, and `0005` `members.presence_link_base` and
-`members.presence_renew_offered_at`.
+`receipt_lines` tables and `households.currency`, `0005` `members.presence_link_base` and
+`members.presence_renew_offered_at`, and `0006` the `model_outages` table.
 Table-by-table purpose is in [spec.md section 4](spec.md#4-data-model). This page covers what
 milestones 1 to 5 use and the rules the code enforces.
 
@@ -37,6 +37,7 @@ milestones 1 to 5 use and the rules the code enforces.
 | `calendar_links` | `services/calendar_sync.py` only |
 | `agent_actions` | every tool call or dashboard action that wrote something, each invite redemption, and each change read from a connected calendar (`source = 'calendar'`) |
 | `outbox` | turns, invites and welcomes, login links, reminders, digests |
+| `model_outages` | the model's outages, the installation's and not a household's: at most one open (`ended_at` null), with its kind (`config` or `transient`), cause, the provider's error type, how many turns failed, and when the admins were told and last reminded ([ADR 0043](adr/0043-a-model-that-stops-answering-tells-the-admins.md)) |
 | `job_runs` | the daily brief, the weekly digest, the consumption model and the low-stock prompt, one row per household and run; `monthly_spending`, one row per household and month once that month's spending has gone out with a weekly digest; and one `worker_heartbeat` row per household that the worker moves forward every minute |
 | `households.letta_agent_id` | the Letta runtime, when it creates the household's agent |
 

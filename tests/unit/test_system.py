@@ -115,13 +115,16 @@ async def test_a_subscription_whose_sign_in_has_gone_shows_on_the_page_until_a_m
                       headers={"X-Telegram-Bot-Api-Secret-Token": "test-webhook-secret"})
     assert await inbound.process_household(home.id, runtime, {}) == 1
     text = await page(client)
-    assert "The last message could not be answered (" in text
-    assert "LLMError: Claude Code is not signed in, or its sign-in has expired: Not logged in · Please run /login" in text
+    assert "Not answering anyone since " in text
+    assert "the subscription I use for AI has been signed out on the computer I run on." in text
+    assert "<span>not signed in <span class=\"muted\">claude_code</span></span>" in text
 
     await client.post("/webhooks/telegram", json=tg_update(2, "morning all"),
                       headers={"X-Telegram-Bot-Api-Secret-Token": "test-webhook-secret"})
     assert await inbound.process_household(home.id, runtime, {}) == 1
-    assert "could not be answered" not in await page(client)       # the next message was answered: no longer the state
+    text = await page(client)
+    assert "could not be answered" not in text and "Not answering" not in text   # the next message was answered
+    assert "Answering. Last answered a message here " in text and "Earlier outages" in text
 
 
 async def test_the_last_eval_result_is_read_from_where_the_suite_leaves_it(client, tmp_path, monkeypatch):
@@ -221,7 +224,8 @@ async def test_the_export_holds_every_table_of_this_household_and_nothing_secret
         every_table = {r["table_name"] for r in await fetch_all(
             conn, "select table_name from information_schema.tables where table_schema = 'public'")}
     # A table added to the schema later must be exported or left out on purpose.
-    assert set(households.EXPORTED) | {"login_tokens", "alembic_version"} == every_table
+    # model_outages is the installation's, not the household's.
+    assert set(households.EXPORTED) | {"login_tokens", "alembic_version", "model_outages"} == every_table
     await login(client, home)
 
     response = await client.get("/dashboard/system/export")

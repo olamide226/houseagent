@@ -26,7 +26,27 @@
 </div>
 <h2>Model</h2>
 <div class="card">
-  {% if llm.failed %}
+  {% set outage = model.current %}
+  {% if outage and (outage.alerted_at or outage.kind == "config") %}
+  <p class="out"><span class="dot out"></span>Not answering anyone since {{ when(outage.started_at) }}:
+    {{ outage.said }}.</p>
+  <ul class="list kv">
+    <li><span class="grow">What it needs</span><span>{% if outage.kind == "config" %}Fixing where the assistant runs: trying again won't help{% else %}Probably time: this kind of trouble usually passes{% endif %}</span></li>
+    <li><span class="grow">What the AI service said</span><span>{{ outage.error_type or "nothing more" }} <span class="muted">{{ outage.provider }}</span></span></li>
+    <li><span class="grow">Messages not answered</span><span>{{ outage.failures }}, the last {{ when(outage.last_failed_at) }}</span></li>
+    <li><span class="grow">Admins told</span><span>{% if outage.alerted_at %}{{ when(outage.alerted_at) }}{% else %}not yet{% endif %}</span></li>
+  </ul>
+  {% if outage.kind == "config" %}<p class="hint">Once it is fixed, the next message that gets an answer ends this, and the
+    admins are told the assistant is answering again.</p>{% endif %}
+  {% elif outage %}
+  <p class="low"><span class="dot out"></span>Having trouble since {{ when(outage.started_at) }}: {{ outage.said }}.
+    The admins are told if every message fails for half an hour.</p>
+  {% elif model.last_answered %}
+  <p><span class="dot good"></span>Answering. Last answered a message here {{ when(model.last_answered) }}.</p>
+  {% else %}
+  <p class="muted">No message has been answered here yet.</p>
+  {% endif %}
+  {% if llm.failed and not outage %}
   <p class="out">The last message could not be answered ({{ when(llm.failed.processed_at) }}): {{ llm.failed.error }}</p>
   {% endif %}
   <ul class="list kv">
@@ -36,6 +56,16 @@
     {% if llm.fast_model %}<li><span class="grow">Model for sorting items</span><span>{{ llm.fast_model }}</span></li>{% endif %}
     <li><span class="grow">Reads photos</span><span>{{ "yes" if llm.images else "no" }}</span></li>
   </ul>
+  {% if model.past %}
+  <h3>Earlier outages</h3>
+  <ul class="list kv">
+  {% for past in model.past %}
+    <li><span class="grow">{{ when(past.started_at) }} to {{ when(past.ended_at) }}
+        <span class="sub">{{ past.said }}{% if past.error_type %} ({{ past.error_type }}){% endif %}</span></span>
+        <span class="muted">{{ past.failures }} unanswered</span></li>
+  {% endfor %}
+  </ul>
+  {% endif %}
 </div>
 <h2>Last eval result</h2>
 <div class="card">

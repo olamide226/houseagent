@@ -6,6 +6,7 @@ import openai
 
 from app.llm.types import (
     CACHE_BREAK,
+    Cause,
     ChatMessage,
     ImagePart,
     LLMError,
@@ -14,9 +15,33 @@ from app.llm.types import (
     ToolCall,
     ToolDef,
     Usage,
+    redact,
 )
 
 _STOP = {"stop": "end", "tool_calls": "tool_calls", "length": "length"}
+
+
+# By status, as OpenAI and the services that copy its API answer: 402 is DeepSeek's "Insufficient
+# Balance", 404 a model the endpoint does not have.
+_STATUS_CAUSES: dict[int, Cause] = {401: "key_rejected", 402: "out_of_credit", 403: "not_allowed",
+                                    404: "model_unknown", 429: "busy"}
+# A 429 that no wait will fix: the account has no credit left.
+_NO_CREDIT = {"insufficient_quota", "billing_hard_limit_reached", "insufficient_balance"}
+
+
+def classify(exc: openai.APIError) -> tuple[Cause | None, str]:
+    """What an SDK error means for the admin, and the provider's own name for it (its code or type)."""
+    if isinstance(exc, openai.APIConnectionError):   # a timeout is one too
+        return "unreachable", type(exc).__name__
+    error_type = str(exc.code or exc.type or type(exc).__name__)
+    if not isinstance(exc, openai.APIStatusError):
+        return None, error_type
+    if {str(exc.code), str(exc.type)} & _NO_CREDIT:
+        return "out_of_credit", error_type
+    cause = _STATUS_CAUSES.get(exc.status_code)
+    if cause is None and exc.status_code >= 500:
+        cause = "unreachable"
+    return cause, error_type
 
 
 def _content(parts: list[TextPart | ImagePart]) -> Any:
@@ -57,6 +82,7 @@ class OpenAICompatClient:
                  supports_images: bool = True, http_client: Any = None) -> None:
         self.supports_images = supports_images
         self._model = model
+        self._key = api_key
         # The SDK retries 408/429/5xx and connection errors with backoff.
         self._client = openai.AsyncOpenAI(
             api_key=api_key or "none", base_url=base_url, max_retries=3, http_client=http_client
@@ -76,7 +102,9 @@ class OpenAICompatClient:
         try:
             response: Any = await self._client.chat.completions.create(**request)
         except openai.APIError as exc:
-            raise LLMError(f"{type(exc).__name__}: {exc}") from exc
+            cause, error_type = classify(exc)
+            raise LLMError(redact(f"{type(exc).__name__}: {exc}", self._key), cause=cause,
+                           error_type=error_type) from exc
 
         choice = response.choices[0]
         calls = [_tool_call(c) for c in choice.message.tool_calls or []]

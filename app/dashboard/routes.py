@@ -32,9 +32,10 @@ from app.core.envelope import Channel, GroupUpdate
 from app.core.timeutil import day_bounds, local, parse_clock, to_utc, utcnow
 from app.dashboard.auth import Session, current_session, invite_context, qr_svg, require_csrf, templates
 from app.db import advisory_lock, engine, fetch_all, fetch_one, fetch_val, tx
+from app.llm.types import redact
 from app.pipeline import inbound
 from app.pipeline import router as outbound
-from app.services import calendar, calendar_sync, households, inventory, jobs, members, shopping, spending
+from app.services import calendar, calendar_sync, households, inventory, jobs, members, model_health, shopping, spending
 
 router = APIRouter(prefix="/dashboard", default_response_class=HTMLResponse)
 
@@ -906,6 +907,7 @@ async def _system(request: Request, session: Session, template: str = "_system.h
             "drift": await inventory.stock_drift(conn, session.household_id),
             "stock_rows": len(await inventory.stock_rows(conn, session.household_id)),
             "migration": await fetch_val(conn, "select version_num from alembic_version"),
+            "model": await model_health.health(conn, session.household_id),
         }
         # The newest message that was handled: if it failed, the model is the likely reason,
         # and with a subscription provider the reason is usually its sign-in or its usage limit.
@@ -917,7 +919,7 @@ async def _system(request: Request, session: Session, template: str = "_system.h
            "fast_model": settings.llm_fast_model, "images": settings.llm_supports_images,
            "endpoint": urlsplit(settings.llm_base_url).netloc if settings.llm_base_url else None,
            "subscription": settings.llm_provider in ("claude_code", "codex_cli"),
-           "failed": last if last and last["status"] == "failed" else None}
+           "failed": last and last["status"] == "failed" and {**last, "error": redact(last["error"] or "")} or None}
     return templates.TemplateResponse(request, template, {
         "session": session, "error": error, "notice": notice, "llm": llm, "version": _version(),
         "evals": _eval_results(settings.eval_results_dir), "quantity_text": inventory.quantity_text, **context,

@@ -5,6 +5,7 @@ import anthropic
 
 from app.llm.types import (
     CACHE_BREAK,
+    Cause,
     ChatMessage,
     LLMError,
     LLMResponse,
@@ -12,6 +13,7 @@ from app.llm.types import (
     ToolCall,
     ToolDef,
     Usage,
+    redact,
 )
 
 _STOP = {"end_turn": "end", "stop_sequence": "end", "tool_use": "tool_calls", "max_tokens": "length"}
@@ -53,6 +55,32 @@ def _messages(messages: list[ChatMessage]) -> list[dict[str, Any]]:
     return wire
 
 
+# The error types of the Messages API (its errors page), by what the admin can do about them.
+_CAUSES: dict[str, Cause] = {
+    "authentication_error": "key_rejected", "permission_error": "not_allowed", "billing_error": "out_of_credit",
+    "not_found_error": "model_unknown", "rate_limit_error": "busy", "overloaded_error": "busy",
+    "api_error": "unreachable", "timeout_error": "unreachable",
+}
+_STATUS_CAUSES: dict[int, Cause] = {401: "key_rejected", 402: "out_of_credit", 403: "not_allowed",
+                                    404: "model_unknown", 429: "busy", 529: "busy"}
+
+
+def classify(exc: anthropic.APIError) -> tuple[Cause | None, str]:
+    """What an SDK error means for the admin, and the API's own name for it."""
+    if isinstance(exc, anthropic.APIConnectionError):   # a timeout is one too
+        return "unreachable", type(exc).__name__
+    if not isinstance(exc, anthropic.APIStatusError):
+        return None, type(exc).__name__
+    error_type = getattr(exc, "type", None) or type(exc).__name__
+    if exc.status_code == 400 and "credit balance" in str(exc).lower():
+        # An empty account has been refused as a plain bad request: "Your credit balance is too low".
+        return "out_of_credit", error_type
+    cause = _CAUSES.get(error_type) or _STATUS_CAUSES.get(exc.status_code)
+    if cause is None and exc.status_code >= 500:
+        cause = "unreachable"
+    return cause, error_type
+
+
 def _system(system: str) -> list[dict[str, Any]]:
     static, found, dynamic = system.partition(CACHE_BREAK)
     if not found:
@@ -70,6 +98,7 @@ class AnthropicClient:
                  supports_images: bool = True, http_client: Any = None) -> None:
         self.supports_images = supports_images
         self._model = model
+        self._key = api_key
         # The SDK retries 408/409/429/5xx and connection errors with backoff.
         self._client = anthropic.AsyncAnthropic(
             api_key=api_key, base_url=base_url, max_retries=3, http_client=http_client
@@ -88,10 +117,15 @@ class AnthropicClient:
             request["tools"] = [
                 {"name": t.name, "description": t.description, "input_schema": t.parameters} for t in tools
             ]
+        if not self._key:
+            # The SDK would refuse with a TypeError before sending anything.
+            raise LLMError("no API key is set (LLM_API_KEY)", cause="key_missing", error_type="no key")
         try:
             response: Any = await self._client.messages.create(**request)
         except anthropic.APIError as exc:
-            raise LLMError(f"{type(exc).__name__}: {exc}") from exc
+            cause, error_type = classify(exc)
+            raise LLMError(redact(f"{type(exc).__name__}: {exc}", self._key), cause=cause,
+                           error_type=error_type) from exc
 
         text = "".join(b.text for b in response.content if b.type == "text")
         calls = [
