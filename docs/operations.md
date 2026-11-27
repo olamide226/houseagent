@@ -137,7 +137,8 @@ migration undone first, with the newer code still checked out:
 `receipt_lines`, and with them every price kept so far; the stock they logged is untouched.
 Going back to before migration `0005` (shop links that know their address) is
 `alembic downgrade 0004`, which drops only the two `members` columns it added; the links keep
-working.
+working. Going back to before `0006` (model outages) is `alembic downgrade 0005`, which drops
+`model_outages` and with it the history of outages; nothing else uses it.
 
 ### Logs
 
@@ -366,9 +367,11 @@ With Docker Compose the same two things are a named volume mounted at `/codex` i
 
 ### When the sign-in expires or the allowance runs out
 
-Nothing checks the sign-in ahead of time. The first turn after it lapses fails: the person gets
-the usual apology, the message is marked failed on Activity, and the System page's Model card
-says why until a later message is answered:
+Nothing checks the sign-in ahead of time. The first turn after it lapses fails, the message is
+marked failed on Activity, and the admins are told at once ([below](#when-the-model-stops-answering)).
+A used-up allowance or a timeout tells them only once every message has failed for half an hour.
+The System page's Model card says why until a later message is answered; the detail below is in
+the failed message's error on Activity:
 
 | The System page says | What happened | Do |
 | --- | --- | --- |
@@ -385,6 +388,34 @@ Practice chat.
 
 The allowance is shared with your own use of Claude or ChatGPT, and each vendor counts it in its
 own way ([llm.md](llm.md#limits)). A household turn is two or three model steps.
+
+## When the model stops answering
+
+Every admin gets a message in their own chat as soon as the model refuses its key, its account
+or its model, or a subscription CLI is signed out ([ADR 0043](adr/0043-a-model-that-stops-answering-tells-the-admins.md)).
+A timeout, an overloaded service or a rate limit tells them only once at least two messages have
+failed and the first was 30 minutes ago. Quiet hours are kept. While it lasts they are reminded at
+most once a day, when someone's message fails again, and the family is told the admin knows. The
+first message that is answered ends it, and the admins are told "I'm answering again".
+
+| The System page says | Do |
+| --- | --- |
+| has stopped accepting my key (`authentication_error`, `invalid_api_key`) | Make a new key with the provider, put it in `LLM_API_KEY`, restart the api and the worker |
+| no key ... has been set up | Set `LLM_API_KEY` |
+| has run out of credit (`billing_error`, `insufficient_quota`, a 402) | Add credit on the provider's billing page |
+| isn't allowed to do what I need (`permission_error`, a 403) | Give the key access to `LLM_MODEL`, or use a key that has it |
+| doesn't know the model (`not_found_error`, `model_not_found`) | Correct `LLM_MODEL`, or `LLM_BASE_URL` for an OpenAI-compatible endpoint |
+| signed out, or the program isn't there | [The sign-in table above](#when-the-sign-in-expires-or-the-allowance-runs-out) |
+| isn't answering, too busy, usage limit | Usually wait; check the provider's status page |
+
+After a restart, send any message: the outage ends with the first answer. Nothing calls the model
+to check, so until somebody writes the page goes on showing the outage.
+
+```sql
+-- the open outage, if any, and the last few
+select kind, cause, error_type, provider, started_at, failures, alerted_at, ended_at
+from model_outages order by started_at desc limit 5;
+```
 
 ## Media storage
 
@@ -419,7 +450,7 @@ uv run python -m app.worker.main             # worker, in a second terminal
 ## Health
 
 - `GET /healthz`: liveness.
-- `GET /readyz`: 200 when the database is reachable and at the newest migration (`0005`),
+- `GET /readyz`: 200 when the database is reachable and at the newest migration (`0006`),
   else 503.
 - The worker logs `worker_heartbeat` every minute and restarts a crashed job after 5 seconds. Each
   heartbeat also touches `WORKER_HEARTBEAT_FILE` (default `/tmp/worker-heartbeat`), which is what a
@@ -439,7 +470,8 @@ does and why running it twice is harmless is in
 `outbox_send_failed`, `outbox_delivery_failed`, `outbox_fallback_queued`, `group_created`,
 `group_not_created`, `media_failed`, `photo_unreadable`, `media_cleaned`, `media_cleanup_failed`,
 `invite_redeemed`, `imessage_health_changed`, `items_categorised`, `categorise_failed`, `categorise_unreadable`, `job_crashed`,
-`calendar_synced`, `calendar_sync_failed`, `calendar_connection_broken`, `calendar_send_refused`.
+`calendar_synced`, `calendar_sync_failed`, `calendar_connection_broken`, `calendar_send_refused`,
+`turn_failed`, `model_failed`, `model_outage_alerted`, `model_outage_reminded`, `model_recovered`.
 
 ```sql
 -- reminders that should have gone and have not

@@ -12,15 +12,17 @@ from app.agent.actions import record
 from app.agent.base import AgentResult, AgentRuntime, Ctx, ToolError
 from app.agent.loop import message_lines
 from app.channels.base import ChannelAdapter
+from app.config import get_settings
 from app.core.envelope import Channel, Envelope, GroupUpdate, InboundEvent, MediaRef, OutboundMessage
 from app.core.identity import member_for_handle, parse_invite_code, redeem_invite
 from app.core.timeutil import utcnow
 from app.db import advisory_lock, execute, fetch_all, fetch_one, fetch_val, jsonb, tx
 from app.llm.stt import SpeechToText
+from app.llm.types import LLMError, redact
 from app.media.store import MediaStore
 from app.pipeline import media as media_pipeline
 from app.pipeline.router import delivery_failed, enqueue, record_outbound
-from app.services import households, jobs, members
+from app.services import households, jobs, members, model_health
 
 log = structlog.get_logger()
 
@@ -234,11 +236,40 @@ async def process_household(household_id: str, runtime: AgentRuntime, adapters: 
                     envelope = build_envelope(batch, await _reaction_targets(conn, batch),
                                               await _reply_to_text(conn, batch[-1]))
                     await run_turn(conn, envelope, runtime)
+            except LLMError as exc:
+                # The model failed: no traceback, which would carry the provider's own words.
+                error = redact(f"{type(exc).__name__}: {exc}")
+                log.warning("turn_failed", household_id=household_id, message_id=ids[-1], error=error,
+                            cause=exc.cause, error_type=exc.error_type)
+                outage = await _model_failed(exc)
+                await _fail_turn(conn, batch, error, await model_health.reply_for(
+                    conn, outage, household_id, batch[-1]["member_id"], batch[-1]["scope"]))
             except Exception as exc:
                 log.exception("turn_failed", household_id=household_id, message_id=ids[-1])
-                await _fail_turn(conn, batch, f"{type(exc).__name__}: {exc}")
+                await _fail_turn(conn, batch, redact(f"{type(exc).__name__}: {exc}"))
+            else:
+                await _model_answered()
             turns += 1
     return turns
+
+
+async def _model_failed(error: LLMError) -> dict[str, Any] | None:
+    """Record the failure in its own transaction: the model is the whole installation's, so its
+    row must not wait on this household's turn, and the admins' warning must not depend on it."""
+    try:
+        async with tx() as conn:
+            return await model_health.failed(conn, error, get_settings().llm_provider, utcnow())
+    except Exception:
+        log.exception("model_health_not_recorded")
+        return None
+
+
+async def _model_answered() -> None:
+    try:
+        async with tx() as conn:
+            await model_health.succeeded(conn, utcnow())
+    except Exception:
+        log.exception("model_health_not_recorded")
 
 
 async def run_turn(conn: AsyncConnection, envelope: Envelope, runtime: AgentRuntime, *,
@@ -428,8 +459,9 @@ async def _reply_to_text(conn: AsyncConnection, message: dict[str, Any]) -> str 
     return None if text is None else str(text)
 
 
-async def _fail_turn(conn: AsyncConnection, batch: list[dict[str, Any]], error: str) -> None:
-    """Mark the batch failed and apologise once. The turn's own writes were already rolled back."""
+async def _fail_turn(conn: AsyncConnection, batch: list[dict[str, Any]], error: str, reply: str | None = None) -> None:
+    """Mark the batch failed and apologise once: with `reply`, which says why, while the admins
+    have been told the model is down. The turn's own writes were already rolled back."""
     await execute(
         conn,
         """update messages set status = 'failed', processed_at = clock_timestamp(),
@@ -439,5 +471,5 @@ async def _fail_turn(conn: AsyncConnection, batch: list[dict[str, Any]], error: 
     )
     await enqueue(conn, OutboundMessage(
         household_id=batch[0]["household_id"], target="thread", thread_id=batch[0]["thread_id"],
-        text=SORRY, respect_quiet_hours=False,
+        text=reply or SORRY, respect_quiet_hours=False,
     ))

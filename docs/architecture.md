@@ -88,6 +88,10 @@ Each thread's turn runs in a savepoint. If the turn fails (for example the model
 savepoint rolls back so nothing is half-recorded, the messages become `failed`, and the thread
 gets "Sorry, that didn't go through, try again?" once. Within a turn each tool call has its own
 savepoint, so a failing tool does not undo an earlier one. See [ADR 0009](adr/0009-one-transaction-per-turn.md).
+When it was the model that failed, the failure is also recorded in `model_outages`, in a
+transaction of its own, which tells the admins when it is time; while they know, the reply says
+so instead. The next turn that works ends the outage
+([ADR 0043](adr/0043-a-model-that-stops-answering-tells-the-admins.md)).
 
 **Sending (worker, `app/pipeline/router.py`).** Every send is an `outbox` row inserted in the
 writer's transaction, so a rolled-back turn sends nothing. The dispatcher takes due rows with

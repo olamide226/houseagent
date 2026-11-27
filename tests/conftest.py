@@ -74,7 +74,7 @@ def _schema() -> None:
 @pytest.fixture(autouse=True)
 async def _clean_tables(_schema: None) -> None:
     async with db.tx() as conn:
-        await conn.execute(text("truncate households cascade"))
+        await conn.execute(text("truncate households, model_outages cascade"))
 
 
 @pytest.fixture(scope="session")
